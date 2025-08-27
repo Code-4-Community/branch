@@ -42,3 +42,9 @@ Thumbs.db
 *.env
 *.env.*
 !example.env
+
+# Terraform
+.terraform.lock.hcl
+.terraform/
+terraform.tfstate*
+terraform.tfvars*
