@@ -54,8 +54,95 @@ jobs:
           echo "Unique directories with changes: $dirs"
           echo "dirs=$dirs" >> $GITHUB_OUTPUT
 
-  terraform-plan:
+  terraform-fmt-docs:
     needs: detect-changes
+    if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install tfenv
+        run: |
+          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
+          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
+
+      - name: Install terraform-docs
+        run: |
+          curl -sSLo ./terraform-docs.tar.gz https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
+          tar -xzf terraform-docs.tar.gz
+          chmod +x terraform-docs
+          sudo mv terraform-docs /usr/local/bin/
+
+      - name: Process each directory
+        run: |
+          dirs='${{ needs.detect-changes.outputs.terraform-dirs }}'
+          echo "$dirs" | jq -r '.[]' | while read -r dir; do
+            echo "Processing directory: $dir"
+
+            # Install correct Terraform version
+            cd "$dir"
+            tfenv install
+
+            # Format Terraform files
+            echo "Formatting Terraform files in $dir"
+            terraform fmt -recursive
+
+            # Generate or update terraform-docs
+            echo "Generating documentation for $dir"
+            if [ -f "README.md" ]; then
+              # Update existing README
+              terraform-docs markdown table . --output-file README.md --output-mode inject --show-required
+            else
+              # Create new README
+              cat > README.md << 'EOF'
+          # Terraform Module
+
+          <!-- BEGIN_TF_DOCS -->
+          <!-- END_TF_DOCS -->
+          EOF
+              terraform-docs markdown table . --output-file README.md --output-mode inject --show-required
+            fi
+
+            # Return to root for next iteration
+            cd - > /dev/null
+          done
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            git diff --name-only
+          fi
+
+      - name: Commit changes
+        if: steps.check-changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add -A
+          git commit -m "chore: auto-format terraform and update documentation
+
+          - Auto-formatted .tf files with terraform fmt
+          - Updated README.md with terraform-docs
+
+          Co-authored-by: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+
+          git push
+
+  terraform-plan:
+    needs: [detect-changes, terraform-fmt-docs]
     if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
     strategy:
@@ -65,6 +152,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Install tfenv
         run: |
@@ -77,18 +166,12 @@ jobs:
           tfenv install
           terraform version
 
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform fmt -check -recursive
-        working-directory: ${{ matrix.directory }}
-        continue-on-error: true
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+          aws-region: us-east-1  # Update this to your region
 
       - name: Terraform Init
         id: init
@@ -128,7 +211,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const output = `#### Terraform Plan 📖 \`${{ matrix.directory }}\`
-            #### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
             #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
@@ -157,7 +239,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
-            #### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
 
@@ -176,8 +257,9 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
+  # Summary job to ensure all plans completed
   terraform-plan-summary:
-    needs: [detect-changes, terraform-plan]
+    needs: [detect-changes, terraform-fmt-docs, terraform-plan]
     if: always()
     runs-on: ubuntu-latest
     steps:
