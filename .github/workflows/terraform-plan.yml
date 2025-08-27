@@ -99,16 +99,16 @@ jobs:
             echo "Generating documentation for $dir"
             if [ -f "README.md" ]; then
               # Update existing README
-              terraform-docs markdown table . --output-file README.md --output-mode inject --show-required
+              terraform-docs markdown table . --output-file README.md --output-mode inject
             else
               # Create new README
               cat > README.md << 'EOF'
-          # Terraform Module
+# Terraform Module
 
-          <!-- BEGIN_TF_DOCS -->
-          <!-- END_TF_DOCS -->
-          EOF
-              terraform-docs markdown table . --output-file README.md --output-mode inject --show-required
+<!-- BEGIN_TF_DOCS -->
+<!-- END_TF_DOCS -->
+EOF
+              terraform-docs markdown table . --output-file README.md --output-mode inject
             fi
 
             # Return to root for next iteration
@@ -171,7 +171,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # Update this to your region
+          aws-region: us-east-2
 
       - name: Terraform Init
         id: init
