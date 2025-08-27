@@ -1,4 +1,3 @@
-
 name: Terraform Plan on Changed Files
 
 on:
@@ -242,3 +241,32 @@ EOF
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+
+            Check the workflow logs for more details.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # Summary job to ensure all plans completed
+  terraform-plan-summary:
+    needs: [detect-changes, terraform-fmt-docs, terraform-plan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
+            echo "No Terraform changes detected"
+          else
+            echo "Terraform plan completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
+          fi
