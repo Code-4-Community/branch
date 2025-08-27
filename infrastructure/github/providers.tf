@@ -12,7 +12,7 @@ terraform {
 
 provider "github" {
   owner = "Code-4-Community"
-  token = ephemeral.infisical_secret.github_token.value
+  token = data.infisical_secrets.github_folder.secrets["branch-gh-admin"].value
 }
 
 provider "infisical" {
