@@ -15,6 +15,7 @@ resource "github_repository" "branch" {
 
   squash_merge_commit_message = "COMMIT_MESSAGES"
   squash_merge_commit_title   = "COMMIT_OR_PR_TITLE"
+  delete_branch_on_merge      = true
 }
 
 resource "github_branch_default" "main" {
