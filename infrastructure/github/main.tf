@@ -16,6 +16,8 @@ resource "github_repository" "branch" {
   squash_merge_commit_message = "COMMIT_MESSAGES"
   squash_merge_commit_title   = "COMMIT_OR_PR_TITLE"
   delete_branch_on_merge      = true
+  vulnerability_alerts        = true
+
 }
 
 resource "github_branch_default" "main" {
@@ -33,8 +35,14 @@ resource "github_branch_protection" "main" {
     require_code_owner_reviews      = true
   }
 
+  required_status_checks {
+    strict   = true
+    contexts = []
+  }
+
   enforce_admins = false
 }
+
 
 resource "github_repository_collaborator" "collaborators" {
   for_each   = { for c in var.repository_collaborators : c.username => c }
