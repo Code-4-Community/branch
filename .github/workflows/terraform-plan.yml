@@ -54,22 +54,18 @@ jobs:
           echo "Unique directories with changes: $dirs"
           echo "dirs=$dirs" >> $GITHUB_OUTPUT
 
-  terraform-process:
+  terraform-fmt-docs:
     needs: detect-changes
     if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-    strategy:
-      matrix:
-        directory: ${{ fromJson(needs.detect-changes.outputs.terraform-dirs) }}
-      fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
@@ -85,39 +81,97 @@ jobs:
           chmod +x terraform-docs
           sudo mv terraform-docs /usr/local/bin/
 
-      - name: Setup Terraform
-        working-directory: ${{ matrix.directory }}
+      - name: Process each directory
         run: |
-          tfenv install
-          terraform version
+          dirs='${{ needs.detect-changes.outputs.terraform-dirs }}'
+          echo "$dirs" | jq -r '.[]' | while read -r dir; do
+            echo "Processing directory: $dir"
 
-      - name: Format and Document
-        id: fmt-docs
-        working-directory: ${{ matrix.directory }}
+            # Install correct Terraform version
+            cd "$dir"
+            tfenv install
+
+            # Format Terraform files
+            echo "Formatting Terraform files in $dir"
+            terraform fmt -recursive
+
+            # Generate or update terraform-docs
+            echo "Generating documentation for $dir"
+            if [ -f "README.md" ]; then
+              # Update existing README
+              terraform-docs markdown table . --output-file README.md --output-mode inject
+            else
+              # Create new README using printf
+              printf '# Terraform Module\n\n<!-- BEGIN_TF_DOCS -->\n<!-- END_TF_DOCS -->\n' > README.md
+              terraform-docs markdown table . --output-file README.md --output-mode inject
+            fi
+
+            # Return to root for next iteration
+            cd - > /dev/null
+          done
+
+      - name: Check for changes
+        id: check-changes
         run: |
-          # Format Terraform files
-          echo "Formatting Terraform files"
-          terraform fmt -recursive
-
-          # Generate or update terraform-docs
-          echo "Generating documentation"
-          if [ -f "README.md" ]; then
-            # Update existing README
-            terraform-docs markdown table . --output-file README.md --output-mode inject
-          else
-            # Create new README using printf
-            printf '# Terraform Module\n\n<!-- BEGIN_TF_DOCS -->\n<!-- END_TF_DOCS -->\n' > README.md
-            terraform-docs markdown table . --output-file README.md --output-mode inject
-          fi
-
-          # Check if there are changes
-          cd ${{ github.workspace }}
           if git diff --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT
             git diff --name-only
           fi
+
+      - name: Commit changes
+        if: steps.check-changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Only add .tf and .md files
+          git add '*.tf' '**/*.tf'
+          git add '*.md' '**/*.md'
+
+          # Check if there are staged changes
+          if git diff --staged --quiet; then
+            echo "No .tf or .md files to commit"
+          else
+            git commit -m "Auto-format terraform and update documentation
+
+            - Auto-formatted .tf files with terraform fmt
+            - Updated README.md with terraform-docs
+
+            Co-authored-by: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+
+            git push
+          fi
+
+  terraform-plan:
+    needs: [detect-changes, terraform-fmt-docs]
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.terraform-dirs != '' &&
+      needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: ${{ fromJson(needs.detect-changes.outputs.terraform-dirs) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Install tfenv
+        run: |
+          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
+          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
+
+      - name: Install Terraform via tfenv
+        run: |
+          cd "${{ matrix.directory }}"
+          tfenv install
+          terraform version
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -155,25 +209,18 @@ jobs:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
           TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      - name: Comment PR
+      - name: Comment PR - Success
         uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'success'
         env:
           PLAN: ${{ steps.plan.outputs.stdout }}
-          FORMATTING_CHANGED: ${{ steps.fmt-docs.outputs.changed }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const formatNote = process.env.FORMATTING_CHANGED === 'true'
-              ? '\n\n⚠️ **Note:** Formatting changes were detected. Please commit them to this PR.'
-              : '';
-
-            let output;
-            if ('${{ steps.plan.outcome }}' === 'success') {
-              output = `#### Terraform Process 📖 \`${{ matrix.directory }}\`
+            const output = `#### Terraform Plan 📖 \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`${formatNote}
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
 
             <details><summary>Show Plan</summary>
 
@@ -184,15 +231,27 @@ jobs:
             </details>
 
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-            } else {
-              output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Comment PR - Failure
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'failure'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`${formatNote}
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
 
             *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
 
             Check the workflow logs for more details.`;
-            }
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -205,89 +264,9 @@ jobs:
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-  # Separate job to commit all formatting changes at once
-  commit-changes:
-    needs: [detect-changes, terraform-process]
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-
-      - name: Install tfenv and terraform-docs
-        run: |
-          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
-          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
-
-          curl -sSLo ./terraform-docs.tar.gz https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
-          tar -xzf terraform-docs.tar.gz
-          chmod +x terraform-docs
-          sudo mv terraform-docs /usr/local/bin/
-
-      - name: Apply formatting to all directories
-        run: |
-          dirs='${{ needs.detect-changes.outputs.terraform-dirs }}'
-          echo "$dirs" | jq -r '.[]' | while read -r dir; do
-            echo "Processing directory: $dir"
-
-            # Install correct Terraform version
-            cd "$dir"
-            tfenv install
-
-            # Format Terraform files
-            echo "Formatting Terraform files in $dir"
-            terraform fmt -recursive
-
-            # Generate or update terraform-docs
-            echo "Generating documentation for $dir"
-            if [ -f "README.md" ]; then
-              terraform-docs markdown table . --output-file README.md --output-mode inject
-            else
-              printf '# Terraform Module\n\n<!-- BEGIN_TF_DOCS -->\n<!-- END_TF_DOCS -->\n' > README.md
-              terraform-docs markdown table . --output-file README.md --output-mode inject
-            fi
-
-            cd - > /dev/null
-          done
-
-      - name: Check and commit changes
-        run: |
-          if git diff --quiet; then
-            echo "No formatting changes needed"
-          else
-            git config --local user.email "github-actions[bot]@users.noreply.github.com"
-            git config --local user.name "github-actions[bot]"
-
-            # Only add Terraform-related files
-            git add "**/*.tf" "**/*.tfvars" "**/README.md" "**/.terraform-version" || true
-
-            # Check if there are staged changes
-            if git diff --staged --quiet; then
-              echo "No Terraform files to commit"
-            else
-              git commit -m "chore: auto-format terraform and update documentation
-
-              - Auto-formatted .tf files with terraform fmt
-              - Updated README.md with terraform-docs
-
-              Co-authored-by: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
-
-              git push
-            fi
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # Summary job to ensure all plans completed
-  terraform-summary:
-    needs: [detect-changes, terraform-process, commit-changes]
+  terraform-plan-summary:
+    needs: [detect-changes, terraform-fmt-docs, terraform-plan]
     if: always()
     runs-on: ubuntu-latest
     steps:
