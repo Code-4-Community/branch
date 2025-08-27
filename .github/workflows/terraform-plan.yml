@@ -105,7 +105,14 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color -input=false
+        run: |
+          terraform plan -no-color -input=false -out=tfplan > plan_output.txt 2>&1
+          PLAN_EXIT_CODE=$?
+          PLAN_OUTPUT=$(cat plan_output.txt)
+          echo "stdout<<EOF" >> $GITHUB_OUTPUT
+          echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $PLAN_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
         env:
@@ -129,7 +136,7 @@ jobs:
             <details><summary>Show Plan</summary>
 
             \`\`\`terraform
-            ${process.env.PLAN}
+            ${process.env.PLAN || 'No plan output captured'}
             \`\`\`
 
             </details>
