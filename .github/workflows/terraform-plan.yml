@@ -101,13 +101,11 @@ jobs:
               # Update existing README
               terraform-docs markdown table . --output-file README.md --output-mode inject
             else
-              # Create new README
-              cat > README.md << 'EOF'
-# Terraform Module
-
-<!-- BEGIN_TF_DOCS -->
-<!-- END_TF_DOCS -->
-EOF
+              # Create new README using echo
+              echo '# Terraform Module' > README.md
+              echo '' >> README.md
+              echo '<!-- BEGIN_TF_DOCS -->' >> README.md
+              echo '<!-- END_TF_DOCS -->' >> README.md
               terraform-docs markdown table . --output-file README.md --output-mode inject
             fi
 
