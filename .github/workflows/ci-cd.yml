@@ -4,7 +4,7 @@ name: CI/CD
 # Then, for each project that requires deployment, deploy-<project>-<service-type> is added
 # Environment variables are labelled <project-name>_SHORT_DESCRIPTION
 
-on:
+on: 
   push:
     branches: ['main']
   pull_request:
