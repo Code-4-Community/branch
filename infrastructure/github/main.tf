@@ -37,7 +37,7 @@ resource "github_branch_protection" "main" {
 
   required_status_checks {
     strict   = true
-    contexts = []
+    contexts = ["terraform-plan-summary", "pre-deploy"]
   }
 
   enforce_admins = false

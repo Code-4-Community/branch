@@ -1,0 +1,308 @@
+name: Terraform Plan on Changed Files
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      terraform-dirs: ${{ steps.set-dirs.outputs.dirs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            **/*.tf
+            **/*.tfvars
+            **/terraform.lock.hcl
+            **/.terraform-version
+          files_separator: "\n"
+          files_yaml: |
+            terraform:
+              - '**/*.tf'
+              - '**/*.tfvars'
+              - '**/terraform.lock.hcl'
+              - '**/.terraform-version'
+
+      - name: List all changed files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "Changed terraform files:"
+          echo "${{ steps.changed-files.outputs.all_changed_files }}"
+
+      - name: Extract unique directories
+        id: set-dirs
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          # Get unique directories containing changed terraform files
+          dirs=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
+            tr ' ' '\n' | \
+            xargs -I {} dirname {} | \
+            sort -u | \
+            jq -R -s -c 'split("\n")[:-1]')
+
+          echo "Unique directories with changes: $dirs"
+          echo "dirs=$dirs" >> $GITHUB_OUTPUT
+
+  terraform-fmt-docs:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install tfenv
+        run: |
+          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
+          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
+
+      - name: Install terraform-docs
+        run: |
+          curl -sSLo ./terraform-docs.tar.gz https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
+          tar -xzf terraform-docs.tar.gz
+          chmod +x terraform-docs
+          sudo mv terraform-docs /usr/local/bin/
+
+      - name: Process each directory
+        run: |
+          dirs='${{ needs.detect-changes.outputs.terraform-dirs }}'
+          echo "$dirs" | jq -r '.[]' | while read -r dir; do
+            echo "Processing directory: $dir"
+
+            # Install correct Terraform version
+            cd "$dir"
+            tfenv install
+
+            # Format Terraform files
+            echo "Formatting Terraform files in $dir"
+            terraform fmt -recursive
+
+            # Generate or update terraform-docs
+            echo "Generating documentation for $dir"
+            if [ -f "README.md" ]; then
+              # Update existing README
+              terraform-docs markdown table . --output-file README.md --output-mode inject
+            else
+              # Create new README using printf
+              printf '# Terraform Module\n\n<!-- BEGIN_TF_DOCS -->\n<!-- END_TF_DOCS -->\n' > README.md
+              terraform-docs markdown table . --output-file README.md --output-mode inject
+            fi
+
+            # Return to root for next iteration
+            cd - > /dev/null
+          done
+
+      - name: Check for changes
+        id: check-changes
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            git diff --name-only
+          fi
+
+      - name: Commit changes
+        if: steps.check-changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Only add .tf and .md files
+          git add '*.tf' '**/*.tf'
+          git add '*.md' '**/*.md'
+
+          # Check if there are staged changes
+          if git diff --staged --quiet; then
+            echo "No .tf or .md files to commit"
+          else
+            git commit -m "chore: auto-format terraform and update documentation
+
+            - Auto-formatted .tf files with terraform fmt
+            - Updated README.md with terraform-docs
+
+            Co-authored-by: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+
+            git push
+          fi
+
+  terraform-plan:
+    needs: [detect-changes, terraform-fmt-docs]
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.terraform-dirs != '' &&
+      needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: ${{ fromJson(needs.detect-changes.outputs.terraform-dirs) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Install tfenv
+        run: |
+          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
+          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
+
+      - name: Install Terraform via tfenv
+        run: |
+          cd "${{ matrix.directory }}"
+          tfenv install
+          terraform version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ${{ matrix.directory }}
+        env:
+          TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: ${{ matrix.directory }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -input=false -out=tfplan > plan_output.txt 2>&1
+          PLAN_EXIT_CODE=$?
+          PLAN_OUTPUT=$(cat plan_output.txt)
+          echo "stdout<<EOF" >> $GITHUB_OUTPUT
+          echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $PLAN_EXIT_CODE
+        working-directory: ${{ matrix.directory }}
+        continue-on-error: true
+        env:
+          TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Delete old plan comments
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Get all comments on the PR
+            const comments = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+
+            // Find comments that are terraform plans for this directory
+            const botComments = comments.data.filter(comment => {
+              return comment.user.type === 'Bot' &&
+                     comment.body.includes('#### Terraform Plan') &&
+                     comment.body.includes('`${{ matrix.directory }}`');
+            });
+
+            // Delete old comments
+            for (const comment of botComments) {
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id
+              });
+            }
+
+      - name: Comment PR - Success
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'success'
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Plan 📖 \`${{ matrix.directory }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${process.env.PLAN || 'No plan output captured'}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Comment PR - Failure
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request' && steps.plan.outcome == 'failure'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+
+            Check the workflow logs for more details.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # Summary job to ensure all plans completed
+  terraform-plan-summary:
+    needs: [detect-changes, terraform-fmt-docs, terraform-plan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
+            echo "No Terraform changes detected"
+          else
+            echo "Terraform plan completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
+          fi
