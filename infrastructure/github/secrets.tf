@@ -60,6 +60,6 @@ variable "rds_username" {
   type = string
 }
 
-variable "rds_password"  {
+variable "rds_password" {
   type = string
 }
