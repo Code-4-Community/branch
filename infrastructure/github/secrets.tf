@@ -11,6 +11,12 @@ data "infisical_secrets" "infisical_folder" {
   folder_path  = "/infisical"
 }
 
+data "infisical_secrets" "aws_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/aws"
+}
+
 
 resource "github_actions_secret" "aws_access_key_id" {
   repository      = github_repository.branch.name
