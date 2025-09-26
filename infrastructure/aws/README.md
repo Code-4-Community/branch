@@ -23,7 +23,7 @@ No modules.
 | Name | Type |
 |------|------|
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
-| [infisical_secrets.aws_folder](https://registry.terraform.io/providers/hashicorp/infisical/latest/docs/data-sources/secrets) | data source |
+| [infisical_secrets.aws_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
 ## Inputs
 
