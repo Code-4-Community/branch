@@ -30,7 +30,7 @@ resource "github_branch_protection" "main" {
   pattern       = "main"
 
   required_pull_request_reviews {
-    required_approving_review_count = 2
+    required_approving_review_count = 4
     dismiss_stale_reviews           = true
     require_code_owner_reviews      = true
   }
