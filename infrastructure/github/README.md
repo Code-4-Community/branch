@@ -6,13 +6,14 @@
 | Name | Version |
 |------|---------|
 | <a name="requirement_github"></a> [github](#requirement\_github) | ~> 6.6 |
+| <a name="requirement_infisical"></a> [infisical](#requirement\_infisical) | ~> 0.7 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
 | <a name="provider_github"></a> [github](#provider\_github) | ~> 6.6 |
-| <a name="provider_infisical"></a> [infisical](#provider\_infisical) | n/a |
+| <a name="provider_infisical"></a> [infisical](#provider\_infisical) | ~> 0.7 |
 
 ## Modules
 
@@ -40,6 +41,7 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_github_token"></a> [github\_token](#input\_github\_token) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
