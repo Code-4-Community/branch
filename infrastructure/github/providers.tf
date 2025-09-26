@@ -5,14 +5,15 @@ terraform {
       version = "~> 6.6"
     }
     infisical = {
-      source = "infisical/infisical"
+      source  = "infisical/infisical"
+      version = "~> 0.7"
     }
   }
 }
 
 provider "github" {
   owner = "Code-4-Community"
-  token = data.infisical_secrets.github_folder.secrets["branch-gh-admin"].value
+  token = var.github_token
 }
 
 provider "infisical" {
