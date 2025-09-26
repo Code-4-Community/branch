@@ -23,7 +23,10 @@ No modules.
 
 ## Inputs
 
-No inputs.
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| <a name="input_rds_password"></a> [rds\_password](#input\_rds\_password) | n/a | `string` | n/a | yes |
+| <a name="input_rds_username"></a> [rds\_username](#input\_rds\_username) | n/a | `string` | n/a | yes |
 
 ## Outputs
 
