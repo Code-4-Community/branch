@@ -10,6 +10,12 @@ data "infisical_secrets" "infisical_folder" {
   folder_path  = "/infisical"
 }
 
+data "infisical_secrets" "github_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/github"
+}
+
 
 resource "github_actions_secret" "rds_username" {
   repository      = github_repository.branch.name
@@ -34,4 +40,12 @@ variable "rds_password" {
 variable "infisical_workspace_id" {
   type    = string
   default = "d1ee8b80-118c-4daf-ae84-31da43261b76"
+}
+
+variable "infisical_client_id" {
+  type = string
+}
+
+variable "infisical_client_secret" {
+  type = string
 }
