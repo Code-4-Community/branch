@@ -41,6 +41,18 @@ resource "github_actions_secret" "infisical_client_secret" {
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
 
+resource "github_actions_secret" "rds_username" {
+  repository      = github_repository.branch.name
+  secret_name     = "RDS_USERNAME"
+  plaintext_value = data.infisical_secrets.aws_folder.secrets["rds_username"].value
+}
+
+resource "github_actions_secret" "rds_password" {
+  repository      = github_repository.branch.name
+  secret_name     = "RDS_PASSWORD"
+  plaintext_value = data.infisical_secrets.aws_folder.secrets["rds_password"].value
+}
+
 
 
 variable "infisical_client_id" {

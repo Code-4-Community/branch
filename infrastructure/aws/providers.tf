@@ -4,10 +4,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    github = {
-      source  = "integrations/github"
-      version = "~> 6.6"
-    }
     infisical = {
       source  = "infisical/infisical"
       version = "~> 0.7"
@@ -17,11 +13,6 @@ terraform {
 
 provider "aws" {
   region = "us-east-1"
-}
-
-provider "github" {
-  owner = "Code-4-Community"
-  token = data.infisical_secrets.github_folder.secrets["branch-gh-admin"].value
 }
 
 provider "infisical" {
