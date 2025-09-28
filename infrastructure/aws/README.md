@@ -6,13 +6,14 @@
 | Name | Version |
 |------|---------|
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | 6.14.1 |
+| <a name="requirement_github"></a> [github](#requirement\_github) | ~> 6.6 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
 | <a name="provider_aws"></a> [aws](#provider\_aws) | 6.14.1 |
-| <a name="provider_github"></a> [github](#provider\_github) | n/a |
+| <a name="provider_github"></a> [github](#provider\_github) | ~> 6.6 |
 | <a name="provider_infisical"></a> [infisical](#provider\_infisical) | n/a |
 
 ## Modules
@@ -24,9 +25,9 @@ No modules.
 | Name | Type |
 |------|------|
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
-| [github_actions_secret.infisical_client_id](https://registry.terraform.io/providers/hashicorp/github/latest/docs/resources/actions_secret) | resource |
-| [github_actions_secret.infisical_client_secret](https://registry.terraform.io/providers/hashicorp/github/latest/docs/resources/actions_secret) | resource |
-| [github_repository.branch](https://registry.terraform.io/providers/hashicorp/github/latest/docs/data-sources/repository) | data source |
+| [github_actions_secret.infisical_client_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
+| [github_actions_secret.infisical_client_secret](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
+| [github_repository.branch](https://registry.terraform.io/providers/integrations/github/latest/docs/data-sources/repository) | data source |
 | [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.infisical_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
