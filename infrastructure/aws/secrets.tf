@@ -20,8 +20,6 @@ resource "github_actions_secret" "infisical_client_secret" {
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
 
-
-
 variable "infisical_client_id" {
   type = string
 }
