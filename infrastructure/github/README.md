@@ -45,9 +45,5 @@ No modules.
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| <a name="output_github_repository_name"></a> [github\_repository\_name](#output\_github\_repository\_name) | Name of the GitHub repository |
-| <a name="output_rds_password"></a> [rds\_password](#output\_rds\_password) | RDS password from Infisical |
-| <a name="output_rds_username"></a> [rds\_username](#output\_rds\_username) | RDS username from Infisical |
+No outputs.
 <!-- END_TF_DOCS -->

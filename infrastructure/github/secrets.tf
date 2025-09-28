@@ -17,8 +17,6 @@ data "infisical_secrets" "infisical_folder" {
 }
 
 
-
-
 resource "github_actions_secret" "aws_access_key_id" {
   repository      = github_repository.branch.name
   secret_name     = "AWS_ACCESS_KEY_ID"

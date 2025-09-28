@@ -4,10 +4,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "6.14.1"
     }
-    github = {
-      source  = "integrations/github"
-      version = "~> 6.6"
-    }
     infisical = {
       source = "infisical/infisical"
     }
