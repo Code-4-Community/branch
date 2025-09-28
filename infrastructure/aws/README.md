@@ -27,7 +27,10 @@ No modules.
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
 | [github_actions_secret.infisical_client_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.infisical_client_secret](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
+| [infisical_client_secret.rds_password](https://registry.terraform.io/providers/infisical/infisical/latest/docs/resources/client_secret) | resource |
+| [infisical_client_secret.rds_username](https://registry.terraform.io/providers/infisical/infisical/latest/docs/resources/client_secret) | resource |
 | [github_repository.branch](https://registry.terraform.io/providers/integrations/github/latest/docs/data-sources/repository) | data source |
+| [infisical_secrets.aws_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.infisical_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
@@ -35,11 +38,8 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
-| <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
-| <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
-| <a name="input_rds_password"></a> [rds\_password](#input\_rds\_password) | RDS password | `string` | n/a | yes |
-| <a name="input_rds_username"></a> [rds\_username](#input\_rds\_username) | RDS username | `string` | n/a | yes |
+| <a name="input_rds_password"></a> [rds\_password](#input\_rds\_password) | n/a | `string` | n/a | yes |
+| <a name="input_rds_username"></a> [rds\_username](#input\_rds\_username) | n/a | `string` | n/a | yes |
 
 ## Outputs
 
