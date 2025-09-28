@@ -8,14 +8,18 @@ data "infisical_secrets" "infisical_folder" {
   workspace_id = var.infisical_workspace_id
   folder_path  = "/infisical"
 }
+
+data "github_repository" "branch" {
+  name = "branch"
+}
 resource "github_actions_secret" "infisical_client_id" {
-  repository      = github_repository.branch.name
+  repository      = data.github_repository.branch.name
   secret_name     = "INFISICAL_CLIENT_ID"
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-id"].value
 }
 
 resource "github_actions_secret" "infisical_client_secret" {
-  repository      = github_repository.branch.name
+  repository      = data.github_repository.branch.name
   secret_name     = "INFISICAL_CLIENT_SECRET"
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
