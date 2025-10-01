@@ -14,7 +14,6 @@ provider "aws" {
   region = "us-east-2"
 }
 
-
 provider "infisical" {
   host = "https://app.infisical.com"
   auth = {

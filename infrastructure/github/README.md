@@ -45,6 +45,7 @@ No modules.
 
 ## Outputs
 
+No outputs.
 | Name | Description |
 |------|-------------|
 | <a name="output_github_repository_name"></a> [github\_repository\_name](#output\_github\_repository\_name) | Name of the GitHub repository |
