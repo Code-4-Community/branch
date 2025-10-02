@@ -1,0 +1,190 @@
+name: Terraform Apply by PR / button
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infrastructure/**/*.tf'
+      - 'infrastructure/**/*.tfvars'
+      - 'infrastructure/**/terraform.lock.hcl'
+      - 'infrastructure/**/.terraform-version'
+  workflow_dispatch:
+    inputs:
+      directories:
+        description: >
+          Comma-separated list of Terraform workspace directories to apply.
+          Examples: infrastructure/github or infrastructure/github,infrastructure/another
+          Notes: Leave empty on merges; push to main auto-detects changed workspaces.
+        required: false
+        default: ''
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      terraform-dirs: ${{ steps.set-dirs.outputs.dirs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files (push only)
+        id: changed-files
+        if: github.event_name == 'push'
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            **/*.tf
+            **/*.tfvars
+            **/terraform.lock.hcl
+            **/.terraform-version
+          files_separator: "\n"
+          files_yaml: |
+            terraform:
+              - '**/*.tf'
+              - '**/*.tfvars'
+              - '**/terraform.lock.hcl'
+              - '**/.terraform-version'
+
+      - name: List all changed files (push only)
+        if: github.event_name == 'push' && steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "Changed terraform files:"
+          echo "${{ steps.changed-files.outputs.all_changed_files }}"
+
+      - name: Resolve directories to apply
+        id: set-dirs
+        run: |
+          EVENT_NAME="${{ github.event_name }}"
+          INPUT_DIRS="${{ github.event.inputs.directories }}"
+          ANY_CHANGED="${{ steps.changed-files.outputs.any_changed }}"
+          ALL_CHANGED="${{ steps.changed-files.outputs.all_changed_files }}"
+
+          dirs_json='[]'
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Parse comma-separated directories, trim, and keep existing paths only
+            if [ -n "$INPUT_DIRS" ]; then
+              echo "$INPUT_DIRS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | while read -r d; do
+                if [ -n "$d" ] && [ -d "$d" ]; then echo "$d"; fi
+              done | jq -R -s -c 'split("\n") | map(select(length>0))' > dirs.json
+              dirs_json=$(cat dirs.json)
+            fi
+          elif [ "$ANY_CHANGED" = "true" ]; then
+            # Derive unique directories from changed files on push
+            echo "$ALL_CHANGED" | tr ' ' '\n' | xargs -I {} dirname {} | sort -u | jq -R -s -c 'split("\n")[:-1]' > dirs.json
+            dirs_json=$(cat dirs.json)
+          fi
+
+          echo "Resolved directories: $dirs_json"
+          echo "dirs=$dirs_json" >> $GITHUB_OUTPUT
+
+  terraform-apply:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: ${{ fromJson(needs.detect-changes.outputs.terraform-dirs) }}
+      fail-fast: false
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tfenv
+        run: |
+          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
+          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
+
+      - name: Install Terraform via tfenv
+        run: |
+          cd "${{ matrix.directory }}"
+          tfenv install
+          terraform version
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: ${{ matrix.directory }}
+        env:
+          TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+        working-directory: ${{ matrix.directory }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -input=false -out=tfplan > plan_output.txt 2>&1
+          PLAN_EXIT_CODE=$?
+          PLAN_OUTPUT=$(cat plan_output.txt)
+          echo "stdout<<EOF" >> $GITHUB_OUTPUT
+          echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $PLAN_EXIT_CODE
+        working-directory: ${{ matrix.directory }}
+        env:
+          TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          terraform apply -auto-approve -no-color tfplan > apply_output.txt 2>&1
+          APPLY_EXIT_CODE=$?
+          APPLY_OUTPUT=$(cat apply_output.txt)
+          echo "stdout<<EOF" >> $GITHUB_OUTPUT
+          echo "$APPLY_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          exit $APPLY_EXIT_CODE
+        working-directory: ${{ matrix.directory }}
+        env:
+          TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Create deployment summary
+        if: always()
+        run: |
+          echo "## Terraform Apply Summary - ${{ matrix.directory }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Init | ${{ steps.init.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate | ${{ steps.validate.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Plan | ${{ steps.plan.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Apply | ${{ steps.apply.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.apply.outcome }}" == "success" ]; then
+            echo "✅ **Terraform apply completed successfully!**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Terraform apply failed!**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  terraform-apply-summary:
+    needs: [detect-changes, terraform-apply]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
+            echo "No Terraform changes detected or no directories selected"
+          else
+            echo "Terraform apply completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
+          fi
+
+
