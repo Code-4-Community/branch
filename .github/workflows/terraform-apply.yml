@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 7-test-terraform-apply
     paths:
       - 'infrastructure/**/*.tf'
       - 'infrastructure/**/*.tfvars'
