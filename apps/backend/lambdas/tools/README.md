@@ -2,15 +2,6 @@
 
 A command-line tool to quickly scaffold AWS Lambda handlers with automatic Swagger documentation and local development server.
 
-## Features
-
-- 🚀 **Quick Setup**: Create new Lambda handlers in seconds
-- 📝 **Auto-Generated Routes**: Add API routes with a single command
-- 📚 **Swagger Documentation**: Automatic OpenAPI spec generation
-- 🔄 **Local Development**: Built-in dev server with hot reload
-- 🌐 **Multi-Handler Support**: Run multiple handlers on one dev server
-- ⚡ **Production Ready**: Compatible with both API Gateway and Lambda Function URLs
-
 ## Installation
 
 The CLI tool is located at `apps/backend/lambdas/tools/lambda-cli.js`. Run it from the lambdas directory:
@@ -134,40 +125,6 @@ node tools/lambda-cli.js add-route products DELETE /products/{id}
 - **Health Check**: `http://localhost:3000/products/health`
 - **OpenAPI Spec**: `http://localhost:3000/products/swagger.json`
 
-## Generated Handler Structure
-
-```typescript
-export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
-  try {
-    // Support both API Gateway and Lambda Function URL events
-    const rawPath = event.rawPath || event.path || '/';
-    const normalizedPath = rawPath.replace(/\/$/, '');
-    const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
-
-    // Health check
-    if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
-      return json(200, { ok: true, timestamp: new Date().toISOString() });
-    }
-
-    // >>> ROUTES-START (do not remove this marker)
-    // CLI-generated routes will be inserted here
-
-    // GET /products/{id}
-    if (normalizedPath.startsWith('/products/') && normalizedPath.split('/').length === 3 && method === 'GET') {
-      const id = normalizedPath.split('/')[2];
-      if (!id) return json(400, { message: 'id is required' });
-      // TODO: Add your business logic here
-      return json(200, { ok: true, route: 'GET /products/{id}', pathParams: { id } });
-    }
-    // <<< ROUTES-END
-
-    return json(404, { message: 'Not Found', path: normalizedPath, method });
-  } catch (err) {
-    console.error('Lambda error:', err);
-    return json(500, { message: 'Internal Server Error' });
-  }
-};
-```
 
 ## Multi-Handler Development
 
@@ -206,92 +163,3 @@ if (normalizedPath.startsWith('/users/') && normalizedPath.split('/').length ===
   return json(200, { user });
 }
 ```
-
-## Production Deployment
-
-### Build for Production
-
-```bash
-npm run build    # Compiles TypeScript
-npm run package  # Creates deployment zip
-```
-
-The `package` script creates `lambda.zip` excluding development files (`dev-server.*`, `swagger-utils.*`).
-
-### AWS Deployment
-
-The generated handlers work with:
-
-- **Lambda Function URLs**: Direct HTTP access
-- **API Gateway**: Full API management features
-- **Application Load Balancer**: ALB target integration
-
-## File Structure
-
-```
-your-handler/
-├── handler.ts          # Main Lambda function
-├── swagger-utils.ts    # Swagger utilities (dev only)
-├── dev-server.ts       # Local dev server (dev only)
-├── openapi.yaml        # API specification
-├── package.json        # Dependencies and scripts
-├── tsconfig.json       # TypeScript config
-└── dist/              # Compiled output (after build)
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Port 3000 in use**: The dev server uses port 3000. Kill existing processes or change the port in `dev-server.ts`.
-
-2. **Route markers missing**: Don't delete the `>>> ROUTES-START` and `<<< ROUTES-END` markers in `handler.ts`.
-
-3. **TypeScript errors**: Run `npm run build` to check for compilation errors.
-
-4. **Handler not found**: Make sure you're running commands from the correct directory.
-
-### Getting Help
-
-```bash
-node tools/lambda-cli.js --help
-```
-
-## Examples
-
-### E-commerce API
-
-```bash
-# Create products handler
-node tools/lambda-cli.js init-handler products
-
-# Add CRUD routes
-node tools/lambda-cli.js add-route products GET /products --query category:string,limit:number
-node tools/lambda-cli.js add-route products GET /products/{id}
-node tools/lambda-cli.js add-route products POST /products --body name:string,price:number,category:string --status 201
-node tools/lambda-cli.js add-route products PUT /products/{id} --body name:string,price:number,category:string
-node tools/lambda-cli.js add-route products DELETE /products/{id} --status 204
-```
-
-### User Management API
-
-```bash
-# Create users handler
-node tools/lambda-cli.js init-handler users
-
-# Add user routes
-node tools/lambda-cli.js add-route users GET /users --query page:number,limit:number
-node tools/lambda-cli.js add-route users GET /users/{id}
-node tools/lambda-cli.js add-route users POST /users --body name:string,email:string,password:string --status 201
-node tools/lambda-cli.js add-route users PUT /users/{id} --body name:string,email:string --headers authorization:string
-node tools/lambda-cli.js add-route users DELETE /users/{id} --headers authorization:string --status 204
-```
-
-## Best Practices
-
-1. **Use descriptive handler names**: `users`, `products`, `orders` instead of `api`, `handler`
-2. **Follow REST conventions**: Use appropriate HTTP methods and status codes
-3. **Add validation**: Validate input parameters in your business logic
-4. **Handle errors gracefully**: Use try-catch blocks and return appropriate error responses
-5. **Keep handlers focused**: One handler per domain/resource type
-6. **Use TypeScript**: Take advantage of type safety for better code quality
