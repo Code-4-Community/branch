@@ -137,13 +137,7 @@ jobs:
       - name: Terraform Apply
         id: apply
         run: |
-          terraform apply -auto-approve -no-color tfplan > apply_output.txt 2>&1
-          APPLY_EXIT_CODE=$?
-          APPLY_OUTPUT=$(cat apply_output.txt)
-          echo "stdout<<EOF" >> $GITHUB_OUTPUT
-          echo "$APPLY_OUTPUT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          exit $APPLY_EXIT_CODE
+          terraform apply -auto-approve -no-color tfplan
         working-directory: ${{ matrix.directory }}
         env:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
