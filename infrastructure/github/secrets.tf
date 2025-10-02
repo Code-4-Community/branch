@@ -41,12 +41,6 @@ resource "github_actions_secret" "infisical_client_secret" {
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
 
-resource "github_actions_secret" "github_token" {
-  repository      = github_repository.branch.name
-  secret_name     = "GH_PAT"
-  plaintext_value = data.infisical_secrets.github_folder.secrets["branch-gh-admin"].value
-}
-
 
 
 variable "infisical_client_id" {
