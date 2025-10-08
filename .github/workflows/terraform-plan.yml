@@ -204,6 +204,8 @@ jobs:
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
           echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          # Also write to a file for the failure step to read
+          echo "$PLAN_OUTPUT" > plan_output_for_failure.txt
           exit $PLAN_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
@@ -273,19 +275,30 @@ jobs:
       - name: Comment PR - Failure
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request' && steps.plan.outcome == 'failure'
-        env:
-          PLAN: ${{ steps.plan.outputs.stdout }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            let planOutput = 'No plan output captured';
+            try {
+              const planFile = path.join('${{ matrix.directory }}', 'plan_output_for_failure.txt');
+              if (fs.existsSync(planFile)) {
+                planOutput = fs.readFileSync(planFile, 'utf8');
+              }
+            } catch (error) {
+              console.log('Error reading plan output file:', error.message);
+            }
+            
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
 
-            *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*
+            <details><summary>Show Error Details</summary>
 
             \`\`\`terraform
-            ${process.env.PLAN || 'No plan output captured'}
+            ${planOutput}
             \`\`\`
 
             </details>
