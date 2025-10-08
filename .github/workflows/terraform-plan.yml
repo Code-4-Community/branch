@@ -198,14 +198,21 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
+          # Run terraform plan and capture output
           terraform plan -no-color -input=false -out=tfplan > plan_output.txt 2>&1
           PLAN_EXIT_CODE=$?
+          
+          # Always capture the output, regardless of exit code
           PLAN_OUTPUT=$(cat plan_output.txt)
+          
+          # Set step outputs
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
           echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          # Also write to a file for the failure step to read
+          
+          # Write to file for failure step to read (always do this)
           echo "$PLAN_OUTPUT" > plan_output_for_failure.txt
+          
           echo "=== Plan step debug ==="
           echo "Plan exit code: $PLAN_EXIT_CODE"
           echo "Plan output length: ${#PLAN_OUTPUT}"
@@ -214,6 +221,8 @@ jobs:
           echo "Content of plan_output_for_failure.txt:"
           cat plan_output_for_failure.txt
           echo "=== End plan step debug ==="
+          
+          # Exit with original code
           exit $PLAN_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
