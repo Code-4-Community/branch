@@ -6,3 +6,5 @@ resource "aws_instance" "example" {
     Name = "HelloWorld"
   }
 }
+
+bug bug bug 
