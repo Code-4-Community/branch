@@ -7,12 +7,3 @@ terraform {
     encrypt        = true
   }
 }
-
-{
-
-}
-
-# Intentional access error - invalid S3 bucket name
-data "aws_s3_bucket" "nonexistent" {
-  bucket = "this-bucket-does-not-exist-12345"
-}
