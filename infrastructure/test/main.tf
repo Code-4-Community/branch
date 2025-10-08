@@ -7,4 +7,19 @@ resource "aws_instance" "example" {
   }
 }
 
-bug bug bug 
+# Intentionally cause plan to fail while keeping syntax valid:
+# This data source queries a non-existent AMI ID, which will make
+# terraform plan error out with a provider lookup failure.
+data "aws_ami" "nonexistent" {
+  owners      = ["self"]
+  most_recent = true
+  filter {
+    name   = "image-id"
+    values = ["ami-00000000000000000"]
+  }
+}
+
+output "nonexistent_ami_id" {
+  value = data.aws_ami.nonexistent.id
+}
+
