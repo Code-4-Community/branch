@@ -206,6 +206,14 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           # Also write to a file for the failure step to read
           echo "$PLAN_OUTPUT" > plan_output_for_failure.txt
+          echo "=== Plan step debug ==="
+          echo "Plan exit code: $PLAN_EXIT_CODE"
+          echo "Plan output length: ${#PLAN_OUTPUT}"
+          echo "Files in current directory:"
+          ls -la
+          echo "Content of plan_output_for_failure.txt:"
+          cat plan_output_for_failure.txt
+          echo "=== End plan step debug ==="
           exit $PLAN_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
@@ -281,14 +289,43 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             
+            console.log('Current working directory:', process.cwd());
+            console.log('Matrix directory:', '${{ matrix.directory }}');
+            
+            // Try multiple possible file locations
+            const possibleFiles = [
+              path.join('${{ matrix.directory }}', 'plan_output_for_failure.txt'),
+              'plan_output_for_failure.txt',
+              path.join(process.cwd(), '${{ matrix.directory }}', 'plan_output_for_failure.txt')
+            ];
+            
             let planOutput = 'No plan output captured';
-            try {
-              const planFile = path.join('${{ matrix.directory }}', 'plan_output_for_failure.txt');
-              if (fs.existsSync(planFile)) {
-                planOutput = fs.readFileSync(planFile, 'utf8');
+            let foundFile = null;
+            
+            for (const filePath of possibleFiles) {
+              console.log('Checking file:', filePath);
+              if (fs.existsSync(filePath)) {
+                console.log('Found file at:', filePath);
+                foundFile = filePath;
+                try {
+                  planOutput = fs.readFileSync(filePath, 'utf8');
+                  console.log('Successfully read file, length:', planOutput.length);
+                  break;
+                } catch (error) {
+                  console.log('Error reading file:', error.message);
+                }
               }
-            } catch (error) {
-              console.log('Error reading plan output file:', error.message);
+            }
+            
+            if (!foundFile) {
+              console.log('No plan output file found in any expected location');
+              // List files in the matrix directory
+              try {
+                const files = fs.readdirSync('${{ matrix.directory }}');
+                console.log('Files in matrix directory:', files);
+              } catch (error) {
+                console.log('Error listing files in matrix directory:', error.message);
+              }
             }
             
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
