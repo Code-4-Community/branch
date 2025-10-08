@@ -51,14 +51,8 @@ resource "github_repository_collaborator" "collaborators" {
   permission = each.value.permission
 }
 
-
-# TEMPORARY: Intentional plan failure for testing workflow failure path
-# Remove this block once verification is complete
-data "github_repository" "intentional_missing" {
-  name = "definitely-does-not-exist-9b2e5d6a-7c2a-4d5c-8f9e-111111111111"
-}
-
-locals {
-  # Force evaluation of the missing data source during planning
-  trigger_intentional_plan_failure = data.github_repository.intentional_missing.full_name
+# TEMPORARY: Intentional syntax error for testing workflow failure
+resource "github_repository" "test_failure" {
+  name = "test"
+  # Missing required field - this will cause plan to fail
 }

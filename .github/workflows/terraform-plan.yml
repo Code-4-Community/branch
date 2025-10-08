@@ -299,6 +299,27 @@ jobs:
               body: output
             })
 
+      - name: Debug Plan Output
+        if: always()
+        run: |
+          echo "=== Debug Plan Output ==="
+          echo "Plan outcome: ${{ steps.plan.outcome }}"
+          echo "Plan exit code: ${{ steps.plan.outputs.exit_code }}"
+          echo "--- plan_output.txt content ---"
+          if [ -f plan_output.txt ]; then
+            cat plan_output.txt
+          else
+            echo "plan_output.txt not found"
+          fi
+          echo "--- plan_output_for_failure.txt content ---"
+          if [ -f plan_output_for_failure.txt ]; then
+            cat plan_output_for_failure.txt
+          else
+            echo "plan_output_for_failure.txt not found"
+          fi
+          echo "=== End Debug ==="
+        working-directory: ${{ matrix.directory }}
+
       - name: Terraform Plan Status
         if: steps.plan.outcome == 'failure'
         working-directory: ${{ matrix.directory }}
