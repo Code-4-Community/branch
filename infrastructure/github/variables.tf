@@ -11,8 +11,3 @@ variable "repository_collaborators" {
     # }
   ]
 }
-
-variable "test_variable" {
-  type = string
-  default = "test"
-}
