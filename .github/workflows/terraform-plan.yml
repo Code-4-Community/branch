@@ -271,6 +271,8 @@ jobs:
       - name: Comment PR - Failure
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request' && steps.plan.outcome == 'failure'
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -280,7 +282,13 @@ jobs:
 
             *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*
 
-            Check the workflow logs for more details.`;
+            \`\`\`terraform
+            ${process.env.PLAN || 'No plan output captured'}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -291,7 +299,17 @@ jobs:
 
       - name: Terraform Plan Status
         if: steps.plan.outcome == 'failure'
-        run: exit 1
+        working-directory: ${{ matrix.directory }}
+        run: |
+          echo "Terraform plan failed. Printing captured output:"
+          if [ -f plan_output.txt ]; then
+            echo "----- BEGIN plan_output.txt -----"
+            cat plan_output.txt
+            echo "-----  END plan_output.txt  -----"
+          else
+            echo "plan_output.txt not found."
+          fi
+          exit 1
 
   # Summary job to ensure all plans completed
   terraform-plan-summary:
