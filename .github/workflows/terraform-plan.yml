@@ -198,37 +198,30 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          # Run terraform plan and capture output
           terraform plan -no-color -input=false -out=tfplan > plan_output.txt 2>&1
           PLAN_EXIT_CODE=$?
-          
-          # Always capture the output, regardless of exit code
           PLAN_OUTPUT=$(cat plan_output.txt)
-          
-          # Set step outputs
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
           echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
-          # Write to file for failure step to read (always do this)
-          echo "$PLAN_OUTPUT" > plan_output_for_failure.txt
-          
-          echo "=== Plan step debug ==="
-          echo "Plan exit code: $PLAN_EXIT_CODE"
-          echo "Plan output length: ${#PLAN_OUTPUT}"
-          echo "Files in current directory:"
-          ls -la
-          echo "Content of plan_output_for_failure.txt:"
-          cat plan_output_for_failure.txt
-          echo "=== End plan step debug ==="
-          
-          # Exit with original code
           exit $PLAN_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
         env:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
           TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Show Terraform Plan Output in Workflow
+        if: always()
+        run: |
+          echo "=== Terraform Plan Output (${{ matrix.directory }}) ==="
+          if [ -f plan_output.txt ]; then
+            cat plan_output.txt
+          else
+            echo "No plan output file found"
+          fi
+          echo "=== End Terraform Plan Output ==="
+        working-directory: ${{ matrix.directory }}
 
       - name: Delete old plan comments
         uses: actions/github-script@v7
@@ -280,7 +273,7 @@ jobs:
 
             </details>
 
-            *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*`;
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -298,43 +291,18 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             
-            console.log('Current working directory:', process.cwd());
-            console.log('Matrix directory:', '${{ matrix.directory }}');
-            
-            // Try multiple possible file locations
-            const possibleFiles = [
-              path.join('${{ matrix.directory }}', 'plan_output_for_failure.txt'),
-              'plan_output_for_failure.txt',
-              path.join(process.cwd(), '${{ matrix.directory }}', 'plan_output_for_failure.txt')
-            ];
-            
             let planOutput = 'No plan output captured';
-            let foundFile = null;
-            
-            for (const filePath of possibleFiles) {
-              console.log('Checking file:', filePath);
-              if (fs.existsSync(filePath)) {
-                console.log('Found file at:', filePath);
-                foundFile = filePath;
-                try {
-                  planOutput = fs.readFileSync(filePath, 'utf8');
-                  console.log('Successfully read file, length:', planOutput.length);
-                  break;
-                } catch (error) {
-                  console.log('Error reading file:', error.message);
-                }
+            try {
+              // Read from the existing plan_output.txt file
+              const planFile = path.join('${{ matrix.directory }}', 'plan_output.txt');
+              if (fs.existsSync(planFile)) {
+                planOutput = fs.readFileSync(planFile, 'utf8');
+                console.log('Successfully read plan output from plan_output.txt');
+              } else {
+                console.log('plan_output.txt not found');
               }
-            }
-            
-            if (!foundFile) {
-              console.log('No plan output file found in any expected location');
-              // List files in the matrix directory
-              try {
-                const files = fs.readdirSync('${{ matrix.directory }}');
-                console.log('Files in matrix directory:', files);
-              } catch (error) {
-                console.log('Error listing files in matrix directory:', error.message);
-              }
+            } catch (error) {
+              console.log('Error reading plan output file:', error.message);
             }
             
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
@@ -358,40 +326,9 @@ jobs:
               body: output
             })
 
-      - name: Debug Plan Output
-        if: always()
-        run: |
-          echo "=== Debug Plan Output ==="
-          echo "Plan outcome: ${{ steps.plan.outcome }}"
-          echo "Plan exit code: ${{ steps.plan.outputs.exit_code }}"
-          echo "--- plan_output.txt content ---"
-          if [ -f plan_output.txt ]; then
-            cat plan_output.txt
-          else
-            echo "plan_output.txt not found"
-          fi
-          echo "--- plan_output_for_failure.txt content ---"
-          if [ -f plan_output_for_failure.txt ]; then
-            cat plan_output_for_failure.txt
-          else
-            echo "plan_output_for_failure.txt not found"
-          fi
-          echo "=== End Debug ==="
-        working-directory: ${{ matrix.directory }}
-
       - name: Terraform Plan Status
         if: steps.plan.outcome == 'failure'
-        working-directory: ${{ matrix.directory }}
-        run: |
-          echo "Terraform plan failed. Printing captured output:"
-          if [ -f plan_output.txt ]; then
-            echo "----- BEGIN plan_output.txt -----"
-            cat plan_output.txt
-            echo "-----  END plan_output.txt  -----"
-          else
-            echo "plan_output.txt not found."
-          fi
-          exit 1
+        run: exit 1
 
   # Summary job to ensure all plans completed
   terraform-plan-summary:
