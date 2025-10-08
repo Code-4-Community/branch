@@ -15,7 +15,7 @@ data "aws_ami" "nonexistent" {
   most_recent = true
   filter {
     name   = "image-id"
-    values = ["ami-00000000000000000"]
+    values = ["ami-0000000000000000"]
   }
 }
 
