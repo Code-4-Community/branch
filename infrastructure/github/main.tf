@@ -43,16 +43,9 @@ resource "github_branch_protection" "main" {
   enforce_admins = false
 }
 
-
 resource "github_repository_collaborator" "collaborators" {
   for_each   = { for c in var.repository_collaborators : c.username => c }
   repository = github_repository.branch.name
   username   = each.value.username
   permission = each.value.permission
-}
-
-# TEMPORARY: Intentional syntax error for testing workflow failure
-resource "github_repository" "test_failure" {
-  name = "test"
-  # Missing required field - this will cause plan to fail
 }
