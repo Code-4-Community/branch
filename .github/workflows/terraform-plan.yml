@@ -203,14 +203,20 @@ jobs:
           PLAN_EXIT_CODE=$?
           
           # Robust output capture with error handling
+          echo "Checking for plan output file..."
           if [ -f plan_output.txt ] && [ -s plan_output.txt ]; then
-            # File exists and has content
+            # File exists and has content - capture the actual output
+            echo "plan_output.txt exists and has content, capturing..."
             PLAN_OUTPUT=$(cat plan_output.txt)
             echo "Plan output captured successfully (${#PLAN_OUTPUT} characters)"
+            echo "First 200 chars of captured output:"
+            echo "${PLAN_OUTPUT:0:200}..."
           else
             # File doesn't exist or is empty
             PLAN_OUTPUT="No terraform plan output was generated"
             echo "Warning: plan_output.txt is missing or empty"
+            echo "File exists: $([ -f plan_output.txt ] && echo 'YES' || echo 'NO')"
+            echo "File size: $(wc -c < plan_output.txt 2>/dev/null || echo '0')"
           fi
           
           # Set step outputs
@@ -233,13 +239,16 @@ jobs:
         if: always()
         run: |
           echo "=== Terraform Plan Output (${{ matrix.directory }}) ==="
+          cd "${{ matrix.directory }}"
           if [ -f plan_output.txt ]; then
+            echo "File exists, showing content:"
             cat plan_output.txt
           else
-            echo "No plan output file found"
+            echo "No plan output file found in $(pwd)"
+            echo "Files in directory:"
+            ls -la
           fi
           echo "=== End Terraform Plan Output ==="
-        working-directory: ${{ matrix.directory }}
 
       - name: Delete old plan comments
         uses: actions/github-script@v7
@@ -306,19 +315,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const path = require('path');
+            console.log('Debug: PLAN env var length:', process.env.PLAN ? process.env.PLAN.length : 'undefined');
+            console.log('Debug: PLAN env var preview:', process.env.PLAN ? process.env.PLAN.substring(0, 100) + '...' : 'undefined');
             
-            let planOutput = 'No plan output captured';
-            try {
-              const planFile = path.join('${{ matrix.directory }}', 'plan_output_for_failure.txt');
-              if (fs.existsSync(planFile)) {
-                planOutput = fs.readFileSync(planFile, 'utf8');
-              }
-            } catch (error) {
-              console.log('Error reading plan output file:', error.message);
-            }
-            
+            const planOutput = process.env.PLAN || 'No plan output captured';
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
