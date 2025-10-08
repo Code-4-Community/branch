@@ -139,7 +139,7 @@ jobs:
             - Auto-formatted .tf files with terraform fmt
             - Updated README.md with terraform-docs
 
-            Co-authored-by: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+            Co-authored-by: ${{ github.event.pull_request.user.login }} <${{ github.event.pull_request.user.login }}@users.noreply.github.com>"
 
             git push
           fi
@@ -259,7 +259,7 @@ jobs:
 
             </details>
 
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -278,7 +278,7 @@ jobs:
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
 
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+            *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*
 
             Check the workflow logs for more details.`;
 
