@@ -22,7 +22,6 @@ No modules.
 | Name | Type |
 |------|------|
 | [aws_instance.example](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/instance) | resource |
-| [aws_ami.nonexistent](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ami) | data source |
 
 ## Inputs
 
@@ -30,7 +29,5 @@ No inputs.
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| <a name="output_nonexistent_ami_id"></a> [nonexistent\_ami\_id](#output\_nonexistent\_ami\_id) | n/a |
+No outputs.
 <!-- END_TF_DOCS -->
