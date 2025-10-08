@@ -13,6 +13,6 @@ variable "repository_collaborators" {
 }
 
 variable "test_variable" {
-  type = string
+  type    = string
   default = "test"
 }
