@@ -22,6 +22,7 @@ No modules.
 | Name | Type |
 |------|------|
 | [aws_instance.example](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/instance) | resource |
+| [aws_instance.web](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/instance) | resource |
 
 ## Inputs
 
