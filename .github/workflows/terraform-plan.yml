@@ -211,6 +211,18 @@ jobs:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
           TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
+      - name: Show Terraform Plan Output in Workflow
+        if: always()
+        run: |
+          echo "=== Terraform Plan Output (${{ matrix.directory }}) ==="
+          if [ -f plan_output.txt ]; then
+            cat plan_output.txt
+          else
+            echo "No plan output file found"
+          fi
+          echo "=== End Terraform Plan Output ==="
+        working-directory: ${{ matrix.directory }}
+
       - name: Delete old plan comments
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
@@ -273,6 +285,8 @@ jobs:
       - name: Comment PR - Failure
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request' && steps.plan.outcome == 'failure'
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -280,9 +294,15 @@ jobs:
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
 
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+            <details><summary>Show Error Details</summary>
 
-            Check the workflow logs for more details.`;
+            \`\`\`terraform
+            ${process.env.PLAN || 'No plan output captured'}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
