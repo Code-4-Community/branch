@@ -6,6 +6,5 @@ resource "aws_db_instance" "branch_rds" {
   instance_class       = "db.t3.micro"
   username             = data.infisical_secrets.rds_folder.secrets["username"].value
   password             = data.infisical_secrets.rds_folder.secrets["password"].value
-  parameter_group_name = "default.postgres17.6"
   skip_final_snapshot  = true
 }
