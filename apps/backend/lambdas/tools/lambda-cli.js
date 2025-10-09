@@ -33,9 +33,6 @@ function overwriteFile(target, content) {
   fs.writeFileSync(target, content, 'utf8');
 }
 
-function toTitle(name) {
-  return name.replace(/[-_/]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
-}
 
 // Templates
 function templatePackageJson() {
@@ -86,7 +83,7 @@ info:
   title: ${title} (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:3000/${title}
 paths:
   /health:
     get:
@@ -502,8 +499,7 @@ function addRouteToHandler(handlerPath, method, apiPath, options = {}) {
       if (part.startsWith('{') && part.endsWith('}')) {
         const paramName = part.slice(1, -1);
         extractions.push(
-          `const ${paramName} = normalizedPath.split('/')[${
-            index + 1
+          `const ${paramName} = normalizedPath.split('/')[${index + 1
           }];\n      if (!${paramName}) return json(400, { message: '${paramName} is required' });`,
         );
       }
@@ -553,9 +549,8 @@ function addRouteToHandler(handlerPath, method, apiPath, options = {}) {
     ).length;
     const pathPrefix = apiPath.split('{')[0]; // Get part before first parameter
 
-    matchCondition = `normalizedPath.startsWith('${pathPrefix}') && normalizedPath.split('/').length === ${
-      pathParts.length + 1
-    }`;
+    matchCondition = `normalizedPath.startsWith('${pathPrefix}') && normalizedPath.split('/').length === ${pathParts.length + 1
+      }`;
   } else {
     // For static paths, use exact match
     matchCondition = `normalizedPath === '${apiPath}'`;
@@ -700,7 +695,7 @@ function cmdInitHandler(nameArg) {
 
   writeFileIfAbsent(pkgPath, templatePackageJson());
   writeFileIfAbsent(tsconfigPath, templateTsconfig());
-  writeFileIfAbsent(openapiPath, templateOpenApiYaml(toTitle(nameArg)));
+  writeFileIfAbsent(openapiPath, templateOpenApiYaml(nameArg));
   writeFileIfAbsent(swaggerUtilsPath, templateSwaggerUtils());
   writeFileIfAbsent(devServerPath, templateDevServer(nameArg));
   writeFileIfAbsent(handlerPath, templateHandlerTsClean());
