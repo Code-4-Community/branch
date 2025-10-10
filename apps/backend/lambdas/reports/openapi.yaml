@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: Reports (Local)
+  title: reports (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:3000/reports
 paths:
   /health:
     get:
