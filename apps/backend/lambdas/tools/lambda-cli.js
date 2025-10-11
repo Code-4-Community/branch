@@ -44,6 +44,7 @@ function templatePackageJson() {
   "scripts": {
     "dev": "ts-node --transpile-only dev-server.ts",
     "build": "tsc",
+    "test": "jest",
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {
@@ -53,7 +54,9 @@ function templatePackageJson() {
     "typescript": "^5.4.5",
     "js-yaml": "^4.1.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "jest":"^30.2.0"
+  }
 }
 `;
 }
@@ -135,6 +138,14 @@ export function getSwaggerHtml(specUrl: string): string {
 }
 `;
 }
+
+function templateJestSetup(handlerName){
+  return `
+test("test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/${handlerName}/health")
+  expect(res.status).toBe(200);
+});
+`}
 
 function templateDevServer(handlerName) {
   return `import { handler } from './handler';
@@ -692,6 +703,8 @@ function cmdInitHandler(nameArg) {
   const handlerPath = path.join(baseDir, 'handler.ts');
   const swaggerUtilsPath = path.join(baseDir, 'swagger-utils.ts');
   const devServerPath = path.join(baseDir, 'dev-server.ts');
+  fs.mkdirSync(path.join(baseDir, 'test'));
+  const testPath = path.join(baseDir, 'test/example.test.ts')
 
   writeFileIfAbsent(pkgPath, templatePackageJson());
   writeFileIfAbsent(tsconfigPath, templateTsconfig());
@@ -699,6 +712,7 @@ function cmdInitHandler(nameArg) {
   writeFileIfAbsent(swaggerUtilsPath, templateSwaggerUtils());
   writeFileIfAbsent(devServerPath, templateDevServer(nameArg));
   writeFileIfAbsent(handlerPath, templateHandlerTsClean());
+  writeFileIfAbsent(testPath, templateJestSetup(nameArg));
 
   log(`Created handler at ${baseDir} `);
   log('Next:');
