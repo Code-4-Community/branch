@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: users (Local)
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/users
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /users/{userId}:
+    patch:
+      summary: PATCH /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                isAdmin:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
