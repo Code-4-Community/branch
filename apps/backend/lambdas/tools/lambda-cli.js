@@ -141,7 +141,7 @@ export function getSwaggerHtml(specUrl: string): string {
 
 function templateJestSetup(handlerName){
   return `
-test("test 🌞", async () => {
+test("health test 🌞", async () => {
   let res = await fetch("http://localhost:3000/${handlerName}/health")
   expect(res.status).toBe(200);
 });
