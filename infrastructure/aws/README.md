@@ -23,6 +23,9 @@ No modules.
 | Name | Type |
 |------|------|
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
+| [aws_db_subnet_group.branch_rds_subnet_group](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_subnet_group) | resource |
+| [aws_s3_bucket.c4c_demo](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
+| [aws_subnets.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/subnets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
 ## Inputs
@@ -35,5 +38,8 @@ No modules.
 
 ## Outputs
 
-No outputs.
+| Name | Description |
+|------|-------------|
+| <a name="output_rds_endpoint"></a> [rds\_endpoint](#output\_rds\_endpoint) | RDS instance endpoint |
+| <a name="output_rds_port"></a> [rds\_port](#output\_rds\_port) | RDS instance port |
 <!-- END_TF_DOCS -->
