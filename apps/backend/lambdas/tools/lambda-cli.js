@@ -33,9 +33,6 @@ function overwriteFile(target, content) {
   fs.writeFileSync(target, content, 'utf8');
 }
 
-function toTitle(name) {
-  return name.replace(/[-_/]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
-}
 
 // Templates
 function templatePackageJson() {
@@ -47,6 +44,7 @@ function templatePackageJson() {
   "scripts": {
     "dev": "ts-node --transpile-only dev-server.ts",
     "build": "tsc",
+    "test": "jest",
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {
@@ -56,7 +54,9 @@ function templatePackageJson() {
     "typescript": "^5.4.5",
     "js-yaml": "^4.1.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "jest":"^30.2.0"
+  }
 }
 `;
 }
@@ -86,7 +86,7 @@ info:
   title: ${title} (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:3000/${title}
 paths:
   /health:
     get:
@@ -138,6 +138,14 @@ export function getSwaggerHtml(specUrl: string): string {
 }
 `;
 }
+
+function templateJestSetup(handlerName){
+  return `
+test("health test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/${handlerName}/health")
+  expect(res.status).toBe(200);
+});
+`}
 
 function templateDevServer(handlerName) {
   return `import { handler } from './handler';
@@ -502,8 +510,7 @@ function addRouteToHandler(handlerPath, method, apiPath, options = {}) {
       if (part.startsWith('{') && part.endsWith('}')) {
         const paramName = part.slice(1, -1);
         extractions.push(
-          `const ${paramName} = normalizedPath.split('/')[${
-            index + 1
+          `const ${paramName} = normalizedPath.split('/')[${index + 1
           }];\n      if (!${paramName}) return json(400, { message: '${paramName} is required' });`,
         );
       }
@@ -553,9 +560,8 @@ function addRouteToHandler(handlerPath, method, apiPath, options = {}) {
     ).length;
     const pathPrefix = apiPath.split('{')[0]; // Get part before first parameter
 
-    matchCondition = `normalizedPath.startsWith('${pathPrefix}') && normalizedPath.split('/').length === ${
-      pathParts.length + 1
-    }`;
+    matchCondition = `normalizedPath.startsWith('${pathPrefix}') && normalizedPath.split('/').length === ${pathParts.length + 1
+      }`;
   } else {
     // For static paths, use exact match
     matchCondition = `normalizedPath === '${apiPath}'`;
@@ -697,13 +703,16 @@ function cmdInitHandler(nameArg) {
   const handlerPath = path.join(baseDir, 'handler.ts');
   const swaggerUtilsPath = path.join(baseDir, 'swagger-utils.ts');
   const devServerPath = path.join(baseDir, 'dev-server.ts');
+  fs.mkdirSync(path.join(baseDir, 'test'));
+  const testPath = path.join(baseDir, 'test/example.test.ts')
 
   writeFileIfAbsent(pkgPath, templatePackageJson());
   writeFileIfAbsent(tsconfigPath, templateTsconfig());
-  writeFileIfAbsent(openapiPath, templateOpenApiYaml(toTitle(nameArg)));
+  writeFileIfAbsent(openapiPath, templateOpenApiYaml(nameArg));
   writeFileIfAbsent(swaggerUtilsPath, templateSwaggerUtils());
   writeFileIfAbsent(devServerPath, templateDevServer(nameArg));
   writeFileIfAbsent(handlerPath, templateHandlerTsClean());
+  writeFileIfAbsent(testPath, templateJestSetup(nameArg));
 
   log(`Created handler at ${baseDir} `);
   log('Next:');
