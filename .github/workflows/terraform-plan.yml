@@ -140,7 +140,7 @@ jobs:
             - Auto-formatted .tf files with terraform fmt
             - Updated README.md with terraform-docs
 
-            Co-authored-by: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>"
+            Co-authored-by: ${{ github.event.pull_request.user.login }} <${{ github.event.pull_request.user.login }}@users.noreply.github.com>"
 
             git push
           fi
@@ -211,6 +211,18 @@ jobs:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
           TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
+      - name: Show Terraform Plan Output in Workflow
+        if: always()
+        run: |
+          echo "=== Terraform Plan Output (${{ matrix.directory }}) ==="
+          if [ -f plan_output.txt ]; then
+            cat plan_output.txt
+          else
+            echo "No plan output file found"
+          fi
+          echo "=== End Terraform Plan Output ==="
+        working-directory: ${{ matrix.directory }}
+
       - name: Delete old plan comments
         uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
@@ -276,13 +288,36 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            let planOutput = 'No plan output captured';
+            try {
+              // Read from the existing plan_output.txt file
+              const planFile = path.join('${{ matrix.directory }}', 'plan_output.txt');
+              if (fs.existsSync(planFile)) {
+                planOutput = fs.readFileSync(planFile, 'utf8');
+                console.log('Successfully read plan output from plan_output.txt');
+              } else {
+                console.log('plan_output.txt not found');
+              }
+            } catch (error) {
+              console.log('Error reading plan output file:', error.message);
+            }
+            
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
 
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+            <details><summary>Show Error Details</summary>
 
-            Check the workflow logs for more details.`;
+            \`\`\`terraform
+            ${planOutput}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.event.pull_request.user.login }}, Action: \`${{ github.event_name }}\`*`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
