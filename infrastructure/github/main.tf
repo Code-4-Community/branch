@@ -43,7 +43,6 @@ resource "github_branch_protection" "main" {
   enforce_admins = false
 }
 
-
 resource "github_repository_collaborator" "collaborators" {
   for_each   = { for c in var.repository_collaborators : c.username => c }
   repository = github_repository.branch.name
