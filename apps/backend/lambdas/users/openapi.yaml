@@ -25,3 +25,10 @@ paths:
       responses:
         '200':
           description: OK
+
+  /users:
+    get:
+      summary: GET /users
+      responses:
+        '200':
+          description: OK
