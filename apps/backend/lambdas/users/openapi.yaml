@@ -22,13 +22,15 @@ paths:
   /users:
     get:
       summary: GET /users
-      responses:
-        '200':
-          description: OK
-
-  /users:
-    get:
-      summary: GET /users
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
       responses:
         '200':
           description: OK

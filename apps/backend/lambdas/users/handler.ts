@@ -11,6 +11,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
+        console.log('DEBUG - rawPath:', rawPath, 'normalizedPath:', normalizedPath, 'method:', method);
+
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
@@ -20,7 +22,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // CLI-generated routes will be inserted here
     
     // GET /users
-    if (normalizedPath === '/users' && method === 'GET') {
+    if ((normalizedPath === '/users' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
       // TODO: Add your business logic here
         const queryParams = event.queryStringParameters || {};
         const page = queryParams.page ? parseInt(queryParams.page, 10) : null;
@@ -61,7 +63,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       
       console.log(users);
       return json(200, { users });
-    }
+    } 
     // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
