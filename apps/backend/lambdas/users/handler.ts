@@ -22,13 +22,45 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // GET /users
     if (normalizedPath === '/users' && method === 'GET') {
       // TODO: Add your business logic here
+        const queryParams = event.queryStringParameters || {};
+        const page = queryParams.page ? parseInt(queryParams.page, 10) : null;
+        const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : null;
+
+        if (page && limit) {
+            const offset = (page - 1) * limit;
+
+            const totalCount = await db
+                .selectFrom('branch.users')
+                .select(db.fn.count('user_id').as('count'))
+                .executeTakeFirst();
+
+            const totalUsers = Number(totalCount?.count || 0);
+            const totalPages = Math.ceil(totalUsers / limit);
+
+            const users = await db
+                .selectFrom('branch.users')
+                .selectAll()
+                .limit(limit)
+                .offset(offset)
+                .execute();
+            return json(200, {
+                users,
+                pagination: {
+                    page,
+                    limit,
+                    totalUsers,
+                    totalPages
+                }
+            });
+        }
+
         const users = await db
-        .selectFrom('branch.users')
-        .selectAll()
-        .execute();
+            .selectFrom('branch.users')
+            .selectAll()
+            .execute();
       
       console.log(users);
-      return json(200, { ok: true, route: 'GET /users' });
+      return json(200, { users });
     }
     // <<< ROUTES-END 
 
