@@ -66,6 +66,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { users });
     } 
 
+    // GET /{userId}
     if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'GET') {
       const userId = normalizedPath.split('/')[1];
       if (!userId) return json(400, { message: 'userId is required' });
