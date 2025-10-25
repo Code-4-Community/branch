@@ -1,3 +1,52 @@
+
+test("health test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/health")
+  expect(res.status).toBe(200);
+});
+
+test("patch user test 🌞", async () => {
+  const originalRes = await fetch("http://localhost:3000/users/1");
+  expect(originalRes.status).toBe(200);
+  const originalBody = await originalRes.json().then(r => r.body);
+
+  try {
+    let res = await fetch("http://localhost:3000/users/1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "John Branch",
+        email: "mrbranch@example.com",
+        isAdmin: false
+      })
+    })
+    expect(res.status).toBe(200);
+    let body = await res.json().then(r => r.body);
+    expect(body.email).toBe("mrbranch@example.com");
+    expect(body.name).toBe("John Branch");
+    expect(body.isAdmin).toBe(false);
+  } finally {
+    await fetch("http://localhost:3000/users/1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: originalBody.name,
+        email: originalBody.email,
+        isAdmin: originalBody.isAdmin
+      })
+    });
+  }
+});
+
+
+test("patch user 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/4", {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: "John Doe",
+      email: "john.doe@example.com"
+    })
+  })
+  expect(res.status).toBe(404);
+});
+
 test("get users test", async () => {
   let res = await fetch("http://localhost:3000/users")
   expect(res.status).toBe(200);
