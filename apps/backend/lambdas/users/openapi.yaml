@@ -34,9 +34,9 @@ paths:
       responses:
         '200':
           description: OK
-  /users/{userId}:
+  /{userId}:
     patch:
-      summary: PATCH /users/{userId}
+      summary: PATCH /{userId}
       parameters:
         - in: path
           name: userId
