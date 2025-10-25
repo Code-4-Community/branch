@@ -18,3 +18,31 @@ paths:
                 properties:
                   ok:
                     type: boolean
+
+  /users/{userId}:
+    patch:
+      summary: PATCH /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                isAdmin:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: User not found
