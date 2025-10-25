@@ -21,6 +21,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     
+
     // GET /users
     if ((normalizedPath === '/users' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
       // TODO: Add your business logic here
@@ -64,6 +65,54 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       console.log(users);
       return json(200, { users });
     } 
+
+    if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'GET') {
+      const userId = normalizedPath.split('/')[1];
+      if (!userId) return json(400, { message: 'userId is required' });
+
+      const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+      if (!user) return json(404, { message: 'User not found' });
+      
+      return json(200, { 
+        ok: true, 
+        route: 'GET /users/{userId}', 
+        pathParams: { userId }, 
+        body: { 
+          userId: user.user_id,
+          email: user.email, 
+          name: user.name, 
+          isAdmin: user.is_admin 
+        } 
+      });
+    }
+    
+    // PATCH /{userId} (dev server strips /users prefix)
+    if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'PATCH') {
+      const userId = normalizedPath.split('/')[1];
+      if (!userId) return json(400, { message: 'userId is required' });
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+
+      // make sure user exists
+      let user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+      if (!user) return json(404, { message: 'User not found' });
+
+      // vars to update
+      let email = body.email as string;
+      let name = body.name as string;
+      let isAdmin = body.isAdmin as boolean;
+
+      // update
+      await db.updateTable('branch.users')
+               .set({ email, name, is_admin: isAdmin })
+               .where('user_id', '=', Number(userId))
+               .execute();
+
+      // get updated user
+      let updatedUser = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+
+      return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
+    }
+
     // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });

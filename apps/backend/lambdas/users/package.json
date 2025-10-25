@@ -13,13 +13,13 @@
     "@types/aws-lambda": "^8.10.131",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.11.30",
-    "jest": "^29.7.0",
+    "@types/pg": "^8.15.5",
     "js-yaml": "^4.1.0",
-    "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "jest": "^30.2.0",
     "kysely": "^0.28.8",
     "pg": "^8.16.3"
   }
