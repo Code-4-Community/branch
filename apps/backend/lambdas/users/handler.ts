@@ -65,7 +65,22 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
     }
-    // <<< ROUTES-END 
+    
+    // DELETE /users/{userId}
+    if (normalizedPath.startsWith('/users/') && normalizedPath.split('/').length === 3 && method === 'DELETE') {
+      const userId = normalizedPath.split('/')[2];
+      if (!userId) return json(400, { message: 'userId is required' });
+      // TODO: Add your business logic here
+
+      const deleted = db.deleteFrom('users').where('userID', '=', userId).execute();
+
+      if (deleted.numDeletedRows === 0) {
+        return json(404, { message: 'User not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /users/{userId}', pathParams: { userId } });
+    }
+    // <<< ROUTES-END  
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
