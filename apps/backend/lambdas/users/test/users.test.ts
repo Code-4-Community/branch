@@ -3,11 +3,11 @@ import path from 'path';
 import { Pool } from 'pg';
 
 const pool = new Pool({
-  host: process.env.DB_HOST ?? 'localhost',
-  port: Number(process.env.DB_PORT ?? 5432),
-  user: process.env.DB_USER ?? 'branch_dev',
-  password: process.env.DB_PASSWORD ?? 'password',
-  database: process.env.DB_NAME ?? 'branch_db',
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
   ssl: false,
 });
 
