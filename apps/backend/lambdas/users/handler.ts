@@ -43,6 +43,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             const users = await db
                 .selectFrom('branch.users')
                 .selectAll()
+                .orderBy('user_id', 'asc')
                 .limit(limit)
                 .offset(offset)
                 .execute();
