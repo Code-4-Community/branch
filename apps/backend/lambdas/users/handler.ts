@@ -86,6 +86,12 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'email, name, and isAdmin are required' });
       }
 
+      // check if user already exists
+      const existingUser = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+      if (existingUser) {
+        return json(409, { message: 'User already exists' });
+      }
+        
       // insert new user
       await db
         .insertInto('branch.users')

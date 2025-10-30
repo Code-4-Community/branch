@@ -19,7 +19,7 @@ paths:
                   ok:
                     type: boolean
 
-  /users/{userId}:
+  /{userId}:
     patch:
       summary: PATCH /users/{userId}
       parameters:
@@ -47,9 +47,14 @@ paths:
         '404':
           description: User not found
 
-  /users:
     post:
-      summary: POST /users
+      summary: POST /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -59,8 +64,14 @@ paths:
               properties:
                 name:
                   type: string
+                email:
+                  type: string
                 isAdmin:
                   type: boolean
       responses:
         '201':
           description: Success
+        '400':
+          description: Bad Request
+        '409':
+          description: Conflict
