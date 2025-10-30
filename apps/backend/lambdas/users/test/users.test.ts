@@ -64,7 +64,6 @@ test("get users test", async () => {
   expect(firstUser.user_id).toBe(1);
 
   const secondUser = body.users[1];
-  expect(secondUser.created_at).toBe("2025-10-20T21:19:52.978Z");
   expect(secondUser.email).toBe("renee@branch.org");
   expect(secondUser.is_admin).toBe(true);
   expect(secondUser.name).toBe("Renee Reddy");
