@@ -11,6 +11,24 @@ test("get projects test 🌞", async () => {
   console.log(body);
   expect(body.length).toBeGreaterThan(0);
 });
+
+test("get project by id test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/projects/1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.project_id).toBe(1);
+  expect(body.name).toContain("Project 1");
+});
+
+test("project get 400 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/projects/1000", {
+    method: "GET",
+  });
+  expect(res.status).toBe(404);
+  let body = await res.json();
+  expect(body.message).toBe("Project not found for id: 1000");
+});
 test("update project test 🌞", async () => {
   let res = await fetch("http://localhost:3000/projects/1", {
     method: "PUT",

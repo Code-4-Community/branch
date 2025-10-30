@@ -25,6 +25,16 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, projects);
     }
     
+    // GET /projects/{id}
+    if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'GET') {
+      const id = rawPath.split('/')[1];
+      if (!id) return json(400, { message: 'id is required' });
+      const project = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).selectAll().executeTakeFirst();
+      if (!project) return json(404, { message: `Project not found for id: ${id}` });
+      return json(200, project);
+    }
+    
+    
     // PUT /projects/{id}
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
       const id = rawPath.split('/')[1];
