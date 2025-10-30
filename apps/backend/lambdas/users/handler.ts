@@ -65,7 +65,41 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
     }
-    // <<< ROUTES-END 
+
+    // POST /{userId} // (dev server strips /users prefix)
+    if (
+      normalizedPath.startsWith('/') &&
+      normalizedPath.split('/').length === 2 &&
+      method === 'POST'
+    ) {
+      const userId = normalizedPath.split('/')[1];
+      if (!userId) return json(400, { message: 'userId is required' });
+      const body = event.body
+        ? (JSON.parse(event.body) as Record<string, unknown>)
+        : {};
+
+      // extract fields to create user
+      let email = body.email as string;
+      let name = body.name as string;
+      let isAdmin = body.isAdmin as boolean;
+      if (!email || !name || typeof isAdmin !== 'boolean') {
+        return json(400, { message: 'email, name, and isAdmin are required' });
+      }
+
+      // insert new user
+      await db
+        .insertInto('branch.users')
+        .values({ user_id: userId, email, name, is_admin: isAdmin })
+        .execute();
+
+      return json(201, {
+        ok: true,
+        route: 'POST /users',
+        pathParams: { userId },
+        body,
+      });
+    }
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

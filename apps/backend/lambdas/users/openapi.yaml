@@ -46,3 +46,21 @@ paths:
           description: OK
         '404':
           description: User not found
+
+  /users:
+    post:
+      summary: POST /users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                isAdmin:
+                  type: boolean
+      responses:
+        '201':
+          description: Success
