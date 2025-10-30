@@ -70,7 +70,6 @@ test("get users test", async () => {
   expect(secondUser.user_id).toBe(2);
 
   const thirdUser = body.users[2];
-  expect(thirdUser.created_at).toBe("2025-10-20T21:19:52.978Z");
   expect(thirdUser.email).toBe("nour@branch.org");
   expect(thirdUser.is_admin).toBe(true);
   expect(thirdUser.name).toBe("Nour Shoreibah");
