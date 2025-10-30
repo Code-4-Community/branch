@@ -70,11 +70,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (normalizedPath.startsWith('/users/') && normalizedPath.split('/').length === 3 && method === 'DELETE') {
       const userId = normalizedPath.split('/')[2];
       if (!userId) return json(400, { message: 'userId is required' });
-      // TODO: Add your business logic here
 
-      const deleted = db.deleteFrom('users').where('userID', '=', userId).execute();
+      const deleted = await db.deleteFrom('branch.users').where('user_id', '=', userId).execute();
 
-      if (deleted.numDeletedRows === 0) {
+      if (!(deleted)) {
         return json(404, { message: 'User not found' });
       }
 
