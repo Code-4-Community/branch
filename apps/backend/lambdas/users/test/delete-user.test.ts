@@ -36,15 +36,15 @@ test("delete user test 🌞", async () => {
   console.log(res);
 
   expect(res.status).toBe(200);
-  // let body = await res.json().then(r => r.body);
+  let body = await res.json();
 
 
-  // expect(body.ok).toBe(true);
-  // expect(body.route).toBe("DELETE /users/{userId}");
-  // expect(body.pathParams.userId).toBe("1");
+  expect(body.ok).toBe(true);
+  expect(body.route).toBe("DELETE /users/{userId}");
+  expect(body.pathParams.userId).toBe("1");
 
-  // let getRes = await fetch("http://localhost:3000/users/users/1");
-  // expect(getRes.status).toBe(404);
+  let getRes = await fetch("http://localhost:3000/users/users/1");
+  expect(getRes.status).toBe(404);
 });
 
 test("delete user 404 test 🌞", async () => {
