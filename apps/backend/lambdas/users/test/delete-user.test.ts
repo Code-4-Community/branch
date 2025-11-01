@@ -43,8 +43,10 @@ test("delete user test 🌞", async () => {
   expect(body.route).toBe("DELETE /users/{userId}");
   expect(body.pathParams.userId).toBe("1");
 
-  let getRes = await fetch("http://localhost:3000/users/users/1");
+  let getRes = await fetch("http://localhost:3000/users/1");
   expect(getRes.status).toBe(404);
+  let getbody = await getRes.json();
+  expect(getbody.message).toBe('User not found');
 });
 
 test("delete user 404 test 🌞", async () => {
@@ -53,4 +55,38 @@ test("delete user 404 test 🌞", async () => {
   });
 
   expect(res.status).toBe(404);
+  let body = await res.json();
+  expect(body.message).toBe('User not found');
+});
+
+test("delete same user twice returns 404 on second attempt", async () => {
+  let res1 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res1.status).toBe(200);
+
+  let res2 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res2.status).toBe(404);
+  let body = await res2.json();
+  expect(body.message).toBe('User not found');
+});
+
+test("delete multiple users", async () => {
+  let res1 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res1.status).toBe(200);
+
+  let res2 = await fetch("http://localhost:3000/users/2", {
+    method: "DELETE"
+  });
+  expect(res2.status).toBe(200);
+
+  let check1 = await fetch("http://localhost:3000/users/1");
+  expect(check1.status).toBe(404);
+
+  let check2 = await fetch("http://localhost:3000/users/2");
+  expect(check2.status).toBe(404);
 });
