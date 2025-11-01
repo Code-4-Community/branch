@@ -46,8 +46,6 @@ paths:
           description: OK
         '404':
           description: User not found
-
-  /users/{userId}:
     delete:
       summary: DELETE /users/{userId}
       parameters:

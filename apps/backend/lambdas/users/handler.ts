@@ -67,13 +67,15 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
     
     // DELETE /users/{userId}
-    if (normalizedPath.startsWith('/users/') && normalizedPath.split('/').length === 3 && method === 'DELETE') {
-      const userId = normalizedPath.split('/')[2];
+    if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'DELETE') {
+      const userId = normalizedPath.split('/')[1];  // Change from [2] to [1]
       if (!userId) return json(400, { message: 'userId is required' });
+      console.log(userId)
 
-      const deleted = await db.deleteFrom('branch.users').where('user_id', '=', userId).execute();
-
-      if (!(deleted)) {
+      const deleted = await db.deleteFrom('branch.users').where('user_id', '=', Number(userId)).execute();
+      console.log(deleted)
+    
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
         return json(404, { message: 'User not found' });
       }
 

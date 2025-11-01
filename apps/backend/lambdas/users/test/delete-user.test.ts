@@ -1,59 +1,56 @@
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
 
-// test("health test 🌞", async () => {
-//   let res = await fetch("http://localhost:3000/users/health")
-//   expect(res.status).toBe(200);
-// });
+const pool = new Pool({
+  host: process.env.DB_HOST ?? 'localhost',
+  port: Number(process.env.DB_PORT ?? 5432),
+  user: process.env.DB_USER ?? 'branch_dev',
+  password: process.env.DB_PASSWORD ?? 'password',
+  database: process.env.DB_NAME ?? 'branch_db',
+  ssl: false,
+});
 
-// test("patch user test 🌞", async () => {
-//   let res = await fetch("http://localhost:3000/users/1", {
-//     method: "PATCH",
-//     body: JSON.stringify({
-//       name: "John Branch",
-//       email: "mrbranch@example.com",
-//       isAdmin: false
-//     })
-//   })
-//   expect(res.status).toBe(200);
-//   let body = await res.json().then(r => r.body);
-//   console.log(body);
-//   expect(body.email).toBe("mrbranch@example.com");
-//   expect(body.name).toBe("John Branch");
-//   expect(body.isAdmin).toBe(false);
-// });
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
+beforeEach(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+});
 
 
-// test("patch user 404 test 🌞", async () => {
-//   let res = await fetch("http://localhost:3000/users/4", {
-//     method: "PATCH",
-//     body: JSON.stringify({
-//       name: "John Doe",
-//       email: "john.doe@example.com"
-//     })
-//   })
-//   expect(res.status).toBe(404);
-// });
+test("delete user test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
 
-// test("delete user test 🌞", async () => {
-//   let res = await fetch("http://localhost:3000/1", {
-//     method: "DELETE"
-//   });
+  console.log(res);
 
-//   expect(res.status).toBe(200);
+  expect(res.status).toBe(200);
+  // let body = await res.json().then(r => r.body);
 
-//   let body = await res.json().then(r => r.body);
 
-//   expect(body.ok).toBe(true);
-//   expect(body.route).toBe("DELETE /users/{userId}");
-//   expect(body.pathParams.userId).toBe("1");
-// });
+  // expect(body.ok).toBe(true);
+  // expect(body.route).toBe("DELETE /users/{userId}");
+  // expect(body.pathParams.userId).toBe("1");
 
-// test("delete user 404 test 🌞", async () => {
-//   let res = await fetch("http://localhost:3000/9999", {
-//     method: "DELETE"
-//   });
+  // let getRes = await fetch("http://localhost:3000/users/users/1");
+  // expect(getRes.status).toBe(404);
+});
 
-//   expect(res.status).toBe(404);
+test("delete user 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/9999", {
+    method: "DELETE"
+  });
 
-//   let body = await res.json().then(r => r.body);
-//   expect(body.message).toBe("User not found");
-// });
+  expect(res.status).toBe(404);
+});
