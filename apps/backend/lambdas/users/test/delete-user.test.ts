@@ -90,3 +90,15 @@ test("delete multiple users", async () => {
   let check2 = await fetch("http://localhost:3000/users/2");
   expect(check2.status).toBe(404);
 });
+
+test("delete user 1 does not affect user 2", async () => {
+  // Delete user 1
+  await fetch("http://localhost:3000/users/1", { method: "DELETE" });
+
+  // User 2 should still exist
+  let res = await fetch("http://localhost:3000/users/2");
+  expect(res.status).toBe(200);
+  
+  let body = await res.json();
+  expect(body.body.email).toBe('renee@branch.org');
+});
