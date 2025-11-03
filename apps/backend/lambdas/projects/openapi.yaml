@@ -18,3 +18,16 @@ paths:
                 properties:
                   ok:
                     type: boolean
+
+  /projects/{id}/donors:
+    get:
+      summary: GET /projects/{id}/donors
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK

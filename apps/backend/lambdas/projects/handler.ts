@@ -16,7 +16,25 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    // <<< ROUTES-END
+    
+    // GET /projects/{id}/donors
+    if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && method === 'GET') {
+      const id = normalizedPath.split('/')[2];
+      if (!id) return json(400, { message: 'id is required' });
+      // TODO: Add your business logic here
+      /*const projects = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).innerJoin(
+      "branch.donors_proj",
+      "branch.donors_proj.projectID",
+      "branch.projects.project_id"
+      )
+      .innerJoin(
+        "branch.donors",
+        "branch.donors.donorID",
+        "branch.donors_proj.donorID"
+      ).selectAll().executeTakeFirst(); */
+      return json(200, { ok: true, route: 'GET /projects/{id}/donors', pathParams: { id } });
+    }
+    // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
