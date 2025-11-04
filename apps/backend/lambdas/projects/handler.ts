@@ -1,4 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import db from './db';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -16,7 +17,27 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    // <<< ROUTES-END
+    
+    // GET /projects/{id}/members
+    if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && method === 'GET') {
+      const id = normalizedPath.split('/')[2];
+      if (!id) return json(400, { message: 'id is required' });
+      const users = await db
+      .selectFrom('branch.project_memberships as pm')
+      .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
+      .select([
+        'u.user_id',
+        'u.name',
+        'u.email',
+        'pm.role'
+      ])
+      .where('pm.project_id', '=', id)
+      .execute();
+      return json(200, { ok: true, route: 'GET /projects/{id}/members', pathParams: { id }, body: {
+        users
+    }});
+    }
+    // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
