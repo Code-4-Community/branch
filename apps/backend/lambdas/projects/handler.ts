@@ -1,4 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import db from './db';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -22,17 +23,16 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const id = normalizedPath.split('/')[2];
       if (!id) return json(400, { message: 'id is required' });
       // TODO: Add your business logic here
-      /*const projects = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).innerJoin(
-      "branch.donors_proj",
-      "branch.donors_proj.projectID",
+      const donors = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).innerJoin(
+      "branch.project_donations",
+      "branch.project_donations.project_id",
       "branch.projects.project_id"
-      )
-      .innerJoin(
-        "branch.donors",
-        "branch.donors.donorID",
-        "branch.donors_proj.donorID"
-      ).selectAll().executeTakeFirst(); */
-      return json(200, { ok: true, route: 'GET /projects/{id}/donors', pathParams: { id } });
+    ).innerJoin(
+      "branch.donors",
+      "branch.donors.donor_id",
+      "branch.project_donations.donor_id"
+    ).selectAll().execute();
+      return json(200, { donors });
     }
     // <<< ROUTES-END 
 
