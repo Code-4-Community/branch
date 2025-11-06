@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info:
+  title: donors (Local)
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/donors
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /donors:
+    get:
+      summary: GET /donors
+      responses:
+        '200':
+          description: OK
