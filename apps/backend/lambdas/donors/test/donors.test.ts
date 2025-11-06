@@ -33,7 +33,7 @@ test("health test 🌞", async () => {
 });
 
 test("Status check for get all donors when donors exists 🌞", async () => {
-  let res = await fetch("http://localhost:3000/donors/donors", {
+  let res = await fetch("http://localhost:3000/donors", {
     method: "GET"
   })
 
@@ -43,15 +43,13 @@ test("Status check for get all donors when donors exists 🌞", async () => {
 });
 
 test("Content check for get all donors when donors exists 🌞", async () => {
-  let res = await fetch("http://localhost:3000/donors/donors", {
+  let res = await fetch("http://localhost:3000/donors", {
     method: "GET"
   })
 
   let body = await res.json();
 
   expect(res.status).toBe(200);
-  expect(body.ok).toBe(true);
-  expect(body.route).toBe("GET /donors")
-  expect(Array.isArray(body.body)).toBe(true);
-  expect(body.body.length).toBe(3);
+  expect(Array.isArray(body)).toBe(true);
+  expect(body.length).toBe(3);
 });

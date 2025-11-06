@@ -3,9 +3,9 @@ info:
   title: donors (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000/donors
+  - url: http://localhost:3000/
 paths:
-  /health:
+  /donors/health:
     get:
       summary: Health check
       responses:

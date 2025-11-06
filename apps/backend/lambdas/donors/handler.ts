@@ -19,9 +19,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // CLI-generated routes will be inserted here
     
     // GET /donors
-    if (normalizedPath === '/donors' && method === 'GET') {
+    if (rawPath === '/' && method === 'GET') {
       const donors = await db.selectFrom("branch.donors").selectAll().execute()
-      return json(200, { ok: true, route: 'GET /donors', body: donors ?? [] });
+      return json(200, donors ?? []);
     }
     // <<< ROUTES-END 
 
