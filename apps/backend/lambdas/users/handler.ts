@@ -8,7 +8,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // API Gateway: event.path, event.httpMethod
     // Function URL: event.rawPath, event.requestContext.http.method
     const rawPath = event.rawPath || event.path || '/';
-    const normalizedPath = rawPath.replace(/\/$/, '');
+    let normalizedPath = rawPath.replace(/\/$/, '');
+    if (normalizedPath.length === 0) {
+      normalizedPath = '/';
+    }
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
         console.log('DEBUG - rawPath:', rawPath, 'normalizedPath:', normalizedPath, 'method:', method);
