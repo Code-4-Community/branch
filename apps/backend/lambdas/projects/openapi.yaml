@@ -18,3 +18,60 @@ paths:
                 properties:
                   ok:
                     type: boolean
+
+  /projects:
+    get:
+      summary: GET /projects
+      responses:
+        '200':
+          description: OK
+
+  /projects/{id}:
+    get:
+      summary: GET /projects/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+
+  /projects/{id}:
+    put:
+      summary: PUT /projects/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+
+  /projects/{id}:
+    put:
+      summary: PUT /projects/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                total_budget:
+                  type: number
+      responses:
+        '200':
+          description: OK
