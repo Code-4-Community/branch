@@ -92,7 +92,7 @@ export class ExpenditureValidationUtils {
 
     static validateExpenditureInput(body: Record<string, unknown>): ExpenditureInput | Error {
         // Validate required fields
-        const projectId = this.validateProjectId(body.projectId);
+        const projectId = this.validateProjectId(body.projectID);
         if (projectId instanceof Error) {
             return projectId;
         }
