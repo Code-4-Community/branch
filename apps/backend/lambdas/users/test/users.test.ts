@@ -173,7 +173,7 @@ test("POST user success case", async () => {
     method: "POST",
     body: JSON.stringify({
       name: "Jane Branch",
-      email: "jane1@branch.com",
+      email: "jane@branch.com",
       isAdmin: true
     })
   });
