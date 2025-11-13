@@ -18,3 +18,25 @@ paths:
                 properties:
                   ok:
                     type: boolean
+
+  /expenditures:
+    post:
+      summary: POST /expenditures
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enteredBy:
+                  type: number
+                amount:
+                  type: number
+                description:
+                  type: string
+                projectID:
+                  type: number
+      responses:
+        '201':
+          description: Success
