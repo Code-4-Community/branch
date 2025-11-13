@@ -24,6 +24,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const projects = await db.selectFrom("branch.projects").selectAll().execute();
       return json(200, projects);
     }
+
+    // GET /projects
+    if (rawPath === '/test' && method === 'GET') {
+      return json(200, { message: 'Hello, World!' });
+    }
     
     // <<< ROUTES-END    
 
