@@ -18,7 +18,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Get changed files
+      - name: Get changed files and extract Lambda directories
         id: changed-files
         uses: tj-actions/changed-files@v44
         with:
@@ -29,19 +29,6 @@ jobs:
             **/package.json
             **/yarn.lock
           files_separator: "\n"
-          files_yaml: |
-            lambda:
-              - '**/*.js'
-              - '**/*.ts'
-              - '**/*.json'
-              - '**/package.json'
-              - '**/yarn.lock'
-
-      - name: List all changed files
-        if: steps.changed-files.outputs.any_changed == 'true'
-        run: |
-          echo "Changed Lambda files:"
-          echo "${{ steps.changed-files.outputs.all_changed_files }}"
 
       - name: Extract unique Lambda directories
         id: set-dirs
@@ -105,23 +92,14 @@ jobs:
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
           echo "$TEST_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          echo "=== Jest Test Output (${{ matrix.directory }}) ==="
+          cat test_output.txt
+          echo "=== End Jest Test Output ==="
           exit $TEST_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
         env:
           NODE_ENV: test
-
-      - name: Show Jest Output in Workflow
-        if: always()
-        run: |
-          echo "=== Jest Test Output (${{ matrix.directory }}) ==="
-          if [ -f test_output.txt ]; then
-            cat test_output.txt
-          else
-            echo "No test output file found"
-          fi
-          echo "=== End Jest Test Output ==="
-        working-directory: ${{ matrix.directory }}
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -132,36 +110,49 @@ jobs:
           name: lambda-coverage-${{ matrix.directory }}
           fail_ci_if_error: false
 
-      - name: Archive test results
+      - name: Upload test results
+        if: always()
+        run: |
+          ARTIFACT_NAME="test-results-$(echo '${{ matrix.directory }}' | tr '/' '-')-node-$(echo '${{ matrix.node-version }}' | tr '.' '-')"
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
+        continue-on-error: true
+
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.directory }}-node-${{ matrix.node-version }}
+          name: ${{ env.ARTIFACT_NAME }}
           path: |
             ${{ matrix.directory }}/coverage/
             ${{ matrix.directory }}/jest-results.json
             ${{ matrix.directory }}/test_output.txt
           retention-days: 30
 
-      - name: Delete old test comments
-        uses: actions/github-script@v7
+      - name: Comment PR with test results
         if: github.event_name == 'pull_request' && matrix.node-version == '20.x'
+        env:
+          TEST_OUTPUT: ${{ steps.jest.outputs.stdout }}
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Delete old comments
             const comments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo
             });
-
+            
             const botComments = comments.data.filter(comment => {
               return comment.user.type === 'Bot' &&
                      comment.body.includes('#### Jest Tests') &&
                      comment.body.includes('`${{ matrix.directory }}`') &&
                      comment.body.includes('Node.js ${{ matrix.node-version }}');
             });
-
+            
             for (const comment of botComments) {
               await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
@@ -169,82 +160,50 @@ jobs:
                 comment_id: comment.id
               });
             }
-
-      - name: Comment PR - Success
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request' && steps.jest.outcome == 'success' && matrix.node-version == '20.x'
-        env:
-          TEST_OUTPUT: ${{ steps.jest.outputs.stdout }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const path = require('path');
             
+            // Create new comment
+            const isSuccess = '${{ steps.jest.outcome }}' === 'success';
             let coverageSummary = 'Coverage data not available';
-            try {
-              const coveragePath = path.join('${{ matrix.directory }}', 'coverage', 'coverage-summary.json');
-              if (fs.existsSync(coveragePath)) {
-                const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
-                const total = coverage.total;
-                coverageSummary = `
+            let testOutput = process.env.TEST_OUTPUT || 'No test output captured';
+            
+            if (isSuccess) {
+              try {
+                const coveragePath = path.join('${{ matrix.directory }}', 'coverage', 'coverage-summary.json');
+                if (fs.existsSync(coveragePath)) {
+                  const coverage = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
+                  const total = coverage.total;
+                  coverageSummary = `
             📊 **Coverage Summary:**
             - Statements: ${total.statements.pct}%
             - Branches: ${total.branches.pct}%
             - Functions: ${total.functions.pct}%
             - Lines: ${total.lines.pct}%`;
+                }
+              } catch (error) {
+                console.log('Error reading coverage:', error.message);
               }
-            } catch (error) {
-              console.log('Error reading coverage:', error.message);
+            } else {
+              try {
+                const testFile = path.join('${{ matrix.directory }}', 'test_output.txt');
+                if (fs.existsSync(testFile)) {
+                  testOutput = fs.readFileSync(testFile, 'utf8');
+                }
+              } catch (error) {
+                console.log('Error reading test output:', error.message);
+              }
             }
-
-            const output = `#### Jest Tests ✅ \`${{ matrix.directory }}\`
+            
+            const status = isSuccess ? '✅' : '❌';
+            const title = isSuccess ? 'Jest Tests ✅' : 'Jest Tests Failed ❌';
+            const detailsTitle = isSuccess ? 'Show Test Output' : 'Show Error Details';
+            
+            const output = `#### ${title} \`${{ matrix.directory }}\`
             #### Node.js Version 🟢 \`${{ matrix.node-version }}\`
             #### Test Status 🧪 \`${{ steps.jest.outcome }}\`
 
-            ${coverageSummary}
+            ${isSuccess ? coverageSummary : ''}
 
-            <details><summary>Show Test Output</summary>
-
-            \`\`\`
-            ${process.env.TEST_OUTPUT || 'No test output captured'}
-            \`\`\`
-
-            </details>
-
-            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
-
-      - name: Comment PR - Failure
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request' && steps.jest.outcome == 'failure' && matrix.node-version == '20.x'
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            
-            let testOutput = 'No test output captured';
-            try {
-              const testFile = path.join('${{ matrix.directory }}', 'test_output.txt');
-              if (fs.existsSync(testFile)) {
-                testOutput = fs.readFileSync(testFile, 'utf8');
-              }
-            } catch (error) {
-              console.log('Error reading test output:', error.message);
-            }
-            
-            const output = `#### Jest Tests Failed ❌ \`${{ matrix.directory }}\`
-            #### Node.js Version 🟢 \`${{ matrix.node-version }}\`
-            #### Test Status 🧪 \`${{ steps.jest.outcome }}\`
-
-            <details><summary>Show Error Details</summary>
+            <details><summary>${detailsTitle}</summary>
 
             \`\`\`
             ${testOutput}
@@ -261,7 +220,7 @@ jobs:
               body: output
             });
 
-      - name: Jest Test Status
+      - name: Fail job if tests failed
         if: steps.jest.outcome == 'failure'
         run: exit 1
 
