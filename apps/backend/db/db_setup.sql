@@ -58,6 +58,13 @@ CREATE TABLE expenditures (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE reports (
+    report_id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    object_url TEXT NOT NULL,
+    date_created DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
 INSERT INTO users (name, email, is_admin) VALUES
 ('Ashley Duggan', 'ashley@branch.org', TRUE),
 ('Renee Reddy', 'renee@branch.org', TRUE),
