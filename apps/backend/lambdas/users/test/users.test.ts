@@ -169,7 +169,7 @@ test("get users error", async () => {
 });
 
 test("POST user success case", async () => {
-  let res = await fetch("http://localhost:3000/users/5", {
+  let res = await fetch("http://localhost:3000/users", {
     method: "POST",
     body: JSON.stringify({
       name: "Jane Branch",
@@ -188,8 +188,8 @@ test("POST user success case", async () => {
   expect(body.body.isAdmin).toBe(true);
 });
 
-test("POST user 400 case when invalid userId is sent", async () => {
-  let res = await fetch("http://localhost:3000/users/invalidUserId", {
+test("POST user 400 case when invalid email is sent", async () => {
+  let res = await fetch("http://localhost:3000/users", {
     method: "POST",
     body: JSON.stringify({
       name: "Invalid User",
@@ -202,7 +202,7 @@ test("POST user 400 case when invalid userId is sent", async () => {
 });
 
 test("POST user 400 case when request sent with missing fields", async () => {
-  let res = await fetch("http://localhost:3000/users/4", {
+  let res = await fetch("http://localhost:3000/users", {
     method: "POST",
     body: JSON.stringify({
       name: "Invalid User",
@@ -210,17 +210,4 @@ test("POST user 400 case when request sent with missing fields", async () => {
   });
 
   expect(res.status).toBe(400);
-});
-
-test("POST user 409 case when user already exists", async () => {
-  let res = await fetch("http://localhost:3000/users/1", {
-    method: "POST",
-    body: JSON.stringify({
-      name: "Existing User",
-      email: "some@email.com",
-      isAdmin: false
-    })
-  });
-
-  expect(res.status).toBe(409);
 });

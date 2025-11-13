@@ -115,14 +115,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
     }
 
-    // POST /{userId} // (dev server strips /users prefix)
-    if (
-      normalizedPath.startsWith('/') &&
-      normalizedPath.split('/').length === 2 &&
-      method === 'POST'
-    ) {
-      const userId = normalizedPath.split('/')[1];
-      if (!userId) return json(400, { message: 'userId is required' });
+    // POST /users
+    if ((normalizedPath === '/users' || normalizedPath === '') && method === 'POST') {
       const body = event.body
         ? (JSON.parse(event.body) as Record<string, unknown>)
         : {};
@@ -135,23 +129,37 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'email, name, and isAdmin are required' });
       }
 
-      // check if user already exists
-      const existingUser = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+      // Check if user with this email already exists
+      const existingUser = await db
+        .selectFrom('branch.users')
+        .where('email', '=', email)
+        .selectAll()
+        .executeTakeFirst();
+
       if (existingUser) {
-        return json(409, { message: 'User already exists' });
+        return json(409, { message: 'User with this email already exists' });
       }
         
-      // insert new user
-      await db
-        .insertInto('branch.users')
-        .values({ user_id: userId, email, name, is_admin: isAdmin })
-        .execute();
+      // insert new user (user_id auto-increments)
+      try {
+        await db
+          .insertInto('branch.users')
+          .values({ email, name, is_admin: isAdmin })
+          .execute();
+      } catch (err) {
+        console.error('Database insert error:', err);
+        return json(500, { message: 'Failed to create user' });
+      }
 
       return json(201, {
         ok: true,
         route: 'POST /users',
-        pathParams: { userId },
-        body,
+        pathParams: {},
+        body: {
+          email,
+          name,
+          isAdmin,
+        },
       });
     }
     // <<< ROUTES-END
