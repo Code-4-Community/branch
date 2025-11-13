@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node --transpile-only dev-server.ts",
     "build": "tsc",
-    "test": "jest",
+    "test": "start-server-and-test dev http-get://localhost:3000/users/health jest",
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {
@@ -17,7 +17,8 @@
     "js-yaml": "^4.1.0",
     "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "start-server-and-test": "^2.1.1"
   },
   "dependencies": {
     "jest": "^30.2.0",

@@ -1,5 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 
+import db from './db';
+
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
     // Support both API Gateway and Lambda Function URL events
@@ -16,7 +18,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    // <<< ROUTES-END
+    
+    // GET /projects
+    if (rawPath === '/' && method === 'GET') {
+      const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      return json(200, projects);
+    }
+    
+    // <<< ROUTES-END    
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
