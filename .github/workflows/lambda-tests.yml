@@ -89,17 +89,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'yarn'
-          cache-dependency-path: ${{ matrix.directory }}/yarn.lock
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: npm ci
         working-directory: ${{ matrix.directory }}
 
       - name: Run Jest tests
         id: jest
         run: |
-          yarn test --coverage --maxWorkers=2 --json --outputFile=jest-results.json > test_output.txt 2>&1
+          npm test -- --coverage --maxWorkers=2 --json --outputFile=jest-results.json > test_output.txt 2>&1
           TEST_EXIT_CODE=$?
           TEST_OUTPUT=$(cat test_output.txt)
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
