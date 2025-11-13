@@ -52,7 +52,8 @@ function templatePackageJson() {
     "@types/node": "^20.11.30",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "start-server-and-test": "^2.1.1"
   },
   "dependencies": {
     "jest":"^30.2.0"
@@ -139,7 +140,7 @@ export function getSwaggerHtml(specUrl: string): string {
 `;
 }
 
-function templateJestSetup(handlerName){
+function templateJestSetup(handlerName) {
   return `
 test("health test 🌞", async () => {
   let res = await fetch("http://localhost:3000/${handlerName}/health")
