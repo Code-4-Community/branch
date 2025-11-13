@@ -86,15 +86,12 @@ jobs:
       - name: Run Jest tests
         id: jest
         run: |
-          npm test -- --coverage --maxWorkers=2 --json --outputFile=jest-results.json > test_output.txt 2>&1
+          npm test > test_output.txt 2>&1
           TEST_EXIT_CODE=$?
           TEST_OUTPUT=$(cat test_output.txt)
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
           echo "$TEST_OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          echo "=== Jest Test Output (${{ matrix.directory }}) ==="
-          cat test_output.txt
-          echo "=== End Jest Test Output ==="
           exit $TEST_EXIT_CODE
         working-directory: ${{ matrix.directory }}
         continue-on-error: true
@@ -166,6 +163,19 @@ jobs:
             let coverageSummary = 'Coverage data not available';
             let testOutput = process.env.TEST_OUTPUT || 'No test output captured';
             
+            // Try to read test output from file if not in env
+            if (!testOutput || testOutput === 'No test output captured') {
+              try {
+                const testFile = path.join('${{ matrix.directory }}', 'test_output.txt');
+                if (fs.existsSync(testFile)) {
+                  testOutput = fs.readFileSync(testFile, 'utf8');
+                }
+              } catch (error) {
+                console.log('Error reading test output:', error.message);
+              }
+            }
+            
+            // Get coverage summary if successful
             if (isSuccess) {
               try {
                 const coveragePath = path.join('${{ matrix.directory }}', 'coverage', 'coverage-summary.json');
@@ -181,15 +191,6 @@ jobs:
                 }
               } catch (error) {
                 console.log('Error reading coverage:', error.message);
-              }
-            } else {
-              try {
-                const testFile = path.join('${{ matrix.directory }}', 'test_output.txt');
-                if (fs.existsSync(testFile)) {
-                  testOutput = fs.readFileSync(testFile, 'utf8');
-                }
-              } catch (error) {
-                console.log('Error reading test output:', error.message);
               }
             }
             
