@@ -27,7 +27,7 @@ jobs:
             **/*.ts
             **/*.json
             **/package.json
-            **/package-lock.json
+            **/yarn.lock
           files_separator: "\n"
           files_yaml: |
             lambda:
@@ -35,7 +35,7 @@ jobs:
               - '**/*.ts'
               - '**/*.json'
               - '**/package.json'
-              - '**/package-lock.json'
+              - '**/yarn.lock'
 
       - name: List all changed files
         if: steps.changed-files.outputs.any_changed == 'true'
@@ -89,17 +89,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+          cache: 'yarn'
+          cache-dependency-path: ${{ matrix.directory }}/yarn.lock
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
         working-directory: ${{ matrix.directory }}
 
       - name: Run Jest tests
         id: jest
         run: |
-          npm test -- --coverage --maxWorkers=2 --json --outputFile=jest-results.json > test_output.txt 2>&1
+          yarn test --coverage --maxWorkers=2 --json --outputFile=jest-results.json > test_output.txt 2>&1
           TEST_EXIT_CODE=$?
           TEST_OUTPUT=$(cat test_output.txt)
           echo "stdout<<EOF" >> $GITHUB_OUTPUT
