@@ -1,0 +1,226 @@
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
+beforeEach(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+});
+
+test("health test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/health")
+  expect(res.status).toBe(200);
+});
+
+test("patch user test 🌞", async () => {
+  const originalRes = await fetch("http://localhost:3000/users/1");
+  expect(originalRes.status).toBe(200);
+  const originalBody = await originalRes.json().then(r => r.body);
+
+  try {
+    let res = await fetch("http://localhost:3000/users/1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "John Branch",
+        email: "mrbranch@example.com",
+        isAdmin: false
+      })
+    })
+    expect(res.status).toBe(200);
+    let body = await res.json().then(r => r.body);
+    expect(body.email).toBe("mrbranch@example.com");
+    expect(body.name).toBe("John Branch");
+    expect(body.isAdmin).toBe(false);
+  } finally {
+    await fetch("http://localhost:3000/users/1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: originalBody.name,
+        email: originalBody.email,
+        isAdmin: originalBody.isAdmin
+      })
+    });
+  }
+});
+
+
+test("patch user 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/4", {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: "John Doe",
+      email: "john.doe@example.com"
+    })
+  })
+  expect(res.status).toBe(404);
+});
+
+test("get users test", async () => {
+  let res = await fetch("http://localhost:3000/users")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.users).toBeDefined();
+  expect(Array.isArray(body.users)).toBe(true);
+  expect(body.users.length).toBe(3);
+
+  const firstUser = body.users[0];
+  expect(firstUser.email).toBe("ashley@branch.org");
+  expect(firstUser.is_admin).toBe(true);
+  expect(firstUser.name).toBe("Ashley Duggan");
+  expect(firstUser.user_id).toBe(1);
+
+  const secondUser = body.users[1];
+  expect(secondUser.email).toBe("renee@branch.org");
+  expect(secondUser.is_admin).toBe(true);
+  expect(secondUser.name).toBe("Renee Reddy");
+  expect(secondUser.user_id).toBe(2);
+
+  const thirdUser = body.users[2];
+  expect(thirdUser.email).toBe("nour@branch.org");
+  expect(thirdUser.is_admin).toBe(true);
+  expect(thirdUser.name).toBe("Nour Shoreibah");
+  expect(thirdUser.user_id).toBe(3);
+});
+
+test("get users with correct pagnation", async () => {
+  let res = await fetch("http://localhost:3000/users?page=1&limit=1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.pagination).toBeDefined();
+  expect(body.pagination.page).toBe(1);
+  expect(body.pagination.limit).toBe(1);
+  expect(body.pagination.totalUsers).toBe(3);
+  expect(body.pagination.totalPages).toBe(3);
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(1);
+
+  const firstUser = body.users[0];
+  expect(firstUser.email).toBe("ashley@branch.org");
+  expect(firstUser.is_admin).toBe(true);
+  expect(firstUser.name).toBe("Ashley Duggan");
+  expect(firstUser.user_id).toBe(1);
+});
+
+test("get users with only page", async () => {
+  let res = await fetch("http://localhost:3000/users?page=1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+
+  expect(body.pagination).toBeUndefined();
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(3);
+});
+
+test("get users with only limit", async () => {
+  let res = await fetch("http://localhost:3000/users?limit=1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+
+  expect(body.pagination).toBeUndefined();
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(3);
+});
+
+test("get users with limit above total user", async () => {
+  let res = await fetch("http://localhost:3000/users?page=1&limit=100")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.pagination).toBeDefined();
+  expect(body.pagination.page).toBe(1);
+  expect(body.pagination.limit).toBe(100);
+  expect(body.pagination.totalUsers).toBe(3);
+  expect(body.pagination.totalPages).toBe(1);
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(3);
+});
+
+test("get users error", async () => {
+  let res = await fetch("http://localhost:3000/user")
+  expect(res.status).toBe(404);
+});
+
+test("POST user success case", async () => {
+  let res = await fetch("http://localhost:3000/users/5", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Jane Branch",
+      email: "jane1@branch.com",
+      isAdmin: true
+    })
+  });
+
+  expect(res.status).toBe(201);
+
+  let body = await res.json();
+
+  expect(body.ok).toBe(true);
+  expect(body.body.name).toBe("Jane Branch");
+  expect(body.body.email).toBe("jane@branch.com");
+  expect(body.body.isAdmin).toBe(true);
+});
+
+test("POST user 400 case when invalid userId is sent", async () => {
+  let res = await fetch("http://localhost:3000/users/invalidUserId", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Invalid User",
+      email: "",
+      isAdmin: false
+    })
+  });
+
+  expect(res.status).toBe(400);
+});
+
+test("POST user 400 case when request sent with missing fields", async () => {
+  let res = await fetch("http://localhost:3000/users/4", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Invalid User",
+    }) // missing email and admin fields
+  });
+
+  expect(res.status).toBe(400);
+});
+
+test("POST user 409 case when user already exists", async () => {
+  let res = await fetch("http://localhost:3000/users/1", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Existing User",
+      email: "some@email.com",
+      isAdmin: false
+    })
+  });
+
+  expect(res.status).toBe(409);
+});
