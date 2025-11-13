@@ -5,7 +5,7 @@ export type ValidationResult<T> = {
 };
 
 export interface ExpenditureInput {
-    projectId: number;
+    projectID: number;
     enteredBy?: number;
     amount: number;
     category?: string;
@@ -14,16 +14,16 @@ export interface ExpenditureInput {
 }
 
 export class ExpenditureValidationUtils {
-    static validateProjectId(projectId: unknown): number | Error {
-        if (projectId === undefined || projectId === null || projectId === '') {
-            return new Error('projectId is required');
+    static validateProjectId(projectID: unknown): number | Error {
+        if (projectID === undefined || projectID === null || projectID === '') {
+            return new Error('projectID is required');
         }
 
-        if (typeof projectId !== 'number' || !Number.isInteger(projectId)) {
-            return new Error('projectId must be an integer');
+        if (typeof projectID !== 'number' || !Number.isInteger(projectID)) {
+            return new Error('projectID must be an integer');
         }
 
-        return projectId;
+        return projectID;
     }
 
     static validateAmount(amount: unknown): number | Error {
@@ -92,9 +92,9 @@ export class ExpenditureValidationUtils {
 
     static validateExpenditureInput(body: Record<string, unknown>): ExpenditureInput | Error {
         // Validate required fields
-        const projectId = this.validateProjectId(body.projectID);
-        if (projectId instanceof Error) {
-            return projectId;
+        const projectID = this.validateProjectId(body.projectID);
+        if (projectID instanceof Error) {
+            return projectID;
         }
 
         const amount = this.validateAmount(body.amount);
@@ -124,7 +124,7 @@ export class ExpenditureValidationUtils {
         }
 
         return {
-            projectId,
+            projectID,
             enteredBy,
             amount,
             category,

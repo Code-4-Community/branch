@@ -29,12 +29,12 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: validationResult.message });
       }
 
-      const { projectId, enteredBy, amount, category, description, spentOn } = validationResult;
+      const { projectID, enteredBy, amount, category, description, spentOn } = validationResult;
 
       // Check if project exists
       const project = await db
         .selectFrom('branch.projects')
-        .where('project_id', '=', projectId)
+        .where('project_id', '=', projectID)
         .selectAll()
         .executeTakeFirst();
 
@@ -60,7 +60,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         await db
           .insertInto('branch.expenditures')
           .values({
-            project_id: projectId,
+            project_id: projectID,
             entered_by: enteredBy ?? null,
             amount,
             category: category ?? null,
@@ -77,7 +77,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ok: true,
         route: 'POST /expenditures',
         body: {
-          projectId,
+          projectID,
           enteredBy: enteredBy ?? null,
           amount,
           category: category ?? null,

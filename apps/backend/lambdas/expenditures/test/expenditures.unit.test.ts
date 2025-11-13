@@ -27,7 +27,7 @@ describe('POST /expenditures unit tests', () => {
   });
 
   describe('Input Validation', () => {
-    test('400: missing projectId field', async () => {
+    test('400: missing projectID field', async () => {
       const res = await handler(
         postEvent({
           amount: 1000,
@@ -43,7 +43,7 @@ describe('POST /expenditures unit tests', () => {
     test('400: missing amount field', async () => {
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
         })
       );
 
@@ -53,10 +53,10 @@ describe('POST /expenditures unit tests', () => {
       expect(json.message).toContain('required');
     });
 
-    test('400: projectId is not an integer', async () => {
+    test('400: projectID is not an integer', async () => {
       const res = await handler(
         postEvent({
-          projectId: 'one',
+          projectID: 'one',
           amount: 1000,
         })
       );
@@ -70,7 +70,7 @@ describe('POST /expenditures unit tests', () => {
     test('400: amount is not a number', async () => {
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 'one thousand',
         })
       );
@@ -84,7 +84,7 @@ describe('POST /expenditures unit tests', () => {
     test('400: amount is negative', async () => {
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: -500,
         })
       );
@@ -98,7 +98,7 @@ describe('POST /expenditures unit tests', () => {
     test('400: category is empty string', async () => {
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 1000,
           category: '',
         })
@@ -120,7 +120,7 @@ describe('POST /expenditures unit tests', () => {
           },
         },
         body: JSON.stringify({
-          projectId: 1,
+          projectID: 1,
           amount: 1000,
         }),
       });
@@ -154,7 +154,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 1000,
         })
       );
@@ -189,7 +189,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 1500.50,
           category: 'Travel',
           description: 'Conference flight',
@@ -201,7 +201,7 @@ describe('POST /expenditures unit tests', () => {
       expect(json).toHaveProperty('ok');
       expect(json).toHaveProperty('route');
       expect(json).toHaveProperty('body');
-      expect(json.body).toHaveProperty('projectId');
+      expect(json.body).toHaveProperty('projectID');
       expect(json.body).toHaveProperty('amount');
     });
 
@@ -217,7 +217,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 999,
+          projectID: 999,
           amount: 1000,
         })
       );
@@ -249,7 +249,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 2,
+          projectID: 2,
           amount: 2000,
         })
       );
@@ -257,7 +257,7 @@ describe('POST /expenditures unit tests', () => {
       expect(res.statusCode).toBe(201);
       const json = JSON.parse(res.body);
       expect(json.ok).toBe(true);
-      expect(json.body.projectId).toBe(2);
+      expect(json.body.projectID).toBe(2);
       expect(json.body.amount).toBe(2000);
     });
   });
@@ -285,7 +285,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 1000,
         })
       );
@@ -307,7 +307,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 1000,
         })
       );
@@ -341,7 +341,7 @@ describe('POST /expenditures unit tests', () => {
 
       const res = await handler(
         postEvent({
-          projectId: 1,
+          projectID: 1,
           amount: 1000,
           enteredBy: 999,
         })

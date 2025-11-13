@@ -37,7 +37,7 @@ test("post expenditure with all fields", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 1,
+      projectID: 1,
       enteredBy: 1,
       amount: 1500.50,
       category: "Travel",
@@ -48,7 +48,7 @@ test("post expenditure with all fields", async () => {
   expect(res.status).toBe(201);
   const body = await res.json();
   expect(body.ok).toBe(true);
-  expect(body.body.projectId).toBe(1);
+  expect(body.body.projectID).toBe(1);
   expect(body.body.enteredBy).toBe(1);
   expect(body.body.amount).toBe(1500.50);
   expect(body.body.category).toBe("Travel");
@@ -60,20 +60,20 @@ test("post expenditure with only required fields", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 2,
+      projectID: 2,
       amount: 2000
     })
   });
   expect(res.status).toBe(201);
   const body = await res.json();
   expect(body.ok).toBe(true);
-  expect(body.body.projectId).toBe(2);
+  expect(body.body.projectID).toBe(2);
   expect(body.body.amount).toBe(2000);
   expect(body.body.enteredBy).toBeNull();
   expect(body.body.category).toBeNull();
 });
 
-test("post expenditure missing projectId", async () => {
+test("post expenditure missing projectID", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
@@ -89,7 +89,7 @@ test("post expenditure missing amount", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 1
+      projectID: 1
     })
   });
   expect(res.status).toBe(400);
@@ -101,7 +101,7 @@ test("post expenditure negative amount", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 1,
+      projectID: 1,
       amount: -500
     })
   });
@@ -114,7 +114,7 @@ test("post expenditure project not found", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 999,
+      projectID: 999,
       amount: 1000
     })
   });
@@ -127,7 +127,7 @@ test("post expenditure with invalid spentOn date", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 1,
+      projectID: 1,
       amount: 1000,
       spentOn: "not-a-date"
     })
@@ -141,7 +141,7 @@ test("post expenditure user not found", async () => {
   const res = await fetch("http://localhost:3000/expenditures", {
     method: "POST",
     body: JSON.stringify({
-      projectId: 1,
+      projectID: 1,
       enteredBy: 999,
       amount: 1000
     })
