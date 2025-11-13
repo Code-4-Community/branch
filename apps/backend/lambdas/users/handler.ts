@@ -1,5 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import db from './db';
+import db from './db'
+
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -10,6 +11,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
+        console.log('DEBUG - rawPath:', rawPath, 'normalizedPath:', normalizedPath, 'method:', method);
+
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
@@ -18,7 +21,53 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     
-    // GET /{userId} (dev server strips /users prefix)
+
+    // GET /users
+    if ((normalizedPath === '/users' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
+      // TODO: Add your business logic here
+        const queryParams = event.queryStringParameters || {};
+        const page = queryParams.page ? parseInt(queryParams.page, 10) : null;
+        const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : null;
+
+        if (page && limit) {
+            const offset = (page - 1) * limit;
+
+            const totalCount = await db
+                .selectFrom('branch.users')
+                .select(db.fn.count('user_id').as('count'))
+                .executeTakeFirst();
+
+            const totalUsers = Number(totalCount?.count || 0);
+            const totalPages = Math.ceil(totalUsers / limit);
+
+            const users = await db
+                .selectFrom('branch.users')
+                .selectAll()
+                .orderBy('user_id', 'asc')
+                .limit(limit)
+                .offset(offset)
+                .execute();
+            return json(200, {
+                users,
+                pagination: {
+                    page,
+                    limit,
+                    totalUsers,
+                    totalPages
+                }
+            });
+        }
+
+        const users = await db
+            .selectFrom('branch.users')
+            .selectAll()
+            .execute();
+      
+      console.log(users);
+      return json(200, { users });
+    } 
+
+    // GET /{userId}
     if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'GET') {
       const userId = normalizedPath.split('/')[1];
       if (!userId) return json(400, { message: 'userId is required' });
@@ -65,6 +114,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
     }
+
     // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
