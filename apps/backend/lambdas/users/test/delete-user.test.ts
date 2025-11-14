@@ -33,8 +33,6 @@ test("delete user test 🌞", async () => {
     method: "DELETE"
   });
 
-  console.log(res);
-
   expect(res.status).toBe(200);
   let body = await res.json();
 
