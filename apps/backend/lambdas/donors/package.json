@@ -1,0 +1,23 @@
+{
+  "name": "lambda-local",
+  "version": "1.0.0",
+  "private": true,
+  "main": "handler.ts",
+  "scripts": {
+    "dev": "ts-node --transpile-only dev-server.ts",
+    "build": "tsc",
+    "test": "jest",
+    "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^20.11.30",
+    "js-yaml": "^4.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "jest": "^30.2.0",
+    "kysely": "^0.28.8"
+  }
+}
