@@ -83,3 +83,14 @@ paths:
           description: OK
         '404':
           description: User not found
+    delete:
+      summary: DELETE /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
