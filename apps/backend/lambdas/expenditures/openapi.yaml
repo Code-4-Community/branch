@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: expenditures (Local)
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/expenditures
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /expenditures:
+    post:
+      summary: POST /expenditures
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enteredBy:
+                  type: number
+                amount:
+                  type: number
+                description:
+                  type: string
+                projectID:
+                  type: number
+      responses:
+        '201':
+          description: Success
