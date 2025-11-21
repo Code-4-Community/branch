@@ -19,9 +19,24 @@ paths:
                   ok:
                     type: boolean
 
-  /users/{userId}:
+  /users:
+    get:
+      summary: GET /users
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+  /{userId}:
     patch:
-      summary: PATCH /users/{userId}
+      summary: PATCH /{userId}
       parameters:
         - in: path
           name: userId
@@ -46,3 +61,14 @@ paths:
           description: OK
         '404':
           description: User not found
+    delete:
+      summary: DELETE /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK

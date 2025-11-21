@@ -1,0 +1,242 @@
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
+beforeEach(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+});
+
+test("health test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/health")
+  expect(res.status).toBe(200);
+});
+
+test("patch user test 🌞", async () => {
+  const originalRes = await fetch("http://localhost:3000/users/1");
+  expect(originalRes.status).toBe(200);
+  const originalBody = await originalRes.json().then(r => r.body);
+
+  try {
+    let res = await fetch("http://localhost:3000/users/1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "John Branch",
+        email: "mrbranch@example.com",
+        isAdmin: false
+      })
+    })
+    expect(res.status).toBe(200);
+    let body = await res.json().then(r => r.body);
+    expect(body.email).toBe("mrbranch@example.com");
+    expect(body.name).toBe("John Branch");
+    expect(body.isAdmin).toBe(false);
+  } finally {
+    await fetch("http://localhost:3000/users/1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: originalBody.name,
+        email: originalBody.email,
+        isAdmin: originalBody.isAdmin
+      })
+    });
+  }
+});
+
+
+test("patch user 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/4", {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: "John Doe",
+      email: "john.doe@example.com"
+    })
+  })
+  expect(res.status).toBe(404);
+});
+
+test("get users test", async () => {
+  let res = await fetch("http://localhost:3000/users")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.users).toBeDefined();
+  expect(Array.isArray(body.users)).toBe(true);
+  expect(body.users.length).toBe(3);
+
+  const firstUser = body.users[0];
+  expect(firstUser.email).toBe("ashley@branch.org");
+  expect(firstUser.is_admin).toBe(true);
+  expect(firstUser.name).toBe("Ashley Duggan");
+  expect(firstUser.user_id).toBe(1);
+
+  const secondUser = body.users[1];
+  expect(secondUser.email).toBe("renee@branch.org");
+  expect(secondUser.is_admin).toBe(true);
+  expect(secondUser.name).toBe("Renee Reddy");
+  expect(secondUser.user_id).toBe(2);
+
+  const thirdUser = body.users[2];
+  expect(thirdUser.email).toBe("nour@branch.org");
+  expect(thirdUser.is_admin).toBe(true);
+  expect(thirdUser.name).toBe("Nour Shoreibah");
+  expect(thirdUser.user_id).toBe(3);
+});
+
+test("get users with correct pagnation", async () => {
+  let res = await fetch("http://localhost:3000/users?page=1&limit=1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.pagination).toBeDefined();
+  expect(body.pagination.page).toBe(1);
+  expect(body.pagination.limit).toBe(1);
+  expect(body.pagination.totalUsers).toBe(3);
+  expect(body.pagination.totalPages).toBe(3);
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(1);
+
+  const firstUser = body.users[0];
+  expect(firstUser.email).toBe("ashley@branch.org");
+  expect(firstUser.is_admin).toBe(true);
+  expect(firstUser.name).toBe("Ashley Duggan");
+  expect(firstUser.user_id).toBe(1);
+});
+
+test("get users with only page", async () => {
+  let res = await fetch("http://localhost:3000/users?page=1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+
+  expect(body.pagination).toBeUndefined();
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(3);
+});
+
+test("get users with only limit", async () => {
+  let res = await fetch("http://localhost:3000/users?limit=1")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+
+  expect(body.pagination).toBeUndefined();
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(3);
+});
+
+test("get users with limit above total user", async () => {
+  let res = await fetch("http://localhost:3000/users?page=1&limit=100")
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  console.log(body);
+  expect(body.pagination).toBeDefined();
+  expect(body.pagination.page).toBe(1);
+  expect(body.pagination.limit).toBe(100);
+  expect(body.pagination.totalUsers).toBe(3);
+  expect(body.pagination.totalPages).toBe(1);
+
+  expect(body.users).toBeDefined();
+  expect(body.users.length).toBe(3);
+});
+
+test("get users error", async () => {
+  let res = await fetch("http://localhost:3000/user")
+  expect(res.status).toBe(404);
+});
+
+test("delete user test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+
+  expect(res.status).toBe(200);
+  let body = await res.json();
+
+
+  expect(body.ok).toBe(true);
+  expect(body.route).toBe("DELETE /users/{userId}");
+  expect(body.pathParams.userId).toBe("1");
+
+  let getRes = await fetch("http://localhost:3000/users/1");
+  expect(getRes.status).toBe(404);
+  let getbody = await getRes.json();
+  expect(getbody.message).toBe('User not found');
+});
+
+test("delete user 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/9999", {
+    method: "DELETE"
+  });
+
+  expect(res.status).toBe(404);
+  let body = await res.json();
+  expect(body.message).toBe('User not found');
+});
+
+test("delete same user twice returns 404 on second attempt", async () => {
+  let res1 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res1.status).toBe(200);
+
+  let res2 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res2.status).toBe(404);
+  let body = await res2.json();
+  expect(body.message).toBe('User not found');
+});
+
+test("delete multiple users", async () => {
+  let res1 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res1.status).toBe(200);
+
+  let res2 = await fetch("http://localhost:3000/users/2", {
+    method: "DELETE"
+  });
+  expect(res2.status).toBe(200);
+
+  let check1 = await fetch("http://localhost:3000/users/1");
+  expect(check1.status).toBe(404);
+
+  let check2 = await fetch("http://localhost:3000/users/2");
+  expect(check2.status).toBe(404);
+});
+
+test("delete user 1 does not affect user 2", async () => {
+  // Delete user 1
+  await fetch("http://localhost:3000/users/1", { method: "DELETE" });
+
+  // User 2 should still exist
+  let res = await fetch("http://localhost:3000/users/2");
+  expect(res.status).toBe(200);
+  
+  let body = await res.json();
+  expect(body.body.email).toBe('renee@branch.org');
+});
