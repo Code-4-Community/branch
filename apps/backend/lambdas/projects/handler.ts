@@ -2,6 +2,8 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
 
+import db from './db';
+
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
     // Support both API Gateway and Lambda Function URL events
@@ -18,10 +20,21 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-
+    
+    // GET /projects
+    if (rawPath === '/' && method === 'GET') {
+      const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      return json(200, projects);
+    }
+    
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
-      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      let body: Record<string, unknown>;
+      try {
+        body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      } catch (e) {
+        return json(400, { message: 'Invalid JSON in request body' });
+      }
 
       const nameResult = ProjectValidationUtils.validateName(body.name);
       if (!nameResult.isValid) {
@@ -59,7 +72,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to create project' });
       }
     }
-    // <<< ROUTES-END 
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

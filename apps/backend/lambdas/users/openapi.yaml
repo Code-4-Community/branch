@@ -18,3 +18,57 @@ paths:
                 properties:
                   ok:
                     type: boolean
+
+  /users:
+    get:
+      summary: GET /users
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+  /{userId}:
+    patch:
+      summary: PATCH /{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                isAdmin:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+        '404':
+          description: User not found
+    delete:
+      summary: DELETE /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
