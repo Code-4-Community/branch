@@ -2,7 +2,6 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
 
-import db from './db';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -43,7 +42,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const values: any = { name: nameResult.value };
 
-      const parsedBudget = ProjectValidationUtils.parseNumericToFixed2(body.total_budget);
+      const parsedBudget = ProjectValidationUtils.parseNumericToFixed(body.total_budget);
       if (parsedBudget === 'INVALID') return json(400, { message: "'total_budget' must be a number" });
       if (parsedBudget !== null) values.total_budget = parsedBudget;
 
