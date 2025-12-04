@@ -1,0 +1,129 @@
+name: Lambda Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  detect-backend-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has-backend-changes: ${{ steps.changed-files.outputs.any_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            apps/backend/**
+          files_separator: "\n"
+
+  lambda-tests:
+    needs: detect-backend-changes
+    if: needs.detect-backend-changes.outputs.has-backend-changes == 'true'
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bootstrap Database
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: postgres
+        run: |
+          # Create database and user
+          psql -h localhost -U postgres -c "CREATE DATABASE branch_db;"
+          psql -h localhost -U postgres -c "CREATE USER branch_dev WITH PASSWORD 'password';"
+          psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE branch_db TO branch_dev;"
+          
+          # Run db_setup.sql
+          psql -h localhost -U postgres -d branch_db -f apps/backend/db/db_setup.sql
+
+      - name: Run Donors Lambda Tests
+        working-directory: apps/backend/lambdas/donors
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: branch_dev
+          DB_PASSWORD: password
+          DB_NAME: branch_db
+        run: |
+          npm ci
+          npm run test
+
+      - name: Run Projects Lambda Tests
+        working-directory: apps/backend/lambdas/projects
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: branch_dev
+          DB_PASSWORD: password
+          DB_NAME: branch_db
+        run: |
+          npm ci
+          npm run test
+
+      - name: Run Expenditures Lambda Tests
+        working-directory: apps/backend/lambdas/expenditures
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: branch_dev
+          DB_PASSWORD: password
+          DB_NAME: branch_db
+        run: |
+          npm ci
+          npm run test
+
+      - name: Run Users Lambda Tests
+        working-directory: apps/backend/lambdas/users
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: branch_dev
+          DB_PASSWORD: password
+          DB_NAME: branch_db
+        run: |
+          npm ci
+          npm run test
+
+      - name: Run Reports Lambda Tests
+        working-directory: apps/backend/lambdas/reports
+        run: |
+          npm ci
+          npm run test
