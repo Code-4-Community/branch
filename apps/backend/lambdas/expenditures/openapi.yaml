@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: Projects (Local)
+  title: expenditures (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:3000/expenditures
 paths:
   /health:
     get:
@@ -19,31 +19,24 @@ paths:
                   ok:
                     type: boolean
 
-  /projects/{id}/members:
-    get:
-      summary: GET /projects/{id}/members
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-  /projects:
+  /expenditures:
     post:
-      summary: POST /projects
+      summary: POST /expenditures
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: 
-                - name
               properties:
-                name:
+                enteredBy:
+                  type: number
+                amount:
+                  type: number
+                description:
                   type: string
-                total_budget:
+                projectID:
                   type: number
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Success
