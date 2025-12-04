@@ -31,7 +31,6 @@ jobs:
 
   lambda-tests:
     needs: detect-backend-changes
-    if: needs.detect-backend-changes.outputs.has-backend-changes == 'true'
     runs-on: ubuntu-latest
     
     services:
@@ -53,12 +52,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check for backend changes
+        id: check-changes
+        run: |
+          if [ "${{ needs.detect-backend-changes.outputs.has-backend-changes }}" != "true" ]; then
+            echo "No backend changes detected. Skipping tests."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Backend changes detected. Running tests."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Node.js
+        if: steps.check-changes.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      - name: Install PostgreSQL client
+        if: steps.check-changes.outputs.skip != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Bootstrap Database
+        if: steps.check-changes.outputs.skip != 'true'
         env:
           PGHOST: localhost
           PGPORT: 5432
@@ -75,6 +93,7 @@ jobs:
           psql -h localhost -U postgres -d branch_db -f apps/backend/db/db_setup.sql
 
       - name: Run Donors Lambda Tests
+        if: steps.check-changes.outputs.skip != 'true'
         working-directory: apps/backend/lambdas/donors
         env:
           DB_HOST: localhost
@@ -87,6 +106,7 @@ jobs:
           npm run test
 
       - name: Run Projects Lambda Tests
+        if: steps.check-changes.outputs.skip != 'true'
         working-directory: apps/backend/lambdas/projects
         env:
           DB_HOST: localhost
@@ -99,6 +119,7 @@ jobs:
           npm run test
 
       - name: Run Expenditures Lambda Tests
+        if: steps.check-changes.outputs.skip != 'true'
         working-directory: apps/backend/lambdas/expenditures
         env:
           DB_HOST: localhost
@@ -111,6 +132,7 @@ jobs:
           npm run test
 
       - name: Run Users Lambda Tests
+        if: steps.check-changes.outputs.skip != 'true'
         working-directory: apps/backend/lambdas/users
         env:
           DB_HOST: localhost
@@ -123,6 +145,7 @@ jobs:
           npm run test
 
       - name: Run Reports Lambda Tests
+        if: steps.check-changes.outputs.skip != 'true'
         working-directory: apps/backend/lambdas/reports
         run: |
           npm ci
