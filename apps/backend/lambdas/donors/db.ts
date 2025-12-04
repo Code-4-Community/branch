@@ -1,6 +1,7 @@
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import type { DB } from './db-types';
+import { Kysely, PostgresDialect } from 'kysely'
+import { Pool } from 'pg'
+import type { DB } from './db-types'  
+
 
 const db = new Kysely<DB>({
   dialect: new PostgresDialect({
@@ -10,9 +11,9 @@ const db = new Kysely<DB>({
       user: process.env.DB_USER ?? 'branch_dev',
       password: process.env.DB_PASSWORD ?? 'password',
       database: process.env.DB_NAME ?? 'branch_db',
-      ssl: false,
+      ssl: false, 
     }),
   }),
-});
+})
 
-export default db;
+export default db
