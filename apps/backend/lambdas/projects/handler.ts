@@ -17,12 +17,17 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
+
+
+
+
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
       const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      console.log("dennis");
       return json(200, projects);
     }
     
