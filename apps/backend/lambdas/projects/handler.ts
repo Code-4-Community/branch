@@ -27,6 +27,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
       const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      console.log(projects);
       return json(200, projects);
     }
     
