@@ -20,53 +20,16 @@ paths:
                     type: boolean
 
   /projects:
-    get:
-      summary: GET /projects
-      responses:
-        '200':
-          description: OK
-
-  /projects/{id}:
-    get:
-      summary: GET /projects/{id}
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-
-  /projects/{id}:
-    put:
-      summary: PUT /projects/{id}
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-
-  /projects/{id}:
-    put:
-      summary: PUT /projects/{id}
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
+    post:
+      summary: POST /projects
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: 
+                - name
               properties:
                 name:
                   type: string
