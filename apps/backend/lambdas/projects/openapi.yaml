@@ -63,12 +63,16 @@ paths:
           required: true
           schema:
             type: string
+    post:
+      summary: POST /projects
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: 
+                - name
               properties:
                 name:
                   type: string
