@@ -38,9 +38,7 @@ jobs:
         run: npm ci --legacy-peer-deps
       
       - name: Run migrations
-        run: kysely migrate:latest
-        env:
-          DATABASE_URL: postgres://test:test@localhost:5432/testdb
+        run: psql postgres://test:test@localhost:5432/testdb -f apps/backend/db/db_setup.sql
       
       - name: Run tests
         run: npm test
