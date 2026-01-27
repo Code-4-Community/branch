@@ -13,11 +13,10 @@ jobs:
       lambdas: ${{ steps.find.outputs.lambdas }}
     steps:
       - uses: actions/checkout@v4
-      
       - name: Find all lambdas
         id: find
         run: |
-          lambdas=$(ls -d apps/backend/lambdas/*/ | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          lambdas=$(ls -d apps/backend/lambdas/*/ | grep -Ev "(tools)" | jq -R -s -c 'split("\n") | map(select(. != ""))')
           echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
 
   test:
