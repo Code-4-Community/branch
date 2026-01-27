@@ -61,6 +61,10 @@ jobs:
       
       - name: Run tests
         working-directory: ${{ matrix.lambda }}
-        run: npm test
+        run: |
+          LAMBDA_NAME=$(basename ${{ matrix.lambda }})
+          npm run dev &
+          npx wait-on http://localhost:3000/${LAMBDA_NAME}/health --timeout 10000
+          npm test --forceExit
         env:
           DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db?options=-csearch_path%3Dbranch
