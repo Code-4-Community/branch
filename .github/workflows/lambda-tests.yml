@@ -1,152 +1,46 @@
+# .github/workflows/lambda-tests.yml
 name: Lambda Tests
 
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
-  detect-backend-changes:
+  discover:
     runs-on: ubuntu-latest
     outputs:
-      has-backend-changes: ${{ steps.changed-files.outputs.any_changed }}
+      lambdas: ${{ steps.find.outputs.lambdas }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v44
-        with:
-          files: |
-            apps/backend/**
-          files_separator: "\n"
-
-  lambda-tests:
-    needs: detect-backend-changes
-    runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Check for backend changes
-        id: check-changes
+      - uses: actions/checkout@v4
+      
+      - name: Find all lambdas
+        id: find
         run: |
-          if [ "${{ needs.detect-backend-changes.outputs.has-backend-changes }}" != "true" ]; then
-            echo "No backend changes detected. Skipping tests."
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "Backend changes detected. Running tests."
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
+          lambdas=$(ls -d apps/backend/lambdas/*/ | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
 
+  test:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lambda: ${{ fromJson(needs.discover.outputs.lambdas) }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
       - name: Setup Node.js
-        if: steps.check-changes.outputs.skip != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install PostgreSQL client
-        if: steps.check-changes.outputs.skip != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
-      - name: Bootstrap Database
-        if: steps.check-changes.outputs.skip != 'true'
-        env:
-          PGHOST: localhost
-          PGPORT: 5432
-          PGUSER: postgres
-          PGPASSWORD: postgres
-          PGDATABASE: postgres
-        run: |
-          # Create database and user
-          psql -h localhost -U postgres -c "CREATE DATABASE branch_db;"
-          psql -h localhost -U postgres -c "CREATE USER branch_dev WITH PASSWORD 'password';"
-          psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE branch_db TO branch_dev;"
-          
-          # Run db_setup.sql
-          psql -h localhost -U postgres -d branch_db -f apps/backend/db/db_setup.sql
-
-      - name: Run Donors Lambda Tests
-        if: steps.check-changes.outputs.skip != 'true'
-        working-directory: apps/backend/lambdas/donors
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: branch_dev
-          DB_PASSWORD: password
-          DB_NAME: branch_db
-        run: |
-          npm ci
-          npm run test
-
-      - name: Run Projects Lambda Tests
-        if: steps.check-changes.outputs.skip != 'true'
-        working-directory: apps/backend/lambdas/projects
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: branch_dev
-          DB_PASSWORD: password
-          DB_NAME: branch_db
-        run: |
-          npm ci
-          npm run test
-
-      - name: Run Expenditures Lambda Tests
-        if: steps.check-changes.outputs.skip != 'true'
-        working-directory: apps/backend/lambdas/expenditures
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: branch_dev
-          DB_PASSWORD: password
-          DB_NAME: branch_db
-        run: |
-          npm ci
-          npm run test
-
-      - name: Run Users Lambda Tests
-        if: steps.check-changes.outputs.skip != 'true'
-        working-directory: apps/backend/lambdas/users
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_USER: branch_dev
-          DB_PASSWORD: password
-          DB_NAME: branch_db
-        run: |
-          npm ci
-          npm run test
-
-      - name: Run Reports Lambda Tests
-        if: steps.check-changes.outputs.skip != 'true'
-        working-directory: apps/backend/lambdas/reports
-        run: |
-          npm ci
-          npm run test
+      
+      - name: Install dependencies
+        working-directory: ${{ matrix.lambda }}
+        run: npm ci
+      
+      - name: Run tests
+        working-directory: ${{ matrix.lambda }}
+        run: npm test
