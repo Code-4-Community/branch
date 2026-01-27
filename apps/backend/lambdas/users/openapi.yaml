@@ -34,6 +34,28 @@ paths:
       responses:
         '200':
           description: OK
+    post:
+      summary: POST /users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                isAdmin:
+                  type: boolean
+      responses:
+        '201':
+          description: Success
+        '400':
+          description: Bad Request
+        '500':
+          description: Internal Server Error
   /{userId}:
     patch:
       summary: PATCH /{userId}
