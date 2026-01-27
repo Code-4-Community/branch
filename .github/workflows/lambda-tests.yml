@@ -47,24 +47,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
       
-      - name: Debug - find schema file
-        run: |
-          echo "Looking for SQL files:"
-          find . -name "*.sql" | head -20
-          echo ""
-          echo "Contents of apps/backend/:"
-          ls -la apps/backend/ || echo "apps/backend/ doesn't exist"
-          echo ""
-          echo "Looking for db folders:"
-          find . -type d -name "db" | head -10
-
       - name: Setup database schema
-        run: psql postgres://test:test@localhost:5432/testdb -f apps/backend/db/schema.sql
+        run: psql postgres://test:test@localhost:5432/testdb -f apps/backend/db/db_setup.sql
       
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
