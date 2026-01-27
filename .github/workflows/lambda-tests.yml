@@ -1,4 +1,3 @@
-# .github/workflows/lambda-tests.yml
 name: Lambda Tests
 
 on:
@@ -8,26 +7,23 @@ on:
     branches: [main, develop]
 
 jobs:
-  discover:
-    runs-on: ubuntu-latest
-    outputs:
-      lambdas: ${{ steps.find.outputs.lambdas }}
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Find all lambdas
-        id: find
-        run: |
-          lambdas=$(ls -d apps/backend/lambdas/*/ | jq -R -s -c 'split("\n") | map(select(. != ""))')
-          echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
-
   test:
-    needs: discover
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        lambda: ${{ fromJson(needs.discover.outputs.lambdas) }}
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     
     steps:
       - uses: actions/checkout@v4
@@ -36,11 +32,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
       
       - name: Install dependencies
-        working-directory: ${{ matrix.lambda }}
         run: npm ci
       
+      - name: Run migrations
+        run: kysely migrate:latest
+        env:
+          DATABASE_URL: postgres://test:test@localhost:5432/testdb
+      
       - name: Run tests
-        working-directory: ${{ matrix.lambda }}
         run: npm test
+        env:
+          # Match whatever env vars your pool config reads
+          DATABASE_URL: postgres://test:test@localhost:5432/testdb
+          # Or if you use individual vars:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: test
+          DB_PASSWORD: test
+          DB_NAME: testdb
