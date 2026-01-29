@@ -117,24 +117,10 @@ resource "aws_cognito_user_pool_client" "branch_client" {
   enable_propagate_additional_user_context_data = false
 }
 
-# Store Cognito values in Infisical
-resource "infisical_secret" "cognito_user_pool_id" {
-  env_slug     = "dev"
-  workspace_id = var.infisical_workspace_id
-  folder_path  = "/aws/cognito"
-
-  secret_name  = "user_pool_id"
-  secret_value = aws_cognito_user_pool.branch_user_pool.id
-}
-
-resource "infisical_secret" "cognito_client_id" {
-  env_slug     = "dev"
-  workspace_id = var.infisical_workspace_id
-  folder_path  = "/aws/cognito"
-
-  secret_name  = "client_id"
-  secret_value = aws_cognito_user_pool_client.branch_client.id
-}
+# NOTE: To use these in lambdas, manually create secrets in Infisical at /aws/cognito/:
+#   - user_pool_id: Copy from terraform output cognito_user_pool_id
+#   - client_id: Copy from terraform output cognito_client_id
+#   - region: us-east-2
 
 output "cognito_user_pool_arn" {
   value       = aws_cognito_user_pool.branch_user_pool.arn
