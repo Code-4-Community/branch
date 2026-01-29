@@ -121,12 +121,18 @@ jobs:
             fi
 
             # Define target lambda directories
-            LAMBDA_DIRS=(
-              "apps/backend/lambdas/donors"
-              "apps/backend/lambdas/expenditures"
-              "apps/backend/lambdas/projects"
-              "apps/backend/lambdas/users"
-            )
+            LAMBDA_DIRS=()
+            for dir in apps/backend/lambdas/*; do
+              if [ -d "$dir" ]; then
+                LAMBDA_DIRS+=("$dir")
+                echo "  Found: $dir"
+              fi
+            done
+
+            if [ ${#LAMBDA_DIRS[@]} -eq 0 ]; then
+              echo "Error: No lambda directories found in apps/backend/lambdas/"
+              exit 1
+            fi
 
             # Track success and failures
             SUCCESS_COUNT=0
@@ -250,14 +256,20 @@ jobs:
           uses: actions/github-script@v7
           with:
             script: |
+              const { execSync } = require('child_process');
+              const files = execSync('git diff --name-only apps/backend/lambdas/*/db-types.d.ts')
+                .toString()
+                .trim()
+                .split('\n')
+                .filter(f => f)
+                .map(f => `- \`${f}\``)
+                .join('\n');
+
               const comment = `**Database Types Auto-Regenerated**
               
               The database schema has changed and the Typescript definitions for these lambda functions were regenerated:
             
-              - \`apps/backend/lambdas/donors/db-types.d.ts\`
-              - \`apps/backend/lambdas/expenditures/db-types.d.ts\`
-              - \`apps/backend/lambdas/projects/db-types.d.ts\`
-              - \`apps/backend/lambdas/users/db-types.d.ts\`
+              ${files}
               
               The updated types are now in sync with schema changes.`;
 
@@ -297,10 +309,13 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "The following files were updated and committed:" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "- \`apps/backend/lambdas/donors/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
-              echo "- \`apps/backend/lambdas/expenditures/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
-              echo "- \`apps/backend/lambdas/projects/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
-              echo "- \`apps/backend/lambdas/users/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
+              
+              for file in apps/backend/lambdas/*/db-types.d.ts; do
+                if [ -f "$file" ]; then
+                  echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
+                fi
+              done
+
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**Next Steps:** The changes have been automatically committed to this PR. Review the updated types and merge when ready." >> $GITHUB_STEP_SUMMARY
             else
