@@ -117,10 +117,23 @@ resource "aws_cognito_user_pool_client" "branch_client" {
   enable_propagate_additional_user_context_data = false
 }
 
-# Outputs for use in lambdas
-output "cognito_user_pool_id" {
-  value       = aws_cognito_user_pool.branch_user_pool.id
-  description = "Cognito User Pool ID"
+# Store Cognito values in Infisical
+resource "infisical_secret" "cognito_user_pool_id" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/aws/cognito"
+
+  secret_name  = "user_pool_id"
+  secret_value = aws_cognito_user_pool.branch_user_pool.id
+}
+
+resource "infisical_secret" "cognito_client_id" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/aws/cognito"
+
+  secret_name  = "client_id"
+  secret_value = aws_cognito_user_pool_client.branch_client.id
 }
 
 output "cognito_user_pool_arn" {
@@ -131,12 +144,6 @@ output "cognito_user_pool_arn" {
 output "cognito_user_pool_endpoint" {
   value       = aws_cognito_user_pool.branch_user_pool.endpoint
   description = "Cognito User Pool Endpoint"
-}
-
-output "cognito_client_id" {
-  value       = aws_cognito_user_pool_client.branch_client.id
-  description = "Cognito User Pool Client ID"
-  sensitive   = true
 }
 
 output "cognito_region" {
