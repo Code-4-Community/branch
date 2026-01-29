@@ -140,20 +140,24 @@ export function getSwaggerHtml(specUrl: string): string {
 `;
 }
 
-function templateReadme(handlerName, routes) {
+function templateReadme(handlerName, routes, options = {}) {
   if (!routes) {
     routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
   }
+
+  const description = options.description || `TODO: Add a description of the ${handlerName} lambda.`;
 
   const endpointRows = routes
     .map((r) => `| ${r.method} | ${r.path} | ${r.description || ''} |`)
     .join('\n');
 
+  const customSections = options.customSections ? `\n${options.customSections}\n` : '';
+
   return `# ${handlerName}
 
 ## Description
 
-TODO: Add a description of the ${handlerName} lambda.
+${description}
 
 ## Endpoints
 
@@ -190,7 +194,7 @@ node tools/lambda-cli.js add-route ${handlerName} POST /${handlerName} --body na
 | \`npm run build\` | Compile TypeScript |
 | \`npm test\` | Run tests |
 | \`npm run package\` | Build and zip for deployment |
-`;
+${customSections}`;
 }
 
 function templateJestSetup(handlerName) {
@@ -1075,6 +1079,53 @@ function cmdAddRoute(handlerRel, method, apiPath, options = {}) {
   log(`Added route ${method.toUpperCase()} ${apiPath} to ${handlerRel} `);
 }
 
+function parseExistingReadme(readmePath) {
+  if (!fs.existsSync(readmePath)) return null;
+  const content = fs.readFileSync(readmePath, 'utf8');
+
+  // Extract description (between ## Description and ## Endpoints)
+  let description = '';
+  const descMatch = content.match(/## Description\n\n([\s\S]*?)\n\n## Endpoints/);
+  if (descMatch) {
+    description = descMatch[1].trim();
+  }
+
+  // Extract endpoint descriptions from the table (keyed by "METHOD|path")
+  const endpointDescriptions = new Map();
+  const tableRowRegex = /^\|\s*(\w+)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\|$/gm;
+  let match;
+  while ((match = tableRowRegex.exec(content)) !== null) {
+    const method = match[1];
+    const routePath = match[2];
+    const desc = match[3].trim();
+    if (method === 'Method' || method === '--------') continue;
+    if (desc) {
+      endpointDescriptions.set(`${method}|${routePath}`, desc);
+    }
+  }
+
+  // Extract custom sections after ## Scripts table
+  let customSections = '';
+  const scriptsIndex = content.indexOf('## Scripts');
+  if (scriptsIndex !== -1) {
+    // Find the end of the scripts table (last table row starting with |)
+    const afterScripts = content.substring(scriptsIndex);
+    const lines = afterScripts.split('\n');
+    let lastTableLine = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('|')) {
+        lastTableLine = i;
+      }
+    }
+    const trailing = lines.slice(lastTableLine + 1).join('\n').trim();
+    if (trailing) {
+      customSections = trailing;
+    }
+  }
+
+  return { description, endpointDescriptions, customSections };
+}
+
 function collectRoutes(handlerPath, openapiPath) {
   const handlerRoutes = extractRoutesFromHandler(handlerPath);
   const openApiRoutes = extractRoutesFromOpenApi(openapiPath);
@@ -1132,7 +1183,26 @@ function cmdGenerateReadme(handlerRel) {
       ? collectRoutes(handlerPath, openapiPath)
       : [{ method: 'GET', path: '/health', description: 'Health check' }];
 
-    overwriteFile(readmePath, templateReadme(name, routes));
+    // Preserve existing customizations
+    const existing = parseExistingReadme(readmePath);
+    const options = {};
+    if (existing) {
+      if (existing.description) {
+        options.description = existing.description;
+      }
+      if (existing.customSections) {
+        options.customSections = existing.customSections;
+      }
+      // Carry over endpoint descriptions from existing table
+      for (const route of routes) {
+        const key = `${route.method}|${route.path}`;
+        if (existing.endpointDescriptions.has(key)) {
+          route.description = existing.endpointDescriptions.get(key);
+        }
+      }
+    }
+
+    overwriteFile(readmePath, templateReadme(name, routes, options));
     log(`Generated README.md for ${name}`);
   }
 }
