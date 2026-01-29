@@ -16,6 +16,12 @@ data "infisical_secrets" "infisical_folder" {
   folder_path  = "/infisical"
 }
 
+data "infisical_secrets" "cognito_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/aws/cognito"
+}
+
 
 resource "github_actions_secret" "aws_access_key_id" {
   repository      = github_repository.branch.name
@@ -41,6 +47,18 @@ resource "github_actions_secret" "infisical_client_secret" {
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
 
+resource "github_actions_secret" "cognito_user_pool_id" {
+  repository      = github_repository.branch.name
+  secret_name     = "COGNITO_USER_POOL_ID"
+  plaintext_value = data.infisical_secrets.cognito_folder.secrets["COGNITO_USER_POOL_ID"].value
+}
+
+resource "github_actions_secret" "cognito_client_id" {
+  repository      = github_repository.branch.name
+  secret_name     = "COGNITO_CLIENT_ID"
+  plaintext_value = data.infisical_secrets.cognito_folder.secrets["COGNITO_CLIENT_ID"].value
+}
+
 
 
 variable "infisical_client_id" {
@@ -55,4 +73,3 @@ variable "infisical_workspace_id" {
   type    = string
   default = "d1ee8b80-118c-4daf-ae84-31da43261b76"
 }
-

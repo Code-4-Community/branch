@@ -22,7 +22,7 @@ jobs:
   test:
     needs: discover
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:16
@@ -37,27 +37,27 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
-    
+
     strategy:
       fail-fast: false
       matrix:
         lambda: ${{ fromJson(needs.discover.outputs.lambdas) }}
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
+
       - name: Setup database schema
         run: psql postgres://branch_dev:password@localhost:5432/branch_db -f apps/backend/db/db_setup.sql
-      
+
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
-      
+
       - name: Run tests
         working-directory: ${{ matrix.lambda }}
         run: |
@@ -68,3 +68,6 @@ jobs:
           npm test
         env:
           DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db?options=-csearch_path%3Dbranch
+          COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+          COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+          AWS_REGION: us-east-2
