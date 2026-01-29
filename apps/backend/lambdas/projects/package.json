@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node --transpile-only dev-server.ts",
     "build": "tsc",
-    "test": "jest",
+    "test": "start-server-and-test dev http-get://localhost:3000/projects/health jest",
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {

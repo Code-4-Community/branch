@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.131",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.11.30",
     "@types/pg": "^8.16.0",
     "js-yaml": "^4.1.0",
