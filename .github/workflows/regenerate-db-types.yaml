@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - apps/backend/db/db_setup.sql
-      - apps/backend/db/kysely-codegen.config.js
 
 
 permissions:
@@ -86,22 +85,15 @@ jobs:
           run: |
             echo "Starting type generation..."
             cd apps/backend/db
-            
-            # Check if the config file exists
-            if [ ! -f "kysely-codegen.config.js" ]; then
-              echo "Error: kysely-codegen.config.js not found"
-              exit 1
-            fi
-
+        
             # Run kysely-codegen
-            kysely-codegen --config kysely-codegen.config.js || {
-              echo "Error: kysely-codegen failed to generate types"
-              echo "Attempting to run with direct connection string"
-              kysely-codegen \
-                --url "$DATABASE_URL" \
-                --out-file db-types.d.ts \
-                --dialect postgres || exit 1
-            }
+             kysely-codegen \
+              --url "$DATABASE_URL" \
+              --out-file db-types.d.ts \
+              --dialect postgres || {
+                echo "Error: kysely-codegen failed to generate types"
+                exit 1
+              }
 
             # Verify the output file was created
             if [ ! -f "db-types.d.ts" ]; then
@@ -109,7 +101,6 @@ jobs:
               exit 1
             fi
 
-            # All steps passed
             echo "Type generation successful"
         
         - name: Copy generated types to lambda functions
@@ -324,7 +315,6 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Workflow Trigger:** Schema change detected in:" >> $GITHUB_STEP_SUMMARY
             echo "- \`apps/backend/db/db_setup.sql\`" >> $GITHUB_STEP_SUMMARY
-            echo "- \`apps/backend/db/kysely-codegen.config.js\`" >> $GITHUB_STEP_SUMMARY
         
 
 
