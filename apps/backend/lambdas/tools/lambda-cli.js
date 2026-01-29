@@ -140,7 +140,15 @@ export function getSwaggerHtml(specUrl: string): string {
 `;
 }
 
-function templateReadme(handlerName) {
+function templateReadme(handlerName, routes) {
+  if (!routes) {
+    routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
+  }
+
+  const endpointRows = routes
+    .map((r) => `| ${r.method} | ${r.path} | ${r.description || ''} |`)
+    .join('\n');
+
   return `# ${handlerName}
 
 ## Description
@@ -151,7 +159,7 @@ TODO: Add a description of the ${handlerName} lambda.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
+${endpointRows}
 
 ## Setup
 
@@ -1067,6 +1075,68 @@ function cmdAddRoute(handlerRel, method, apiPath, options = {}) {
   log(`Added route ${method.toUpperCase()} ${apiPath} to ${handlerRel} `);
 }
 
+function collectRoutes(handlerPath, openapiPath) {
+  const handlerRoutes = extractRoutesFromHandler(handlerPath);
+  const openApiRoutes = extractRoutesFromOpenApi(openapiPath);
+
+  const routeMap = new Map();
+  for (const route of [...handlerRoutes, ...openApiRoutes]) {
+    const key = `${route.method}:${route.path}`;
+    if (!routeMap.has(key)) {
+      routeMap.set(key, route);
+    }
+  }
+
+  const routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
+  for (const route of routeMap.values()) {
+    if (route.method === 'GET' && route.path === '/health') continue;
+    routes.push({ method: route.method, path: route.path, description: '' });
+  }
+  return routes;
+}
+
+function cmdGenerateReadme(handlerRel) {
+  const lambdasRoot = path.resolve(__dirname, '..');
+
+  // if no handler specified, generate for all lambdas
+  const handlers = [];
+  if (!handlerRel) {
+    const entries = fs.readdirSync(lambdasRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name !== 'tools' && entry.name !== 'node_modules') {
+        const handlerPath = path.join(lambdasRoot, entry.name, 'handler.ts');
+        if (fs.existsSync(handlerPath)) {
+          handlers.push(entry.name);
+        }
+      }
+    }
+    if (handlers.length === 0) {
+      error('No lambda handlers found');
+    }
+  } else {
+    handlers.push(handlerRel);
+  }
+
+  for (const name of handlers) {
+    const baseDir = path.resolve(lambdasRoot, name);
+    const handlerPath = path.join(baseDir, 'handler.ts');
+    const openapiPath = path.join(baseDir, 'openapi.yaml');
+    const readmePath = path.join(baseDir, 'README.md');
+
+    if (!fs.existsSync(handlerPath)) {
+      log(`Skipping ${name}: handler.ts not found`);
+      continue;
+    }
+
+    const routes = fs.existsSync(openapiPath)
+      ? collectRoutes(handlerPath, openapiPath)
+      : [{ method: 'GET', path: '/health', description: 'Health check' }];
+
+    overwriteFile(readmePath, templateReadme(name, routes));
+    log(`Generated README.md for ${name}`);
+  }
+}
+
 function main() {
   const [, , cmd, ...rest] = process.argv;
   if (!cmd || ['-h', '--help', 'help'].includes(cmd)) {
@@ -1087,6 +1157,9 @@ function main() {
     log('  list-routes <handlerRel>');
     log('    Lists all routes in a handler');
     log('');
+    log('  generate-readme [handlerRel]');
+    log('    Generates/regenerates README.md for a handler (or all handlers if omitted)');
+    log('');
     log('  Examples:');
     log('    node lambda-cli.js init-handler users');
     log('    node lambda-cli.js add-route users GET /users/{id}');
@@ -1100,6 +1173,8 @@ function main() {
       '    node lambda-cli.js add-route users POST /users --body name:string --headers authorization:string --status 201',
     );
     log('    node lambda-cli.js list-routes users');
+    log('    node lambda-cli.js generate-readme users');
+    log('    node lambda-cli.js generate-readme');
     process.exit(0);
   }
   if (cmd === 'init-handler') {
@@ -1137,6 +1212,11 @@ function main() {
     }
 
     cmdAddRoute(handlerRel, method, apiPath, options);
+    return;
+  }
+  if (cmd === 'generate-readme') {
+    const handlerRel = rest[0];
+    cmdGenerateReadme(handlerRel);
     return;
   }
   error(`Unknown command: ${cmd} `);
