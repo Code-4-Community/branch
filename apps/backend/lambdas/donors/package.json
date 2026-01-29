@@ -14,6 +14,7 @@
     "@types/node": "^20.11.30",
     "@types/pg": "^8.16.0",
     "js-yaml": "^4.1.0",
+    "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
