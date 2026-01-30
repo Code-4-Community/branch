@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-
 import db from './db';
+import { ProjectValidationUtils } from './validation-utils';
+
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -25,7 +26,52 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, projects);
     }
     
-    // <<< ROUTES-END    
+    // POST /projects
+    if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
+      let body: Record<string, unknown>;
+      try {
+        body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      } catch (e) {
+        return json(400, { message: 'Invalid JSON in request body' });
+      }
+
+      const nameResult = ProjectValidationUtils.validateName(body.name);
+      if (!nameResult.isValid) {
+        return json(400, { message: nameResult.error });
+      }
+
+      const values: any = { name: nameResult.value };
+
+      const parsedBudget = ProjectValidationUtils.parseNumericToFixed(body.total_budget);
+      if (parsedBudget === 'INVALID') return json(400, { message: "'total_budget' must be a number" });
+      if (parsedBudget !== null) values.total_budget = parsedBudget;
+
+      const startDateResult = ProjectValidationUtils.validateDate(body.start_date, 'start_date');
+      if (!startDateResult.isValid) return json(400, { message: startDateResult.error });
+      if (startDateResult.value !== null) values.start_date = startDateResult.value;
+
+      const endDateResult = ProjectValidationUtils.validateDate(body.end_date, 'end_date');
+      if (!endDateResult.isValid) return json(400, { message: endDateResult.error });
+      if (endDateResult.value !== null) values.end_date = endDateResult.value;
+
+      const currencyResult = ProjectValidationUtils.validateCurrency(body.currency);
+      if (!currencyResult.isValid) return json(400, { message: currencyResult.error });
+      if (currencyResult.value !== null) values.currency = currencyResult.value;
+
+      try {
+        const inserted = await db
+          .insertInto('branch.projects')
+          .values(values)
+          .returning(['project_id','name','total_budget','currency','start_date','end_date','created_at'])
+          .executeTakeFirst();
+
+        return json(201, inserted);
+      } catch (e) {
+        console.error('DB insert failed', e);
+        return json(500, { message: 'Failed to create project' });
+      }
+    }
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

@@ -167,3 +167,120 @@ test("get users error", async () => {
   let res = await fetch("http://localhost:3000/user")
   expect(res.status).toBe(404);
 });
+
+test("POST user success case", async () => {
+  let res = await fetch("http://localhost:3000/users", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Jane Branch",
+      email: "jane@branch.com",
+      isAdmin: true
+    })
+  });
+
+  expect(res.status).toBe(201);
+
+  let body = await res.json();
+
+  expect(body.ok).toBe(true);
+  expect(body.body.name).toBe("Jane Branch");
+  expect(body.body.email).toBe("jane@branch.com");
+  expect(body.body.isAdmin).toBe(true);
+});
+
+test("POST user 400 case when invalid email is sent", async () => {
+  let res = await fetch("http://localhost:3000/users", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Invalid User",
+      email: "",
+      isAdmin: false
+    })
+  });
+
+  expect(res.status).toBe(400);
+});
+
+test("POST user 400 case when request sent with missing fields", async () => {
+  let res = await fetch("http://localhost:3000/users", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Invalid User",
+    }) // missing email and admin fields
+  });
+
+  expect(res.status).toBe(400);
+});
+
+test("delete user test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+
+  expect(res.status).toBe(200);
+  let body = await res.json();
+
+
+  expect(body.ok).toBe(true);
+  expect(body.route).toBe("DELETE /users/{userId}");
+  expect(body.pathParams.userId).toBe("1");
+
+  let getRes = await fetch("http://localhost:3000/users/1");
+  expect(getRes.status).toBe(404);
+  let getbody = await getRes.json();
+  expect(getbody.message).toBe('User not found');
+});
+
+test("delete user 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/users/9999", {
+    method: "DELETE"
+  });
+
+  expect(res.status).toBe(404);
+  let body = await res.json();
+  expect(body.message).toBe('User not found');
+});
+
+test("delete same user twice returns 404 on second attempt", async () => {
+  let res1 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res1.status).toBe(200);
+
+  let res2 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res2.status).toBe(404);
+  let body = await res2.json();
+  expect(body.message).toBe('User not found');
+});
+
+test("delete multiple users", async () => {
+  let res1 = await fetch("http://localhost:3000/users/1", {
+    method: "DELETE"
+  });
+  expect(res1.status).toBe(200);
+
+  let res2 = await fetch("http://localhost:3000/users/2", {
+    method: "DELETE"
+  });
+  expect(res2.status).toBe(200);
+
+  let check1 = await fetch("http://localhost:3000/users/1");
+  expect(check1.status).toBe(404);
+
+  let check2 = await fetch("http://localhost:3000/users/2");
+  expect(check2.status).toBe(404);
+});
+
+test("delete user 1 does not affect user 2", async () => {
+  // Delete user 1
+  await fetch("http://localhost:3000/users/1", { method: "DELETE" });
+
+  // User 2 should still exist
+  let res = await fetch("http://localhost:3000/users/2");
+  expect(res.status).toBe(200);
+  
+  let body = await res.json();
+  expect(body.body.email).toBe('renee@branch.org');
+});

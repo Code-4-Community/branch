@@ -8,7 +8,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // API Gateway: event.path, event.httpMethod
     // Function URL: event.rawPath, event.requestContext.http.method
     const rawPath = event.rawPath || event.path || '/';
-    const normalizedPath = rawPath.replace(/\/$/, '');
+    let normalizedPath = rawPath.replace(/\/$/, '');
+    if (normalizedPath.length === 0) {
+      normalizedPath = '/';
+    }
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
         console.log('DEBUG - rawPath:', rawPath, 'normalizedPath:', normalizedPath, 'method:', method);
@@ -114,8 +117,69 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
     }
+    
+    // DELETE /users/{userId}
+    if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'DELETE') {
+      const userId = normalizedPath.split('/')[1];  // Change from [2] to [1]
+      if (!userId) return json(400, { message: 'userId is required' });
+      
+      const deleted = await db.deleteFrom('branch.users').where('user_id', '=', Number(userId)).execute();
+    
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'User not found' });
+      }
 
-    // <<< ROUTES-END 
+      return json(200, { ok: true, route: 'DELETE /users/{userId}', pathParams: { userId } });
+    }
+
+    // POST /users
+    if ((normalizedPath === '/users' || normalizedPath === '') && method === 'POST') {
+      const body = event.body
+        ? (JSON.parse(event.body) as Record<string, unknown>)
+        : {};
+
+      // extract fields to create user
+      let email = body.email as string;
+      let name = body.name as string;
+      let isAdmin = body.isAdmin as boolean;
+      if (!email || !name || typeof isAdmin !== 'boolean') {
+        return json(400, { message: 'email, name, and isAdmin are required' });
+      }
+
+      // Check if user with this email already exists
+      const existingUser = await db
+        .selectFrom('branch.users')
+        .where('email', '=', email)
+        .selectAll()
+        .executeTakeFirst();
+
+      if (existingUser) {
+        return json(409, { message: 'User with this email already exists' });
+      }
+        
+      // insert new user (user_id auto-increments)
+      try {
+        await db
+          .insertInto('branch.users')
+          .values({ email, name, is_admin: isAdmin })
+          .execute();
+      } catch (err) {
+        console.error('Database insert error:', err);
+        return json(500, { message: 'Failed to create user' });
+      }
+
+      return json(201, {
+        ok: true,
+        route: 'POST /users',
+        pathParams: {},
+        body: {
+          email,
+          name,
+          isAdmin,
+        },
+      });
+    }
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
