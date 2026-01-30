@@ -94,3 +94,10 @@ INSERT INTO expenditures (project_id, entered_by, amount, category, description,
 (1, 1, 5000, 'Travel', 'Conference attendance', '2025-02-10'),
 (2, 2, 3000, 'Equipment', 'Purchase of recording devices', '2025-04-05'),
 (3, 3, 2500, 'Supplies', 'Educational materials', '2025-07-12');
+
+INSERT INTO reports (project_id, object_url, date_created) VALUES
+(1, 1, 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf', '2025-06-30'),
+(2, 2, 'https://s3.amazonaws.com/branch-reports/health_education_initiative_report.pdf', '2025-09-30'),
+(3, 3, 'https://s3.amazonaws.com/branch-reports/policy_advocacy_program_report.pdf', '2025-12-31');
+(4, 2, 'https://s3.amazonaws.com/branch-reports/research_program_reports.pdf', '2025-02-19');
+(5, 2, 'https://s3.amazonaws.com/branch-reports/health_care_data_reports.pdf', '2025-01-12');
