@@ -56,6 +56,7 @@ function templatePackageJson() {
     "start-server-and-test": "^2.1.1"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
     "jest":"^30.2.0"
   }
 }
@@ -149,7 +150,10 @@ test("health test 🌞", async () => {
 `}
 
 function templateDevServer(handlerName) {
-  return `import { handler } from './handler';
+  return `import { config } from 'dotenv';
+config(); // Load .env file
+
+import { handler } from './handler';
 import { loadOpenApiSpec, getSwaggerHtml } from './swagger-utils';
 import * as http from 'http';
 import * as fs from 'fs';

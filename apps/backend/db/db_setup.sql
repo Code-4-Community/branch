@@ -4,6 +4,7 @@ SET search_path TO branch;
 
 CREATE TABLE users (
     user_id SERIAL PRIMARY KEY,
+    cognito_sub VARCHAR(255) UNIQUE,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     is_admin BOOLEAN DEFAULT FALSE,
