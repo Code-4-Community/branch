@@ -2,7 +2,7 @@
 
 ## Description
 
-TODO: Add a description of the auth lambda.
+Lambda for auth handler.
 
 ## Endpoints
 
