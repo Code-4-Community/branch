@@ -44,7 +44,7 @@ jobs:
         - name: Install dependencies
           run: |
             echo "Installing project dependencies"
-            npm ci
+            npm ci --legacy-peer-deps
             
             echo "Installing kysely-codegen globally"
             npm install -g kysely-codegen
