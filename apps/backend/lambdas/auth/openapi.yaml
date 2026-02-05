@@ -1,0 +1,163 @@
+openapi: 3.0.3
+info:
+  title: auth (Local)
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/auth
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /register:
+    post:
+      summary: Register a new user
+      description: Creates a new user account in Cognito and the database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - name
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address (will be normalized to lowercase)
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  description: Password (min 8 chars, must contain uppercase, lowercase, and number)
+                  example: Password123
+                name:
+                  type: string
+                  minLength: 2
+                  description: User's full name
+                  example: John Doe
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User registered successfully
+                  userId:
+                    type: string
+                    description: Cognito user ID (sub)
+                    example: cognito-user-123
+                  email:
+                    type: string
+                    example: user@example.com
+                  name:
+                    type: string
+                    example: John Doe
+                  emailVerificationRequired:
+                    type: boolean
+                    example: true
+                  details:
+                    type: string
+                    example: Please check your email for verification code
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invalid email format
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User with this email already exists
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Failed to create user account
+
+  /login:
+    post:
+      summary: POST /login
+      parameters:
+        - in: query
+          name: username
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+
+  /verify-email:
+    post:
+      summary: POST /verify-email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                code:
+                  type: string
+      responses:
+        '200':
+          description: OK
+
+  /resend-code:
+    post:
+      summary: POST /resend-code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+      responses:
+        '200':
+          description: OK
+
+  /logout:
+    post:
+      summary: POST /logout
+      responses:
+        '200':
+          description: OK
