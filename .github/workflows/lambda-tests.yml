@@ -1,0 +1,78 @@
+name: Lambda Tests
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      lambdas: ${{ steps.find.outputs.lambdas }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find all lambdas
+        id: find
+        run: |
+          lambdas=$(ls -d apps/backend/lambdas/*/ | grep -Ev "(tools)" | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
+  
+  test:
+    needs: discover
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: branch_dev
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: branch_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    strategy:
+      fail-fast: false
+      matrix:
+        lambda: ${{ fromJson(needs.discover.outputs.lambdas) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Setup database schema
+        run: psql postgres://branch_dev:password@localhost:5432/branch_db -f apps/backend/db/db_setup.sql
+      - name: Install dependencies
+        working-directory: ${{ matrix.lambda }}
+        run: npm ci --legacy-peer-deps
+      - name: Run tests
+        working-directory: ${{ matrix.lambda }}
+        run: |
+          LAMBDA_NAME=$(basename ${{ matrix.lambda }})
+          npm run dev &
+          sleep 5
+          curl --fail --retry 5 --retry-delay 2 http://localhost:3000/${LAMBDA_NAME}/health
+          npm test
+        env:
+          DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db?options=-csearch_path%3Dbranch
+          COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
+          COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+          AWS_REGION: us-east-2
+  
+  lambda-tests:
+    name: lambda-tests
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Lambda tests failed or were cancelled"
+            exit 1
+          fi
+          echo "All lambda tests passed!"
