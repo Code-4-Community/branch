@@ -133,7 +133,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
 
     // POST /users
-    if ((normalizedPath === '/users' || normalizedPath === '') && method === 'POST') {
+    if ((normalizedPath === '/' || normalizedPath === '/users') && method === 'POST') {
       const body = event.body
         ? (JSON.parse(event.body) as Record<string, unknown>)
         : {};

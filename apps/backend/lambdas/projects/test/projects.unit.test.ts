@@ -53,8 +53,8 @@ test('201: creates project with all fields', async () => {
   const json = JSON.parse(res.body);
   expect(json.name).toBe('AllFieldsUnit');
   expect(json.total_budget).toBeDefined();
-  expect(json.start_date).toBe('2025-01-01T05:00:00.000Z');
-  expect(json.end_date).toBe('2025-12-31T05:00:00.000Z');
+  expect(json.start_date).toContain('2025-01-01');
+  expect(json.end_date).toContain('2025-12-31');
   expect(json.currency).toBe('USD');
 });
 

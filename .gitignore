@@ -42,6 +42,7 @@ Thumbs.db
 *.env
 *.env.*
 !example.env
+!.env.example
 
 # Terraform
 .terraform.lock.hcl
