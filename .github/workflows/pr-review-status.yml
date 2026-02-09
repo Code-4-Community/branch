@@ -1,0 +1,171 @@
+name: PR Review Status Update
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: pr-review-status-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    # Only act on real reviews, not PENDING (draft reviews)
+    if: >-
+      github.event.review.state == 'approved' ||
+      github.event.review.state == 'changes_requested'
+    steps:
+      - name: Checkout bot-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: bot-state
+          path: bot-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Slack message and bot state
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const BOT_STATE_DIR = 'bot-state';
+            const rotationPath = path.join(BOT_STATE_DIR, 'rotation.json');
+            const prsDir = path.join(BOT_STATE_DIR, 'prs');
+
+            const reviewState = context.payload.review.state;   // "approved" or "changes_requested"
+            const reviewer = context.payload.review.user.login;
+            const prNumber = context.payload.pull_request.number;
+            const prUrl = context.payload.pull_request.html_url;
+            const prTitle = context.payload.pull_request.title;
+
+            console.log(`Review submitted: ${reviewer} → ${reviewState} on PR #${prNumber}`);
+
+            // ── Load rotation config (for Slack channel + always_reviewer) ──
+            if (!fs.existsSync(rotationPath)) {
+              console.log('rotation.json not found. Skipping.');
+              return;
+            }
+            const rotation = JSON.parse(fs.readFileSync(rotationPath, 'utf8'));
+
+            // ── Find the per-PR file ────────────────────────────────────────
+            const prFileKey = `${context.repo.owner}_${context.repo.repo}_${prNumber}`;
+            const prFilePath = path.join(prsDir, `${prFileKey}.json`);
+
+            if (!fs.existsSync(prFilePath)) {
+              console.log(`No per-PR file for #${prNumber}. Not tracked by the bot.`);
+              return;
+            }
+
+            const prData = JSON.parse(fs.readFileSync(prFilePath, 'utf8'));
+
+            // Only care about the assigned main reviewer's reviews
+            const isMainReviewer = reviewer.toLowerCase() === prData.main_reviewer.toLowerCase();
+
+            // ── Determine emoji and label ────────────────────────────────────
+            let emoji, label;
+            if (reviewState === 'approved') {
+              emoji = ':white_check_mark:';
+              label = 'Approved';
+            } else {
+              emoji = ':arrows_counterclockwise:';
+              label = 'Changes Requested';
+            }
+
+            // ── Helper: call Slack API ───────────────────────────────────────
+            async function slackApi(method, body) {
+              try {
+                const resp = await fetch(`https://slack.com/api/${method}`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+                  },
+                  body: JSON.stringify(body),
+                });
+                const data = await resp.json();
+                if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+                return data;
+              } catch (err) {
+                console.log(`Slack ${method} failed: ${err.message}`);
+                return { ok: false };
+              }
+            }
+
+            // ── Update the original Slack message with a status banner ───────
+            if (prData.slack_thread_ts && isMainReviewer) {
+              await slackApi('chat.update', {
+                channel: rotation.slack_channel_id,
+                ts: prData.slack_thread_ts,
+                text: `${label}: <${prUrl}|#${prNumber} ${prTitle}>`,
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `${emoji} *${label}*\n*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prData.author}*`,
+                    },
+                  },
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `:mag: *Main reviewer:* <@${prData.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${rotation.always_reviewer_slack}>`,
+                    },
+                  },
+                ],
+              });
+              console.log(`Updated original Slack message for PR #${prNumber}`);
+            }
+
+            // ── Post a thread reply for visibility ───────────────────────────
+            if (prData.slack_thread_ts) {
+              const reviewerSlack = rotation.github_to_slack[reviewer];
+              const mention = reviewerSlack ? `<@${reviewerSlack}>` : `*${reviewer}*`;
+
+              await slackApi('chat.postMessage', {
+                channel: rotation.slack_channel_id,
+                thread_ts: prData.slack_thread_ts,
+                text: `${emoji} ${mention} ${reviewState === 'approved' ? 'approved' : 'requested changes on'} <${prData.pr_url}|PR #${prNumber}>`,
+              });
+            }
+
+            // ── Update bot state if this is the main reviewer ────────────────
+            if (isMainReviewer && prData.status === 'open') {
+              prData.status = 'reviewed';
+              fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
+              console.log(`Marked PR #${prNumber} as reviewed`);
+            }
+
+      - name: Commit and push bot-state
+        working-directory: bot-state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "bot: mark PR #${{ github.event.pull_request.number }} as reviewed"
+
+          for attempt in 1 2 3; do
+            if git pull --rebase origin bot-state && git push origin bot-state; then
+              echo "Push succeeded (attempt $attempt)"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying in 2s…"
+            sleep 2
+          done
+
+          echo "::error::Failed to push bot-state after 3 attempts"
+          exit 1
