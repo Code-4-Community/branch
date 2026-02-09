@@ -155,9 +155,8 @@ jobs:
 
             // ── Update original Slack message ────────────────────────
             if (prData.slack_thread_ts) {
-              const headerText = wasMerged
-                ? ':merged:  Merged'
-                : ':x:  Closed';
+              const statusEmoji = wasMerged ? ':merged:' : ':x:';
+              const headerText = `${statusEmoji}  Review Requested`;
 
               const blocks = [
                 {
