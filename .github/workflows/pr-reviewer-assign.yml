@@ -137,30 +137,33 @@ jobs:
               return;
             }
 
-            // ── Round-robin: pick next reviewer ──────────────────────
+            // ── Detect if author is the always-reviewer ─────────────
+            const authorSlackId = config.github_to_slack[prAuthor];
+            const authorIsAlwaysReviewer = authorSlackId === config.always_reviewer_slack;
+            const reviewersNeeded = authorIsAlwaysReviewer ? 2 : 1;
+
+            // ── Round-robin: pick reviewer(s) ─────────────────────────
             const roster = config.roster;
             let cursor = state.cursor || 0;
-            let mainReviewer = null;
+            const pickedReviewers = [];
             let newCursor = cursor;
 
-            for (let i = 0; i < roster.length; i++) {
+            for (let i = 0; i < roster.length && pickedReviewers.length < reviewersNeeded; i++) {
               const idx = (cursor + i) % roster.length;
               const candidate = roster[idx];
               if (candidate.toLowerCase() !== prAuthor.toLowerCase()) {
-                mainReviewer = candidate;
+                pickedReviewers.push(candidate);
                 newCursor = (idx + 1) % roster.length;
-                break;
               }
             }
 
-            // Fallback: if the only person in the roster is the author,
-            // assign the always-reviewer instead.
-            if (!mainReviewer) {
+            // Fallback: if we couldn't find enough reviewers
+            if (pickedReviewers.length === 0) {
               const alwaysEntry = Object.entries(config.github_to_slack).find(
                 ([, slackId]) => slackId === config.always_reviewer_slack
               );
               if (alwaysEntry) {
-                mainReviewer = alwaysEntry[0];
+                pickedReviewers.push(alwaysEntry[0]);
               } else {
                 core.setFailed('No eligible reviewer found and could not determine always-reviewer.');
                 return;
@@ -168,13 +171,21 @@ jobs:
               newCursor = (cursor + 1) % roster.length;
             }
 
+            const mainReviewer = pickedReviewers[0];
+            const secondReviewer = pickedReviewers.length > 1 ? pickedReviewers[1] : null;
+
             const mainReviewerSlack = config.github_to_slack[mainReviewer];
             if (!mainReviewerSlack) {
               core.setFailed(`No Slack ID mapping found for reviewer "${mainReviewer}".`);
               return;
             }
+            const secondReviewerSlack = secondReviewer ? config.github_to_slack[secondReviewer] : null;
 
-            console.log(`Assigning ${mainReviewer} to PR #${prNumber} (author: ${prAuthor}, cursor: ${cursor} → ${newCursor})`);
+            if (authorIsAlwaysReviewer) {
+              console.log(`Author is always-reviewer — assigning ${pickedReviewers.join(' + ')} to PR #${prNumber} (cursor: ${cursor} → ${newCursor})`);
+            } else {
+              console.log(`Assigning ${mainReviewer} to PR #${prNumber} (author: ${prAuthor}, cursor: ${cursor} → ${newCursor})`);
+            }
 
             // ── Request review on GitHub ─────────────────────────────
             try {
@@ -182,14 +193,23 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
-                reviewers: [mainReviewer],
+                reviewers: pickedReviewers,
               });
-              console.log(`Review requested from ${mainReviewer}`);
+              console.log(`Review requested from ${pickedReviewers.join(', ')}`);
             } catch (err) {
-              console.log(`Warning: could not request review from ${mainReviewer}: ${err.message}`);
+              console.log(`Warning: could not request reviewers: ${err.message}`);
             }
 
             // ── Post Slack notification ──────────────────────────────
+            let reviewerLines;
+            if (authorIsAlwaysReviewer && secondReviewer) {
+              // Author is the always-reviewer, so show two round-robin picks
+              reviewerLines = `:mag: *Reviewer 1:* <@${mainReviewerSlack}>\n:mag: *Reviewer 2:* <@${secondReviewerSlack}>`;
+            } else {
+              // Normal case: one main reviewer + always-reviewer
+              reviewerLines = `:mag: *Main reviewer:* <@${mainReviewerSlack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`;
+            }
+
             const slackTs = await postSlack({
               channel: config.slack_channel_id,
               text: `New PR for review: <${prUrl}|#${prNumber} ${prTitle}>`,
@@ -205,7 +225,7 @@ jobs:
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `:mag: *Main reviewer:* <@${mainReviewerSlack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`,
+                    text: reviewerLines,
                   },
                 },
               ],
@@ -222,6 +242,8 @@ jobs:
               author: prAuthor,
               main_reviewer: mainReviewer,
               main_reviewer_slack: mainReviewerSlack,
+              second_reviewer: secondReviewer,
+              second_reviewer_slack: secondReviewerSlack,
               created_at: new Date().toISOString(),
               last_reminded_at: null,
               slack_thread_ts: slackTs,

@@ -66,8 +66,15 @@ jobs:
 
             const prData = JSON.parse(fs.readFileSync(prFilePath, 'utf8'));
 
-            // Only care about the assigned main reviewer's reviews
+            // Check if reviewer is one of the assigned reviewers
             const isMainReviewer = reviewer.toLowerCase() === prData.main_reviewer.toLowerCase();
+            const isSecondReviewer = prData.second_reviewer &&
+              reviewer.toLowerCase() === prData.second_reviewer.toLowerCase();
+            const isAssignedReviewer = isMainReviewer || isSecondReviewer;
+
+            if (!isAssignedReviewer) {
+              console.log(`${reviewer} is not an assigned reviewer for PR #${prNumber}. Skipping state update.`);
+            }
 
             // ── Determine emoji and label ────────────────────────────────────
             let emoji, label;
@@ -99,8 +106,40 @@ jobs:
               }
             }
 
-            // ── Update the original Slack message with a status banner ───────
-            if (prData.slack_thread_ts && isMainReviewer) {
+            // ── Check if all assigned reviewers are now done ─────────────────
+            // We need to query all reviews to know full status
+            let allReviews = [];
+            try {
+              const resp = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              allReviews = resp.data;
+            } catch (err) {
+              console.log(`Could not fetch reviews: ${err.message}`);
+            }
+
+            const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
+            const hasReviewed = (login) => allReviews.some(
+              r => r.user.login.toLowerCase() === login.toLowerCase() && REVIEW_STATES.includes(r.state)
+            );
+
+            const mainDone = hasReviewed(prData.main_reviewer);
+            const secondDone = !prData.second_reviewer || hasReviewed(prData.second_reviewer);
+            const allDone = mainDone && secondDone;
+
+            // ── Update the original Slack message if all reviewers are done ──
+            if (prData.slack_thread_ts && allDone && isAssignedReviewer) {
+              // Build reviewer status lines
+              const reviewerLines = [];
+              const mainStatus = mainDone ? ':white_check_mark:' : ':hourglass_flowing_sand:';
+              reviewerLines.push(`${mainStatus} *${prData.main_reviewer}* <@${prData.main_reviewer_slack}>`);
+              if (prData.second_reviewer) {
+                const secondStatus = secondDone ? ':white_check_mark:' : ':hourglass_flowing_sand:';
+                reviewerLines.push(`${secondStatus} *${prData.second_reviewer}* <@${prData.second_reviewer_slack}>`);
+              }
+
               await slackApi('chat.update', {
                 channel: config.slack_channel_id,
                 ts: prData.slack_thread_ts,
@@ -117,7 +156,7 @@ jobs:
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text: `:mag: *Main reviewer:* <@${prData.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`,
+                      text: reviewerLines.join('\n'),
                     },
                   },
                 ],
@@ -137,12 +176,12 @@ jobs:
               });
             }
 
-            // ── Update bot state if this is the main reviewer ────────────────
-            if (isMainReviewer && prData.status === 'open') {
+            // ── Update bot state when all assigned reviewers are done ─────────
+            if (allDone && prData.status === 'open') {
               prData.status = 'reviewed';
               prData.resolved_at = new Date().toISOString();
               fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
-              console.log(`Marked PR #${prNumber} as reviewed`);
+              console.log(`All reviewers done — marked PR #${prNumber} as reviewed`);
             }
 
       - name: Commit and push bot-state

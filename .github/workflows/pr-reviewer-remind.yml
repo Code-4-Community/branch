@@ -38,7 +38,7 @@ jobs:
             const BOT_STATE_DIR = 'bot-state';
             const configPath = path.join(BOT_STATE_DIR, 'config.json');
             const prsDir = path.join(BOT_STATE_DIR, 'prs');
-            const REMINDER_INTERVAL_MS = 48 * 60 * 60 * 1000; // 48 hours
+            const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
             const CLEANUP_AGE_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
 
             // ── Load config (Terraform-managed) ──────────────────────
@@ -122,25 +122,29 @@ jobs:
                 continue;
               }
 
-              // ── Check if main reviewer has submitted a review ──────
-              let hasReviewed = false;
+              // ── Check if reviewers have submitted reviews ──────────
+              let reviews = [];
               try {
-                const reviews = await github.rest.pulls.listReviews({
+                const resp = await github.rest.pulls.listReviews({
                   owner: prOwner,
                   repo: prRepo,
                   pull_number: prData.pr_number,
                 });
-                hasReviewed = reviews.data.some(
-                  r =>
-                    r.user.login.toLowerCase() === prData.main_reviewer.toLowerCase() &&
-                    ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'].includes(r.state)
-                );
+                reviews = resp.data;
               } catch (err) {
                 console.log(`Could not fetch reviews for PR #${prData.pr_number}: ${err.message}`);
               }
 
-              if (hasReviewed) {
-                console.log(`PR #${prData.pr_number}: ${prData.main_reviewer} has reviewed. Done.`);
+              const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
+              const hasReviewed = (login) => reviews.some(
+                r => r.user.login.toLowerCase() === login.toLowerCase() && REVIEW_STATES.includes(r.state)
+              );
+
+              const mainDone = hasReviewed(prData.main_reviewer);
+              const secondDone = !prData.second_reviewer || hasReviewed(prData.second_reviewer);
+
+              if (mainDone && secondDone) {
+                console.log(`PR #${prData.pr_number}: all assigned reviewers have reviewed. Done.`);
                 prData.status = 'reviewed';
                 prData.resolved_at = new Date().toISOString();
                 fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
@@ -148,12 +152,19 @@ jobs:
                 continue;
               }
 
-              // ── Check if reviewer is still requested ───────────────
-              const isStillRequested = ghPr.requested_reviewers.some(
-                r => r.login.toLowerCase() === prData.main_reviewer.toLowerCase()
-              );
-              if (!isStillRequested) {
-                console.log(`PR #${prData.pr_number}: ${prData.main_reviewer} is no longer requested. Skipping reminder.`);
+              // ── Check if reviewers are still requested ─────────────
+              const requestedLogins = ghPr.requested_reviewers.map(r => r.login.toLowerCase());
+              const pendingReviewers = [];
+
+              if (!mainDone && requestedLogins.includes(prData.main_reviewer.toLowerCase())) {
+                pendingReviewers.push({ login: prData.main_reviewer, slack: prData.main_reviewer_slack });
+              }
+              if (prData.second_reviewer && !secondDone && requestedLogins.includes(prData.second_reviewer.toLowerCase())) {
+                pendingReviewers.push({ login: prData.second_reviewer, slack: prData.second_reviewer_slack });
+              }
+
+              if (pendingReviewers.length === 0) {
+                console.log(`PR #${prData.pr_number}: no pending requested reviewers. Skipping reminder.`);
                 continue;
               }
 
@@ -169,11 +180,22 @@ jobs:
               }
 
               // ── Send reminder ──────────────────────────────────────
-              console.log(`PR #${prData.pr_number}: sending reminder for ${prData.main_reviewer}`);
+              const pendingNames = pendingReviewers.map(r => r.login).join(', ');
+              console.log(`PR #${prData.pr_number}: sending reminder for ${pendingNames}`);
+
+              const mentionLines = pendingReviewers.map(
+                r => `:mag: <@${r.slack}> — please review when you get a chance.`
+              );
+              // Only cc the always-reviewer if they aren't the PR author
+              // (if they are the author, they're not reviewing this one)
+              const authorSlackId = config.github_to_slack[prData.author];
+              if (authorSlackId !== config.always_reviewer_slack) {
+                mentionLines.push(`:eyes: cc <@${config.always_reviewer_slack}>`);
+              }
 
               const reminderMsg = {
                 channel: config.slack_channel_id,
-                text: `Reminder: PR #${prData.pr_number} awaits review from ${prData.main_reviewer}`,
+                text: `Reminder: PR #${prData.pr_number} awaits review from ${pendingNames}`,
                 // Thread under the original assignment message when possible
                 ...(prData.slack_thread_ts ? { thread_ts: prData.slack_thread_ts } : {}),
                 blocks: [
@@ -184,8 +206,7 @@ jobs:
                       text: [
                         `:bell: *Reminder:* <${prData.pr_url}|PR #${prData.pr_number}> is still awaiting review.`,
                         ``,
-                        `:mag: <@${prData.main_reviewer_slack}> — please review when you get a chance.`,
-                        `:eyes: cc <@${config.always_reviewer_slack}>`,
+                        ...mentionLines,
                       ].join('\n'),
                     },
                   },
