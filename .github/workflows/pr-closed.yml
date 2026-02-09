@@ -1,11 +1,11 @@
-name: PR Review Status Update
+name: PR Closed / Merged
 
 on:
-  pull_request_review:
-    types: [submitted]
+  pull_request:
+    types: [closed]
 
 concurrency:
-  group: pr-review-status-${{ github.event.pull_request.number }}
+  group: pr-closed-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -15,10 +15,6 @@ permissions:
 jobs:
   update-status:
     runs-on: ubuntu-latest
-    # Only act on real reviews, not PENDING (draft reviews)
-    if: >-
-      github.event.review.state == 'approved' ||
-      github.event.review.state == 'changes_requested'
     steps:
       - name: Checkout bot-state branch
         uses: actions/checkout@v4
@@ -40,22 +36,22 @@ jobs:
             const configPath = path.join(BOT_STATE_DIR, 'config.json');
             const prsDir = path.join(BOT_STATE_DIR, 'prs');
 
-            const reviewState = context.payload.review.state;   // "approved" or "changes_requested"
-            const reviewer = context.payload.review.user.login;
-            const prNumber = context.payload.pull_request.number;
-            const prUrl = context.payload.pull_request.html_url;
-            const prTitle = context.payload.pull_request.title;
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const prUrl = pr.html_url;
+            const prTitle = pr.title;
+            const wasMerged = pr.merged;
 
-            console.log(`Review submitted: ${reviewer} → ${reviewState} on PR #${prNumber}`);
+            console.log(`PR #${prNumber} ${wasMerged ? 'merged' : 'closed'}`);
 
-            // ── Load config (Terraform-managed) ──────────────────────
+            // ── Load config ──────────────────────────────────────────
             if (!fs.existsSync(configPath)) {
               console.log('config.json not found. Skipping.');
               return;
             }
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
-            // ── Find the per-PR file ────────────────────────────────────────
+            // ── Find per-PR file ─────────────────────────────────────
             const prFileKey = `${context.repo.owner}_${context.repo.repo}_${prNumber}`;
             const prFilePath = path.join(prsDir, `${prFileKey}.json`);
 
@@ -66,7 +62,12 @@ jobs:
 
             const prData = JSON.parse(fs.readFileSync(prFilePath, 'utf8'));
 
-            // ── Slack helpers ───────────────────────────────────────
+            if (['merged', 'closed'].includes(prData.status)) {
+              console.log(`PR #${prNumber} already in status "${prData.status}". Skipping.`);
+              return;
+            }
+
+            // ── Slack helper ─────────────────────────────────────────
             async function slackApi(method, body) {
               try {
                 const resp = await fetch(`https://slack.com/api/${method}`, {
@@ -86,6 +87,7 @@ jobs:
               }
             }
 
+            // ── Fetch reviews for final reviewer statuses ────────────
             const STATUS_EMOJI = {
               pending:           ':hourglass_flowing_sand:',
               approved:          ':approved:',
@@ -99,50 +101,6 @@ jobs:
               commented:         'Commented',
             };
 
-            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer }) {
-              const allDone = reviewers.every(r => r.status !== 'pending')
-                && (!alwaysReviewer || alwaysReviewer.status !== 'pending');
-              const anyChangesRequested = reviewers.some(r => r.status === 'changes_requested')
-                || (alwaysReviewer && alwaysReviewer.status === 'changes_requested');
-
-              let headerText;
-              if (allDone && !anyChangesRequested) {
-                headerText = ':approved:  All Reviews Complete';
-              } else if (allDone && anyChangesRequested) {
-                headerText = ':git-request-changes:  Changes Requested';
-              } else {
-                headerText = ':evergreen_tree:  Review Requested';
-              }
-
-              const reviewerLines = reviewers.map(r =>
-                `${STATUS_EMOJI[r.status]}  <@${r.slack}> — ${STATUS_LABEL[r.status]}`
-              );
-              if (alwaysReviewer) {
-                reviewerLines.push(`${STATUS_EMOJI[alwaysReviewer.status]}  <@${alwaysReviewer.slack}> — ${STATUS_LABEL[alwaysReviewer.status]}`);
-              }
-
-              const infoText = allDone
-                ? `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*`
-                : `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*\n_Please review as soon as you can! Thank you!_`;
-
-              return [
-                {
-                  type: 'header',
-                  text: { type: 'plain_text', text: headerText, emoji: true },
-                },
-                {
-                  type: 'section',
-                  text: { type: 'mrkdwn', text: infoText },
-                },
-                { type: 'divider' },
-                {
-                  type: 'section',
-                  text: { type: 'mrkdwn', text: reviewerLines.join('\n') },
-                },
-              ];
-            }
-
-            // ── Fetch all reviews to get current state of each reviewer ──────
             let allReviews = [];
             try {
               const resp = await github.rest.pulls.listReviews({
@@ -156,7 +114,6 @@ jobs:
             }
 
             const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
-
             function getLatestStatus(login) {
               const userReviews = allReviews.filter(
                 r => r.user.login.toLowerCase() === login.toLowerCase() &&
@@ -166,20 +123,18 @@ jobs:
               return userReviews[userReviews.length - 1].state.toLowerCase();
             }
 
-            // ── Build per-reviewer status ────────────────────────────────────
+            // Build reviewer status lines
             const mainStatus = getLatestStatus(prData.main_reviewer);
             const reviewerObjs = [{ login: prData.main_reviewer, slack: prData.main_reviewer_slack, status: mainStatus }];
 
-            let secondStatus = null;
             if (prData.second_reviewer) {
-              secondStatus = getLatestStatus(prData.second_reviewer);
+              const secondStatus = getLatestStatus(prData.second_reviewer);
               reviewerObjs.push({ login: prData.second_reviewer, slack: prData.second_reviewer_slack, status: secondStatus });
             }
 
             const authorSlackId = config.github_to_slack[prData.author];
             const authorIsAlways = authorSlackId === config.always_reviewer_slack;
 
-            // Look up always-reviewer's GitHub username to get their review status
             let alwaysReviewerObj = null;
             if (!authorIsAlways) {
               const alwaysEntry = Object.entries(config.github_to_slack).find(
@@ -191,49 +146,52 @@ jobs:
               }
             }
 
-            const mainDone = mainStatus !== 'pending';
-            const secondDone = !prData.second_reviewer || secondStatus !== 'pending';
-            const alwaysDone = !alwaysReviewerObj || alwaysReviewerObj.status !== 'pending';
-            const allDone = mainDone && secondDone && alwaysDone;
+            const reviewerLines = reviewerObjs.map(r =>
+              `${STATUS_EMOJI[r.status]}  <@${r.slack}> — ${STATUS_LABEL[r.status]}`
+            );
+            if (alwaysReviewerObj) {
+              reviewerLines.push(`${STATUS_EMOJI[alwaysReviewerObj.status]}  <@${alwaysReviewerObj.slack}> — ${STATUS_LABEL[alwaysReviewerObj.status]}`);
+            }
 
-            // ── Update original Slack message with current statuses ──────────
+            // ── Update original Slack message ────────────────────────
             if (prData.slack_thread_ts) {
-              const blocks = buildBlocks({
-                prUrl, prNumber, prTitle, prAuthor: prData.author,
-                reviewers: reviewerObjs,
-                alwaysReviewer: alwaysReviewerObj,
-              });
+              const headerText = wasMerged
+                ? ':merged:  Merged'
+                : ':x:  Closed';
+
+              const blocks = [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: headerText, emoji: true },
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `~<${prUrl}|#${prNumber} ${prTitle}>~\nAuthor: *${prData.author}*`,
+                  },
+                },
+                { type: 'divider' },
+                {
+                  type: 'section',
+                  text: { type: 'mrkdwn', text: reviewerLines.join('\n') },
+                },
+              ];
 
               await slackApi('chat.update', {
                 channel: config.slack_channel_id,
                 ts: prData.slack_thread_ts,
-                text: `PR #${prNumber}: ${allDone ? 'reviews complete' : 'review in progress'}`,
+                text: `PR #${prNumber} ${wasMerged ? 'merged' : 'closed'}`,
                 blocks,
               });
               console.log(`Updated Slack message for PR #${prNumber}`);
             }
 
-            // ── Post a thread reply for visibility ───────────────────────────
-            if (prData.slack_thread_ts) {
-              const reviewerSlack = config.github_to_slack[reviewer];
-              const mention = reviewerSlack ? `<@${reviewerSlack}>` : `*${reviewer}*`;
-              const emoji = reviewState === 'approved' ? ':approved:' : ':git-request-changes:';
-              const verb = reviewState === 'approved' ? 'approved' : 'requested changes on';
-
-              await slackApi('chat.postMessage', {
-                channel: config.slack_channel_id,
-                thread_ts: prData.slack_thread_ts,
-                text: `${emoji} ${mention} ${verb} <${prData.pr_url}|PR #${prNumber}>`,
-              });
-            }
-
-            // ── Update bot state when all assigned reviewers are done ─────────
-            if (allDone && prData.status === 'open') {
-              prData.status = 'reviewed';
-              prData.resolved_at = new Date().toISOString();
-              fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
-              console.log(`All reviewers done — marked PR #${prNumber} as reviewed`);
-            }
+            // ── Update bot state ─────────────────────────────────────
+            prData.status = wasMerged ? 'merged' : 'closed';
+            prData.resolved_at = new Date().toISOString();
+            fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
+            console.log(`Marked PR #${prNumber} as ${prData.status}`);
 
       - name: Commit and push bot-state
         working-directory: bot-state
@@ -247,7 +205,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "bot: mark PR #${{ github.event.pull_request.number }} as reviewed"
+          git commit -m "bot: mark PR #${{ github.event.pull_request.number }} as ${{ github.event.pull_request.merged && 'merged' || 'closed' }}"
 
           for attempt in 1 2 3; do
             if git pull --rebase origin bot-state && git push origin bot-state; then
