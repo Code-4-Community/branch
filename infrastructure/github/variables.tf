@@ -43,5 +43,5 @@ variable "review_bot_always_reviewer_slack" {
 variable "review_bot_slack_channel_id" {
   description = "Slack channel ID where review notifications are posted"
   type        = string
-  default     = "C09DGFG5JR4"
+  default     = "C0ADQN0B6F8"
 }
