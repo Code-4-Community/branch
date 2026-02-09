@@ -63,27 +63,80 @@ jobs:
               fs.mkdirSync(prsDir, { recursive: true });
             }
 
-            // ── Helper: post a Slack message ─────────────────────────
-            async function postSlack(msg) {
+            // ── Slack helpers ───────────────────────────────────────
+            async function slackApi(method, body) {
               try {
-                const resp = await fetch('https://slack.com/api/chat.postMessage', {
+                const resp = await fetch(`https://slack.com/api/${method}`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
                   },
-                  body: JSON.stringify(msg),
+                  body: JSON.stringify(body),
                 });
                 const data = await resp.json();
-                if (data.ok) {
-                  console.log(`Slack message posted (ts: ${data.ts})`);
-                  return data.ts;
-                }
-                console.log(`Slack error: ${data.error}`);
+                if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+                return data;
               } catch (err) {
-                console.log(`Slack post failed: ${err.message}`);
+                console.log(`Slack ${method} failed: ${err.message}`);
+                return { ok: false };
               }
-              return null;
+            }
+
+            const STATUS_EMOJI = {
+              pending:           ':hourglass_flowing_sand:',
+              approved:          ':white_check_mark:',
+              changes_requested: ':arrows_counterclockwise:',
+              commented:         ':speech_balloon:',
+            };
+            const STATUS_LABEL = {
+              pending:           'Pending',
+              approved:          'Approved',
+              changes_requested: 'Changes Requested',
+              commented:         'Commented',
+            };
+
+            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer }) {
+              const allDone = reviewers.every(r => r.status !== 'pending')
+                && (!alwaysReviewer || alwaysReviewer.status !== 'pending');
+              const anyChangesRequested = reviewers.some(r => r.status === 'changes_requested')
+                || (alwaysReviewer && alwaysReviewer.status === 'changes_requested');
+
+              let headerText;
+              if (allDone && !anyChangesRequested) {
+                headerText = ':white_check_mark:  All Reviews Complete';
+              } else if (allDone && anyChangesRequested) {
+                headerText = ':arrows_counterclockwise:  Changes Requested';
+              } else {
+                headerText = ':evergreen_tree:  Review Requested';
+              }
+
+              const reviewerLines = reviewers.map(r =>
+                `${STATUS_EMOJI[r.status]}  <@${r.slack}> — ${STATUS_LABEL[r.status]}`
+              );
+              if (alwaysReviewer) {
+                reviewerLines.push(`${STATUS_EMOJI[alwaysReviewer.status]}  <@${alwaysReviewer.slack}> — ${STATUS_LABEL[alwaysReviewer.status]}`);
+              }
+
+              const infoText = allDone
+                ? `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*`
+                : `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*\n_Please review as soon as you can! Thank you!_`;
+
+              return [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: headerText, emoji: true },
+                },
+                {
+                  type: 'section',
+                  text: { type: 'mrkdwn', text: infoText },
+                },
+                { type: 'divider' },
+                {
+                  type: 'section',
+                  text: { type: 'mrkdwn', text: reviewerLines.join('\n') },
+                },
+              ];
             }
 
             // ── Idempotency: PR already tracked ──────────────────────
@@ -100,38 +153,39 @@ jobs:
               existing.status = 'open';
               existing.last_reminded_at = null;
 
+              const reopenReviewers = [existing.main_reviewer];
+              if (existing.second_reviewer) reopenReviewers.push(existing.second_reviewer);
+
               try {
                 await github.rest.pulls.requestReviewers({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: prNumber,
-                  reviewers: [existing.main_reviewer],
+                  reviewers: reopenReviewers,
                 });
               } catch (err) {
-                console.log(`Warning: could not re-request review from ${existing.main_reviewer}: ${err.message}`);
+                console.log(`Warning: could not re-request reviewers: ${err.message}`);
               }
 
-              const ts = await postSlack({
-                channel: config.slack_channel_id,
-                text: `PR reopened: <${prUrl}|#${prNumber} ${prTitle}>`,
-                blocks: [
-                  {
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: `*Reopened:* *<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*`,
-                    },
-                  },
-                  {
-                    type: 'section',
-                    text: {
-                      type: 'mrkdwn',
-                      text: `:mag: *Main reviewer:* <@${existing.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`,
-                    },
-                  },
-                ],
+              const authorSlackId = config.github_to_slack[prAuthor];
+              const authorIsAlways = authorSlackId === config.always_reviewer_slack;
+              const reviewerObjs = [{ login: existing.main_reviewer, slack: existing.main_reviewer_slack, status: 'pending' }];
+              if (existing.second_reviewer) {
+                reviewerObjs.push({ login: existing.second_reviewer, slack: existing.second_reviewer_slack, status: 'pending' });
+              }
+
+              const blocks = buildBlocks({
+                prUrl, prNumber, prTitle, prAuthor,
+                reviewers: reviewerObjs,
+                alwaysReviewer: authorIsAlways ? null : { slack: config.always_reviewer_slack, status: 'pending' },
               });
-              if (ts) existing.slack_thread_ts = ts;
+
+              const res = await slackApi('chat.postMessage', {
+                channel: config.slack_channel_id,
+                text: `PR reopened: #${prNumber} ${prTitle}`,
+                blocks,
+              });
+              if (res.ok) existing.slack_thread_ts = res.ts;
 
               fs.writeFileSync(prFilePath, JSON.stringify(existing, null, 2) + '\n');
               return;
@@ -181,11 +235,7 @@ jobs:
             }
             const secondReviewerSlack = secondReviewer ? config.github_to_slack[secondReviewer] : null;
 
-            if (authorIsAlwaysReviewer) {
-              console.log(`Author is always-reviewer — assigning ${pickedReviewers.join(' + ')} to PR #${prNumber} (cursor: ${cursor} → ${newCursor})`);
-            } else {
-              console.log(`Assigning ${mainReviewer} to PR #${prNumber} (author: ${prAuthor}, cursor: ${cursor} → ${newCursor})`);
-            }
+            console.log(`Assigning ${pickedReviewers.join(' + ')} to PR #${prNumber} (author: ${prAuthor}, cursor: ${cursor} → ${newCursor})`);
 
             // ── Request review on GitHub ─────────────────────────────
             try {
@@ -201,35 +251,23 @@ jobs:
             }
 
             // ── Post Slack notification ──────────────────────────────
-            let reviewerLines;
-            if (authorIsAlwaysReviewer && secondReviewer) {
-              // Author is the always-reviewer, so show two round-robin picks
-              reviewerLines = `:mag: *Reviewer 1:* <@${mainReviewerSlack}>\n:mag: *Reviewer 2:* <@${secondReviewerSlack}>`;
-            } else {
-              // Normal case: one main reviewer + always-reviewer
-              reviewerLines = `:mag: *Main reviewer:* <@${mainReviewerSlack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`;
+            const reviewerObjs = [{ login: mainReviewer, slack: mainReviewerSlack, status: 'pending' }];
+            if (secondReviewer) {
+              reviewerObjs.push({ login: secondReviewer, slack: secondReviewerSlack, status: 'pending' });
             }
 
-            const slackTs = await postSlack({
-              channel: config.slack_channel_id,
-              text: `New PR for review: <${prUrl}|#${prNumber} ${prTitle}>`,
-              blocks: [
-                {
-                  type: 'section',
-                  text: {
-                    type: 'mrkdwn',
-                    text: `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*`,
-                  },
-                },
-                {
-                  type: 'section',
-                  text: {
-                    type: 'mrkdwn',
-                    text: reviewerLines,
-                  },
-                },
-              ],
+            const blocks = buildBlocks({
+              prUrl, prNumber, prTitle, prAuthor,
+              reviewers: reviewerObjs,
+              alwaysReviewer: authorIsAlwaysReviewer ? null : { slack: config.always_reviewer_slack, status: 'pending' },
             });
+
+            const slackRes = await slackApi('chat.postMessage', {
+              channel: config.slack_channel_id,
+              text: `New PR for review: #${prNumber} ${prTitle}`,
+              blocks,
+            });
+            const slackTs = slackRes.ok ? slackRes.ts : null;
 
             // ── Persist state (only state.json + per-PR file) ────────
             state.cursor = newCursor;
