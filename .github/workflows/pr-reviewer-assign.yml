@@ -34,15 +34,19 @@ jobs:
             const path = require('path');
 
             const BOT_STATE_DIR = 'bot-state';
-            const rotationPath = path.join(BOT_STATE_DIR, 'rotation.json');
+            const configPath = path.join(BOT_STATE_DIR, 'config.json');
+            const statePath = path.join(BOT_STATE_DIR, 'state.json');
             const prsDir = path.join(BOT_STATE_DIR, 'prs');
 
-            // ── Load rotation state ─────────────────────────────────
-            if (!fs.existsSync(rotationPath)) {
-              core.setFailed('rotation.json not found on bot-state branch. Run Terraform to initialize.');
+            // ── Load config (Terraform-managed) and state (bot-managed) ──
+            if (!fs.existsSync(configPath)) {
+              core.setFailed('config.json not found on bot-state branch. Run Terraform to initialize.');
               return;
             }
-            const rotation = JSON.parse(fs.readFileSync(rotationPath, 'utf8'));
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const state = fs.existsSync(statePath)
+              ? JSON.parse(fs.readFileSync(statePath, 'utf8'))
+              : { cursor: 0 };
 
             // ── PR metadata ─────────────────────────────────────────
             const pr = context.payload.pull_request;
@@ -108,7 +112,7 @@ jobs:
               }
 
               const ts = await postSlack({
-                channel: rotation.slack_channel_id,
+                channel: config.slack_channel_id,
                 text: `PR reopened: <${prUrl}|#${prNumber} ${prTitle}>`,
                 blocks: [
                   {
@@ -122,7 +126,7 @@ jobs:
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text: `:mag: *Main reviewer:* <@${existing.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${rotation.always_reviewer_slack}>`,
+                      text: `:mag: *Main reviewer:* <@${existing.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`,
                     },
                   },
                 ],
@@ -134,8 +138,8 @@ jobs:
             }
 
             // ── Round-robin: pick next reviewer ──────────────────────
-            const roster = rotation.roster;
-            let cursor = rotation.cursor || 0;
+            const roster = config.roster;
+            let cursor = state.cursor || 0;
             let mainReviewer = null;
             let newCursor = cursor;
 
@@ -152,8 +156,8 @@ jobs:
             // Fallback: if the only person in the roster is the author,
             // assign the always-reviewer instead.
             if (!mainReviewer) {
-              const alwaysEntry = Object.entries(rotation.github_to_slack).find(
-                ([, slackId]) => slackId === rotation.always_reviewer_slack
+              const alwaysEntry = Object.entries(config.github_to_slack).find(
+                ([, slackId]) => slackId === config.always_reviewer_slack
               );
               if (alwaysEntry) {
                 mainReviewer = alwaysEntry[0];
@@ -164,7 +168,7 @@ jobs:
               newCursor = (cursor + 1) % roster.length;
             }
 
-            const mainReviewerSlack = rotation.github_to_slack[mainReviewer];
+            const mainReviewerSlack = config.github_to_slack[mainReviewer];
             if (!mainReviewerSlack) {
               core.setFailed(`No Slack ID mapping found for reviewer "${mainReviewer}".`);
               return;
@@ -187,7 +191,7 @@ jobs:
 
             // ── Post Slack notification ──────────────────────────────
             const slackTs = await postSlack({
-              channel: rotation.slack_channel_id,
+              channel: config.slack_channel_id,
               text: `New PR for review: <${prUrl}|#${prNumber} ${prTitle}>`,
               blocks: [
                 {
@@ -201,15 +205,15 @@ jobs:
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `:mag: *Main reviewer:* <@${mainReviewerSlack}>\n:eyes: *Also reviewing:* <@${rotation.always_reviewer_slack}>`,
+                    text: `:mag: *Main reviewer:* <@${mainReviewerSlack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`,
                   },
                 },
               ],
             });
 
-            // ── Persist state ────────────────────────────────────────
-            rotation.cursor = newCursor;
-            fs.writeFileSync(rotationPath, JSON.stringify(rotation, null, 2) + '\n');
+            // ── Persist state (only state.json + per-PR file) ────────
+            state.cursor = newCursor;
+            fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');
 
             const prData = {
               pr_url: prUrl,

@@ -36,16 +36,17 @@ jobs:
             const path = require('path');
 
             const BOT_STATE_DIR = 'bot-state';
-            const rotationPath = path.join(BOT_STATE_DIR, 'rotation.json');
+            const configPath = path.join(BOT_STATE_DIR, 'config.json');
             const prsDir = path.join(BOT_STATE_DIR, 'prs');
             const REMINDER_INTERVAL_MS = 48 * 60 * 60 * 1000; // 48 hours
+            const CLEANUP_AGE_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
 
-            // ── Load rotation config ─────────────────────────────────
-            if (!fs.existsSync(rotationPath)) {
-              console.log('rotation.json not found. Nothing to do.');
+            // ── Load config (Terraform-managed) ──────────────────────
+            if (!fs.existsSync(configPath)) {
+              console.log('config.json not found. Nothing to do.');
               return;
             }
-            const rotation = JSON.parse(fs.readFileSync(rotationPath, 'utf8'));
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
             // ── Enumerate tracked PRs ────────────────────────────────
             if (!fs.existsSync(prsDir)) {
@@ -61,6 +62,7 @@ jobs:
 
             const now = Date.now();
             let changed = false;
+            const TERMINAL_STATUSES = ['merged', 'closed', 'reviewed'];
 
             for (const file of prFiles) {
               const filePath = path.join(prsDir, file);
@@ -69,6 +71,24 @@ jobs:
                 prData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
               } catch (err) {
                 console.log(`Skipping malformed file ${file}: ${err.message}`);
+                continue;
+              }
+
+              // ── Cleanup: delete files in terminal state for 7+ days ──
+              if (TERMINAL_STATUSES.includes(prData.status)) {
+                if (prData.resolved_at) {
+                  const age = now - new Date(prData.resolved_at).getTime();
+                  if (age >= CLEANUP_AGE_MS) {
+                    console.log(`Cleanup: deleting ${file} (resolved ${(age / 86_400_000).toFixed(1)}d ago)`);
+                    fs.unlinkSync(filePath);
+                    changed = true;
+                  }
+                } else {
+                  // Backfill resolved_at for files that were marked before this change
+                  prData.resolved_at = new Date().toISOString();
+                  fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
+                  changed = true;
+                }
                 continue;
               }
 
@@ -96,6 +116,7 @@ jobs:
                 const newStatus = ghPr.merged_at ? 'merged' : 'closed';
                 console.log(`PR #${prData.pr_number} is ${newStatus}.`);
                 prData.status = newStatus;
+                prData.resolved_at = new Date().toISOString();
                 fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
                 changed = true;
                 continue;
@@ -121,6 +142,7 @@ jobs:
               if (hasReviewed) {
                 console.log(`PR #${prData.pr_number}: ${prData.main_reviewer} has reviewed. Done.`);
                 prData.status = 'reviewed';
+                prData.resolved_at = new Date().toISOString();
                 fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
                 changed = true;
                 continue;
@@ -150,7 +172,7 @@ jobs:
               console.log(`PR #${prData.pr_number}: sending reminder for ${prData.main_reviewer}`);
 
               const reminderMsg = {
-                channel: rotation.slack_channel_id,
+                channel: config.slack_channel_id,
                 text: `Reminder: PR #${prData.pr_number} awaits review from ${prData.main_reviewer}`,
                 // Thread under the original assignment message when possible
                 ...(prData.slack_thread_ts ? { thread_ts: prData.slack_thread_ts } : {}),
@@ -163,7 +185,7 @@ jobs:
                         `:bell: *Reminder:* <${prData.pr_url}|PR #${prData.pr_number}> is still awaiting review.`,
                         ``,
                         `:mag: <@${prData.main_reviewer_slack}> — please review when you get a chance.`,
-                        `:eyes: cc <@${rotation.always_reviewer_slack}>`,
+                        `:eyes: cc <@${config.always_reviewer_slack}>`,
                       ].join('\n'),
                     },
                   },

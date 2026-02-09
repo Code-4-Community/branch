@@ -37,7 +37,7 @@ jobs:
             const path = require('path');
 
             const BOT_STATE_DIR = 'bot-state';
-            const rotationPath = path.join(BOT_STATE_DIR, 'rotation.json');
+            const configPath = path.join(BOT_STATE_DIR, 'config.json');
             const prsDir = path.join(BOT_STATE_DIR, 'prs');
 
             const reviewState = context.payload.review.state;   // "approved" or "changes_requested"
@@ -48,12 +48,12 @@ jobs:
 
             console.log(`Review submitted: ${reviewer} → ${reviewState} on PR #${prNumber}`);
 
-            // ── Load rotation config (for Slack channel + always_reviewer) ──
-            if (!fs.existsSync(rotationPath)) {
-              console.log('rotation.json not found. Skipping.');
+            // ── Load config (Terraform-managed) ──────────────────────
+            if (!fs.existsSync(configPath)) {
+              console.log('config.json not found. Skipping.');
               return;
             }
-            const rotation = JSON.parse(fs.readFileSync(rotationPath, 'utf8'));
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
             // ── Find the per-PR file ────────────────────────────────────────
             const prFileKey = `${context.repo.owner}_${context.repo.repo}_${prNumber}`;
@@ -102,7 +102,7 @@ jobs:
             // ── Update the original Slack message with a status banner ───────
             if (prData.slack_thread_ts && isMainReviewer) {
               await slackApi('chat.update', {
-                channel: rotation.slack_channel_id,
+                channel: config.slack_channel_id,
                 ts: prData.slack_thread_ts,
                 text: `${label}: <${prUrl}|#${prNumber} ${prTitle}>`,
                 blocks: [
@@ -117,7 +117,7 @@ jobs:
                     type: 'section',
                     text: {
                       type: 'mrkdwn',
-                      text: `:mag: *Main reviewer:* <@${prData.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${rotation.always_reviewer_slack}>`,
+                      text: `:mag: *Main reviewer:* <@${prData.main_reviewer_slack}>\n:eyes: *Also reviewing:* <@${config.always_reviewer_slack}>`,
                     },
                   },
                 ],
@@ -127,11 +127,11 @@ jobs:
 
             // ── Post a thread reply for visibility ───────────────────────────
             if (prData.slack_thread_ts) {
-              const reviewerSlack = rotation.github_to_slack[reviewer];
+              const reviewerSlack = config.github_to_slack[reviewer];
               const mention = reviewerSlack ? `<@${reviewerSlack}>` : `*${reviewer}*`;
 
               await slackApi('chat.postMessage', {
-                channel: rotation.slack_channel_id,
+                channel: config.slack_channel_id,
                 thread_ts: prData.slack_thread_ts,
                 text: `${emoji} ${mention} ${reviewState === 'approved' ? 'approved' : 'requested changes on'} <${prData.pr_url}|PR #${prNumber}>`,
               });
@@ -140,6 +140,7 @@ jobs:
             // ── Update bot state if this is the main reviewer ────────────────
             if (isMainReviewer && prData.status === 'open') {
               prData.status = 'reviewed';
+              prData.resolved_at = new Date().toISOString();
               fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
               console.log(`Marked PR #${prNumber} as reviewed`);
             }
