@@ -1,0 +1,225 @@
+name: PR Review Reminders
+
+on:
+  schedule:
+    # Every 6 hours — frequent enough to catch 48-hour windows,
+    # infrequent enough to avoid noise.
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: pr-reminders
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  check-and-remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bot-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: bot-state
+          path: bot-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check PRs and send reminders
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const BOT_STATE_DIR = 'bot-state';
+            const rotationPath = path.join(BOT_STATE_DIR, 'rotation.json');
+            const prsDir = path.join(BOT_STATE_DIR, 'prs');
+            const REMINDER_INTERVAL_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+            // ── Load rotation config ─────────────────────────────────
+            if (!fs.existsSync(rotationPath)) {
+              console.log('rotation.json not found. Nothing to do.');
+              return;
+            }
+            const rotation = JSON.parse(fs.readFileSync(rotationPath, 'utf8'));
+
+            // ── Enumerate tracked PRs ────────────────────────────────
+            if (!fs.existsSync(prsDir)) {
+              console.log('No prs/ directory yet. Nothing to do.');
+              return;
+            }
+
+            const prFiles = fs.readdirSync(prsDir).filter(f => f.endsWith('.json'));
+            if (prFiles.length === 0) {
+              console.log('No tracked PRs. Nothing to do.');
+              return;
+            }
+
+            const now = Date.now();
+            let changed = false;
+
+            for (const file of prFiles) {
+              const filePath = path.join(prsDir, file);
+              let prData;
+              try {
+                prData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+              } catch (err) {
+                console.log(`Skipping malformed file ${file}: ${err.message}`);
+                continue;
+              }
+
+              if (prData.status !== 'open') {
+                continue;
+              }
+
+              // ── Fetch current PR state from GitHub ─────────────────
+              const [prOwner, prRepo] = prData.repo.split('/');
+              let ghPr;
+              try {
+                const resp = await github.rest.pulls.get({
+                  owner: prOwner,
+                  repo: prRepo,
+                  pull_number: prData.pr_number,
+                });
+                ghPr = resp.data;
+              } catch (err) {
+                console.log(`Could not fetch PR #${prData.pr_number}: ${err.message}`);
+                continue;
+              }
+
+              // ── If PR is closed or merged, mark and move on ────────
+              if (ghPr.state !== 'open') {
+                const newStatus = ghPr.merged_at ? 'merged' : 'closed';
+                console.log(`PR #${prData.pr_number} is ${newStatus}.`);
+                prData.status = newStatus;
+                fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
+                changed = true;
+                continue;
+              }
+
+              // ── Check if main reviewer has submitted a review ──────
+              let hasReviewed = false;
+              try {
+                const reviews = await github.rest.pulls.listReviews({
+                  owner: prOwner,
+                  repo: prRepo,
+                  pull_number: prData.pr_number,
+                });
+                hasReviewed = reviews.data.some(
+                  r =>
+                    r.user.login.toLowerCase() === prData.main_reviewer.toLowerCase() &&
+                    ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'].includes(r.state)
+                );
+              } catch (err) {
+                console.log(`Could not fetch reviews for PR #${prData.pr_number}: ${err.message}`);
+              }
+
+              if (hasReviewed) {
+                console.log(`PR #${prData.pr_number}: ${prData.main_reviewer} has reviewed. Done.`);
+                prData.status = 'reviewed';
+                fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
+                changed = true;
+                continue;
+              }
+
+              // ── Check if reviewer is still requested ───────────────
+              const isStillRequested = ghPr.requested_reviewers.some(
+                r => r.login.toLowerCase() === prData.main_reviewer.toLowerCase()
+              );
+              if (!isStillRequested) {
+                console.log(`PR #${prData.pr_number}: ${prData.main_reviewer} is no longer requested. Skipping reminder.`);
+                continue;
+              }
+
+              // ── Should we remind? (48h since last touch) ───────────
+              const referenceTime = prData.last_reminded_at
+                ? new Date(prData.last_reminded_at).getTime()
+                : new Date(prData.created_at).getTime();
+
+              if (now - referenceTime < REMINDER_INTERVAL_MS) {
+                const hoursLeft = ((REMINDER_INTERVAL_MS - (now - referenceTime)) / 3_600_000).toFixed(1);
+                console.log(`PR #${prData.pr_number}: next reminder in ~${hoursLeft}h.`);
+                continue;
+              }
+
+              // ── Send reminder ──────────────────────────────────────
+              console.log(`PR #${prData.pr_number}: sending reminder for ${prData.main_reviewer}`);
+
+              const reminderMsg = {
+                channel: rotation.slack_channel_id,
+                text: `Reminder: PR #${prData.pr_number} awaits review from ${prData.main_reviewer}`,
+                // Thread under the original assignment message when possible
+                ...(prData.slack_thread_ts ? { thread_ts: prData.slack_thread_ts } : {}),
+                blocks: [
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: [
+                        `:bell: *Reminder:* <${prData.pr_url}|PR #${prData.pr_number}> is still awaiting review.`,
+                        ``,
+                        `:mag: <@${prData.main_reviewer_slack}> — please review when you get a chance.`,
+                        `:eyes: cc <@${rotation.always_reviewer_slack}>`,
+                      ].join('\n'),
+                    },
+                  },
+                ],
+              };
+
+              try {
+                const resp = await fetch('https://slack.com/api/chat.postMessage', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+                  },
+                  body: JSON.stringify(reminderMsg),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                  console.log(`Reminder sent for PR #${prData.pr_number}`);
+                } else {
+                  console.log(`Slack error for PR #${prData.pr_number}: ${data.error}`);
+                }
+              } catch (err) {
+                console.log(`Slack post failed for PR #${prData.pr_number}: ${err.message}`);
+              }
+
+              prData.last_reminded_at = new Date().toISOString();
+              fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
+              changed = true;
+            }
+
+            if (!changed) {
+              console.log('No state changes to commit.');
+            }
+
+      - name: Commit and push bot-state
+        working-directory: bot-state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "bot: update PR review state [$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
+
+          for attempt in 1 2 3; do
+            if git pull --rebase origin bot-state && git push origin bot-state; then
+              echo "Push succeeded (attempt $attempt)"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying in 2s…"
+            sleep 2
+          done
+
+          echo "::error::Failed to push bot-state after 3 attempts"
+          exit 1
