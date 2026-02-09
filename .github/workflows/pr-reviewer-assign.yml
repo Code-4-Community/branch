@@ -85,9 +85,9 @@ jobs:
 
             const STATUS_EMOJI = {
               pending:           ':hourglass_flowing_sand:',
-              approved:          ':white_check_mark:',
-              changes_requested: ':arrows_counterclockwise:',
-              commented:         ':speech_balloon:',
+              approved:          ':approved:',
+              changes_requested: ':git-request-changes:',
+              commented:         ':git-comment:',
             };
             const STATUS_LABEL = {
               pending:           'Pending',
@@ -104,9 +104,9 @@ jobs:
 
               let headerText;
               if (allDone && !anyChangesRequested) {
-                headerText = ':white_check_mark:  All Reviews Complete';
+                headerText = ':approved:  All Reviews Complete';
               } else if (allDone && anyChangesRequested) {
-                headerText = ':arrows_counterclockwise:  Changes Requested';
+                headerText = ':git-request-changes:  Changes Requested';
               } else {
                 headerText = ':evergreen_tree:  Review Requested';
               }
