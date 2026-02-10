@@ -3034,6 +3034,11 @@
   resolved "https://registry.npmjs.org/@types/aria-query/-/aria-query-5.0.3.tgz"
   integrity sha512-0Z6Tr7wjKJIk4OUEjVUQMtyunLDy339vcMaj38Kpj6jM2OE1p3S4kXExKZ7a3uXQAPCoy3sbrP1wibDKaf39oA==
 
+"@types/aws-lambda@^8.10.160":
+  version "8.10.160"
+  resolved "https://registry.npmjs.org/@types/aws-lambda/-/aws-lambda-8.10.160.tgz"
+  integrity sha512-uoO4QVQNWFPJMh26pXtmtrRfGshPUSpMZGUyUQY20FhfHEElEBOPKgVmFs1z+kbpyBsRs2JnoOPT7++Z4GA9pA==
+
 "@types/babel__core@^7.1.14", "@types/babel__core@^7.20.2":
   version "7.20.3"
   resolved "https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.3.tgz"
@@ -4129,6 +4134,11 @@ available-typed-arrays@^1.0.5:
   version "1.0.5"
   resolved "https://registry.npmjs.org/available-typed-arrays/-/available-typed-arrays-1.0.5.tgz"
   integrity sha512-DMD0KiN46eipeziST1LPP/STfDU0sufISXmjSgvVsoU2tqxctQeASejWcfNtxYKqETM1UxQ8sp2OrSBWpHY6sw==
+
+aws-jwt-verify@^5.1.1:
+  version "5.1.1"
+  resolved "https://registry.npmjs.org/aws-jwt-verify/-/aws-jwt-verify-5.1.1.tgz"
+  integrity sha512-j6whGdGJmQ27agk4ijY8RPv6itb8JLb7SCJ86fEnneTcSBrpxuwL8kLq6y5WVH95aIknyAloEqAsaOLS1J8ITQ==
 
 aws-sign2@~0.7.0:
   version "0.7.0"
