@@ -1,6 +1,26 @@
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
+import { handler } from '../handler';
+import { authenticateRequest, checkAuthorization } from '../auth';
+
+
+jest.mock('../auth');
+
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
+
+
+mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
+  if (requiredAccess === 'PUBLIC') return { allowed: true };
+  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
+  if (requiredAccess === 'ADMIN') return { allowed: authContext.user.isAdmin, reason: authContext.user.isAdmin ? undefined : 'Admin access required' };
+  if (requiredAccess === 'ADMIN_OR_SELF') {
+    const allowed = authContext.user.isAdmin || authContext.user.userId === Number(resourceUserId);
+    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
+  }
+  return { allowed: false, reason: 'Unknown access level' };
+});
 
 const pool = new Pool({
   host: 'localhost',
@@ -15,70 +35,162 @@ const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
 const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
 
 beforeEach(async () => {
-  const client = await pool.connect();
+  jest.clearAllMocks();
   try {
-    await client.query(seedSql);
-  } finally {
-    client.release();
+    const client = await pool.connect();
+    try {
+      await client.query(seedSql);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Database connection error:', error);
+    throw error;
   }
 });
 
 afterAll(async () => {
   await pool.end();
+  await new Promise(resolve => setTimeout(resolve, 500));
 });
 
+
+function createEvent(options: {
+  method: string;
+  path: string;
+  body?: any;
+  queryStringParameters?: Record<string, string>;
+}) {
+  return {
+    rawPath: options.path,
+    path: options.path,
+    requestContext: {
+      http: {
+        method: options.method,
+      },
+    },
+    httpMethod: options.method,
+    body: options.body ? JSON.stringify(options.body) : null,
+    queryStringParameters: options.queryStringParameters || null,
+    headers: {},
+  };
+}
+function mockAdminAuth() {
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    user: {
+      cognitoSub: 'admin-123',
+      userId: 1,
+      email: 'admin@example.com',
+      isAdmin: true,
+    },
+  });
+}
+
+function mockRegularUserAuth(userId: number = 2) {
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    user: {
+      cognitoSub: `user-${userId}`,
+      userId,
+      email: 'user@example.com',
+      isAdmin: false,
+    },
+  });
+}
+
+function mockNoAuth() {
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+}
+
 test("health test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/users/health")
-  expect(res.status).toBe(200);
+  mockNoAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/health',
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(200);
 });
 
 test("patch user test 🌞", async () => {
-  const originalRes = await fetch("http://localhost:3000/users/1");
-  expect(originalRes.status).toBe(200);
-  const originalBody = await originalRes.json().then(r => r.body);
+  mockAdminAuth();
+  
+  const getEvent = createEvent({
+    method: 'GET',
+    path: '/1',
+  })
+
+  const originalRes = await handler(getEvent);
+  expect(originalRes.statusCode).toBe(200);
+  const originalBody = JSON.parse(originalRes.body).body;
 
   try {
-    let res = await fetch("http://localhost:3000/users/1", {
-      method: "PATCH",
-      body: JSON.stringify({
+    const patchEvent = createEvent({
+      method: 'PATCH',
+      path: '/1',
+      body: {
         name: "John Branch",
         email: "mrbranch@example.com",
         isAdmin: false
-      })
-    })
-    expect(res.status).toBe(200);
-    let body = await res.json().then(r => r.body);
+      },
+    });
+    
+    const res = await handler(patchEvent);
+    expect(res.statusCode).toBe(200);
+    
+    const body = JSON.parse(res.body).body;
     expect(body.email).toBe("mrbranch@example.com");
     expect(body.name).toBe("John Branch");
     expect(body.isAdmin).toBe(false);
   } finally {
-    await fetch("http://localhost:3000/users/1", {
-      method: "PATCH",
-      body: JSON.stringify({
+    // Restore original
+    const restoreEvent = createEvent({
+      method: 'PATCH',
+      path: '/1',
+      body: {
         name: originalBody.name,
         email: originalBody.email,
         isAdmin: originalBody.isAdmin
-      })
+      },
     });
+    await handler(restoreEvent);
   }
 });
 
 
 test("patch user 404 test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/users/4", {
-    method: "PATCH",
-    body: JSON.stringify({
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'PATCH',
+    path: '/4',
+    body: {
       name: "John Doe",
       email: "john.doe@example.com"
-    })
-  })
-  expect(res.status).toBe(404);
+    },
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(404);
 });
 
 test("get users test", async () => {
-  let res = await fetch("http://localhost:3000/users")
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/users',
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(200);
+  
+  const body = JSON.parse(res.body);
   console.log(body);
   expect(body.users).toBeDefined();
   expect(Array.isArray(body.users)).toBe(true);
@@ -103,10 +215,20 @@ test("get users test", async () => {
   expect(thirdUser.user_id).toBe(3);
 });
 
+
 test("get users with correct pagnation", async () => {
-  let res = await fetch("http://localhost:3000/users?page=1&limit=1")
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/users',
+    queryStringParameters: { page: '1', limit: '1' },
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(200);
+  
+  const body = JSON.parse(res.body);
   console.log(body);
   expect(body.pagination).toBeDefined();
   expect(body.pagination.page).toBe(1);
@@ -124,10 +246,20 @@ test("get users with correct pagnation", async () => {
   expect(firstUser.user_id).toBe(1);
 });
 
+
 test("get users with only page", async () => {
-  let res = await fetch("http://localhost:3000/users?page=1")
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/users',
+    queryStringParameters: { page: '1' },
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(200);
+  
+  const body = JSON.parse(res.body);
   console.log(body);
 
   expect(body.pagination).toBeUndefined();
@@ -136,10 +268,20 @@ test("get users with only page", async () => {
   expect(body.users.length).toBe(3);
 });
 
+
 test("get users with only limit", async () => {
-  let res = await fetch("http://localhost:3000/users?limit=1")
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/users',
+    queryStringParameters: { limit: '1' },
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(200);
+  
+  const body = JSON.parse(res.body);
   console.log(body);
 
   expect(body.pagination).toBeUndefined();
@@ -149,9 +291,18 @@ test("get users with only limit", async () => {
 });
 
 test("get users with limit above total user", async () => {
-  let res = await fetch("http://localhost:3000/users?page=1&limit=100")
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/users',
+    queryStringParameters: { page: '1', limit: '100' },
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(200);
+  
+  const body = JSON.parse(res.body);
   console.log(body);
   expect(body.pagination).toBeDefined();
   expect(body.pagination.page).toBe(1);
@@ -163,25 +314,37 @@ test("get users with limit above total user", async () => {
   expect(body.users.length).toBe(3);
 });
 
+// Wrong path
 test("get users error", async () => {
-  let res = await fetch("http://localhost:3000/user")
-  expect(res.status).toBe(404);
+  mockNoAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/user',
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(401);
 });
 
+
 test("POST user success case", async () => {
-  let res = await fetch("http://localhost:3000/users", {
-    method: "POST",
-    body: JSON.stringify({
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'POST',
+    path: '/users',
+    body: {
       name: "Jane Branch",
       email: "jane@branch.com",
       isAdmin: true
-    })
+    },
   });
 
-  expect(res.status).toBe(201);
+  const res = await handler(event);
+  expect(res.statusCode).toBe(201);
 
-  let body = await res.json();
-
+  const body = JSON.parse(res.body);
   expect(body.ok).toBe(true);
   expect(body.body.name).toBe("Jane Branch");
   expect(body.body.email).toBe("jane@branch.com");
@@ -189,98 +352,157 @@ test("POST user success case", async () => {
 });
 
 test("POST user 400 case when invalid email is sent", async () => {
-  let res = await fetch("http://localhost:3000/users", {
-    method: "POST",
-    body: JSON.stringify({
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'POST',
+    path: '/users',
+    body: {
       name: "Invalid User",
       email: "",
       isAdmin: false
-    })
+    },
   });
 
-  expect(res.status).toBe(400);
+  const res = await handler(event);
+  expect(res.statusCode).toBe(400);
 });
 
 test("POST user 400 case when request sent with missing fields", async () => {
-  let res = await fetch("http://localhost:3000/users", {
-    method: "POST",
-    body: JSON.stringify({
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'POST',
+    path: '/users',
+    body: {
       name: "Invalid User",
-    }) // missing email and admin fields
+    },
   });
 
-  expect(res.status).toBe(400);
+  const res = await handler(event);
+  expect(res.statusCode).toBe(400);
 });
 
+
 test("delete user test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/users/1", {
-    method: "DELETE"
+  mockAdminAuth();
+  
+  const deleteEvent = createEvent({
+    method: 'DELETE',
+    path: '/1',
   });
 
-  expect(res.status).toBe(200);
-  let body = await res.json();
-
-
+  const res = await handler(deleteEvent);
+  expect(res.statusCode).toBe(200);
+  
+  const body = JSON.parse(res.body);
   expect(body.ok).toBe(true);
   expect(body.route).toBe("DELETE /users/{userId}");
   expect(body.pathParams.userId).toBe("1");
 
-  let getRes = await fetch("http://localhost:3000/users/1");
-  expect(getRes.status).toBe(404);
-  let getbody = await getRes.json();
-  expect(getbody.message).toBe('User not found');
+  // Verify user is deleted
+  const getEvent = createEvent({
+    method: 'GET',
+    path: '/1',
+  });
+  const getRes = await handler(getEvent);
+  expect(getRes.statusCode).toBe(404);
+  
+  const getBody = JSON.parse(getRes.body);
+  expect(getBody.message).toBe('User not found');
 });
+
 
 test("delete user 404 test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/users/9999", {
-    method: "DELETE"
+  mockAdminAuth();
+  
+  const event = createEvent({
+    method: 'DELETE',
+    path: '/9999',
   });
 
-  expect(res.status).toBe(404);
-  let body = await res.json();
+  const res = await handler(event);
+  expect(res.statusCode).toBe(404);
+  
+  const body = JSON.parse(res.body);
   expect(body.message).toBe('User not found');
 });
+
 
 test("delete same user twice returns 404 on second attempt", async () => {
-  let res1 = await fetch("http://localhost:3000/users/1", {
-    method: "DELETE"
+  mockAdminAuth();
+  
+  const event1 = createEvent({
+    method: 'DELETE',
+    path: '/1',
   });
-  expect(res1.status).toBe(200);
+  const res1 = await handler(event1);
+  expect(res1.statusCode).toBe(200);
 
-  let res2 = await fetch("http://localhost:3000/users/1", {
-    method: "DELETE"
+  const event2 = createEvent({
+    method: 'DELETE',
+    path: '/1',
   });
-  expect(res2.status).toBe(404);
-  let body = await res2.json();
+  const res2 = await handler(event2);
+  expect(res2.statusCode).toBe(404);
+  
+  const body = JSON.parse(res2.body);
   expect(body.message).toBe('User not found');
 });
 
+
 test("delete multiple users", async () => {
-  let res1 = await fetch("http://localhost:3000/users/1", {
-    method: "DELETE"
+  mockAdminAuth();
+  
+  const event1 = createEvent({
+    method: 'DELETE',
+    path: '/1',
   });
-  expect(res1.status).toBe(200);
+  const res1 = await handler(event1);
+  expect(res1.statusCode).toBe(200);
 
-  let res2 = await fetch("http://localhost:3000/users/2", {
-    method: "DELETE"
+  const event2 = createEvent({
+    method: 'DELETE',
+    path: '/2',
   });
-  expect(res2.status).toBe(200);
+  const res2 = await handler(event2);
+  expect(res2.statusCode).toBe(200);
 
-  let check1 = await fetch("http://localhost:3000/users/1");
-  expect(check1.status).toBe(404);
+  // Check both are deleted
+  const check1Event = createEvent({
+    method: 'GET',
+    path: '/1',
+  });
+  const check1 = await handler(check1Event);
+  expect(check1.statusCode).toBe(404);
 
-  let check2 = await fetch("http://localhost:3000/users/2");
-  expect(check2.status).toBe(404);
+  const check2Event = createEvent({
+    method: 'GET',
+    path: '/2',
+  });
+  const check2 = await handler(check2Event);
+  expect(check2.statusCode).toBe(404);
 });
 
+
 test("delete user 1 does not affect user 2", async () => {
+  mockAdminAuth();
+  
   // Delete user 1
-  await fetch("http://localhost:3000/users/1", { method: "DELETE" });
+  const deleteEvent = createEvent({
+    method: 'DELETE',
+    path: '/1',
+  });
+  await handler(deleteEvent);
 
   // User 2 should still exist
-  let res = await fetch("http://localhost:3000/users/2");
-  expect(res.status).toBe(200);
+  const getEvent = createEvent({
+    method: 'GET',
+    path: '/2',
+  });
+  const res = await handler(getEvent);
+  expect(res.statusCode).toBe(200);
   
-  let body = await res.json();
+  const body = JSON.parse(res.body);
   expect(body.body.email).toBe('renee@branch.org');
 });

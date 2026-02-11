@@ -25,8 +25,8 @@ function getVerifier() {
 }
 
 export interface AuthenticatedUser {
-  cognitoSub: string; // Cognito sub (matches cognito_sub in your DB)
-  userId?: number; // Database user_id (loaded from DB)
+  cognitoSub: string;
+  userId?: number;
   email?: string;
   isAdmin: boolean;
   cognitoGroups?: string[];
@@ -47,13 +47,11 @@ function extractToken(event: any): string | null {
     return null;
   }
 
-  // Support "Bearer <token>" format
   const parts = authHeader.split(' ');
   if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
     return parts[1];
   }
 
-  // Support raw token
   return authHeader;
 }
 
@@ -68,10 +66,8 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
   }
 
   try {
-    // Verify the token with Cognito
     const payload = await getVerifier().verify(token);
 
-    // Look up user in database by cognito_sub
     const dbUser = await db
       .selectFrom('branch.users')
       .where('cognito_sub', '=', payload.sub)
@@ -83,7 +79,6 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
       return { isAuthenticated: false };
     }
 
-    // Extract user information from token claims and database
     const user: AuthenticatedUser = {
       cognitoSub: payload.sub,
       userId: dbUser.user_id,
@@ -92,7 +87,6 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
       cognitoGroups: payload['cognito:groups'] as string[] | undefined,
     };
 
-    // Also check Cognito groups for admin status (as backup)
     if (user.cognitoGroups?.includes('Admins')) {
       user.isAdmin = true;
     }
@@ -162,7 +156,6 @@ export function checkAuthorization(
           reason: 'Resource user ID required for SELF access check' 
         };
       }
-      // Compare with database user_id
       if (user.userId !== Number(resourceUserId)) {
         return { 
           allowed: false, 
