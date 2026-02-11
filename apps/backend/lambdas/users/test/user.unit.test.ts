@@ -121,6 +121,56 @@ describe('POST /users unit tests', () => {
       const json = JSON.parse(res.body);
       expect(json.message).toBeDefined();
     });
+
+    test('401: unauthenticated user cannot view all users', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/users',
+        requestContext: { http: { method: 'GET' } },
+        body: null,
+      });
+  
+      expect(res.statusCode).toBe(401);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBe('Authentication required');
+    });
+
+    test('401: unauthenticated user cannot view specific user', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/1',
+        requestContext: { http: { method: 'GET' } },
+        body: null,
+      });
+  
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('401: unauthenticated user cannot update users', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/1',
+        requestContext: { http: { method: 'PATCH' } },
+        body: JSON.stringify({ name: 'New Name' }),
+      });
+  
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('401: unauthenticated user cannot delete users', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/1',
+        requestContext: { http: { method: 'DELETE' } },
+        body: null,
+      });
+  
+      expect(res.statusCode).toBe(401);
+    });
   });
 
 

@@ -327,6 +327,18 @@ test("get users error", async () => {
   expect(res.statusCode).toBe(401);
 });
 
+// regular user can't see all users
+test("regular user cannot view all users", async () => {
+  mockRegularUserAuth();
+  
+  const event = createEvent({
+    method: 'GET',
+    path: '/users',
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(403);
+});
 
 test("POST user success case", async () => {
   mockAdminAuth();
@@ -381,6 +393,21 @@ test("POST user 400 case when request sent with missing fields", async () => {
 
   const res = await handler(event);
   expect(res.statusCode).toBe(400);
+});
+
+// regular user can't make new users
+
+test("regular user cannot create users", async () => {
+  mockRegularUserAuth();
+  
+  const event = createEvent({
+    method: 'POST',
+    path: '/users',
+    body: { name: "Test", email: "test@example.com", isAdmin: false },
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(403);
 });
 
 
@@ -505,4 +532,18 @@ test("delete user 1 does not affect user 2", async () => {
   
   const body = JSON.parse(res.body);
   expect(body.body.email).toBe('renee@branch.org');
+});
+
+// regular user can't delete others
+
+test("regular user cannot delete users", async () => {
+  mockRegularUserAuth();
+  
+  const event = createEvent({
+    method: 'DELETE',
+    path: '/1',
+  });
+  
+  const res = await handler(event);
+  expect(res.statusCode).toBe(403);
 });
