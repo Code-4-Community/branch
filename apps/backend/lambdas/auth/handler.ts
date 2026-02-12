@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import db from './db';
 
-// Initialize Cognito client
+// Initialize Cognito client (region defaults to us-east-2)
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-2',
 });
