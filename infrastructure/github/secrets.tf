@@ -52,13 +52,13 @@ data "infisical_secrets" "cognito_folder" {
 resource "github_actions_secret" "cognito_user_pool_id" {
   repository      = github_repository.branch.name
   secret_name     = "COGNITO_USER_POOL_ID"
-  plaintext_value = data.infisical_secrets.cognito_folder.secrets["user_pool_id"].value
+  plaintext_value = data.infisical_secrets.cognito_folder.secrets["COGNITO_USER_POOL_ID"].value
 }
 
 resource "github_actions_secret" "cognito_client_id" {
   repository      = github_repository.branch.name
   secret_name     = "COGNITO_CLIENT_ID"
-  plaintext_value = data.infisical_secrets.cognito_folder.secrets["client_id"].value
+  plaintext_value = data.infisical_secrets.cognito_folder.secrets["COGNITO_CLIENT_ID"].value
 }
 
 # ── PR Review Bot ────────────────────────────────────────────
