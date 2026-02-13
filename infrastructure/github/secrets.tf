@@ -41,6 +41,40 @@ resource "github_actions_secret" "infisical_client_secret" {
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
 
+# ── Cognito (for lambda CI tests) ────────────────────────────
+
+data "infisical_secrets" "cognito_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/aws/cognito"
+}
+
+resource "github_actions_secret" "cognito_user_pool_id" {
+  repository      = github_repository.branch.name
+  secret_name     = "COGNITO_USER_POOL_ID"
+  plaintext_value = data.infisical_secrets.cognito_folder.secrets["COGNITO_USER_POOL_ID"].value
+}
+
+resource "github_actions_secret" "cognito_client_id" {
+  repository      = github_repository.branch.name
+  secret_name     = "COGNITO_CLIENT_ID"
+  plaintext_value = data.infisical_secrets.cognito_folder.secrets["COGNITO_CLIENT_ID"].value
+}
+
+# ── PR Review Bot ────────────────────────────────────────────
+
+data "infisical_secrets" "slack_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/slack"
+}
+
+resource "github_actions_secret" "slack_bot_token" {
+  repository      = github_repository.branch.name
+  secret_name     = "SLACK_BOT_TOKEN"
+  plaintext_value = data.infisical_secrets.slack_folder.secrets["slack-bot-token"].value
+}
+
 
 
 variable "infisical_client_id" {
@@ -55,4 +89,3 @@ variable "infisical_workspace_id" {
   type    = string
   default = "d1ee8b80-118c-4daf-ae84-31da43261b76"
 }
-
