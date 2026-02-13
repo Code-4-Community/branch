@@ -10,7 +10,7 @@ Lambda for managing projects.
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /projects |  |
-| POST | /projects |  |
+| PUT | /projects/{id} |  |
 
 ## Setup
 
