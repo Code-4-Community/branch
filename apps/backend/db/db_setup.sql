@@ -99,6 +99,6 @@ INSERT INTO expenditures (project_id, entered_by, amount, category, description,
 INSERT INTO reports (project_id, object_url) VALUES
 (1, 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),
 (2, 'https://s3.amazonaws.com/branch-reports/health_education_initiative_report.pdf'),
-(3, 'https://s3.amazonaws.com/branch-reports/policy_advocacy_program_report.pdf');
-(2, 'https://s3.amazonaws.com/branch-reports/research_program_reports.pdf');
--- (3, 'https://s3.amazonaws.com/branch-reports/health_care_data_reports.pdf');
+(3, 'https://s3.amazonaws.com/branch-reports/policy_advocacy_program_report.pdf'),
+(2, 'https://s3.amazonaws.com/branch-reports/research_program_reports.pdf'),
+(3, 'https://s3.amazonaws.com/branch-reports/health_care_data_reports.pdf');
