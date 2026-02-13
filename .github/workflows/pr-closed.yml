@@ -1,0 +1,219 @@
+name: PR Closed / Merged
+
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: pr-closed-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bot-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: bot-state
+          path: bot-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Slack message and bot state
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const BOT_STATE_DIR = 'bot-state';
+            const configPath = path.join(BOT_STATE_DIR, 'config.json');
+            const prsDir = path.join(BOT_STATE_DIR, 'prs');
+
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const prUrl = pr.html_url;
+            const prTitle = pr.title;
+            const wasMerged = pr.merged;
+
+            console.log(`PR #${prNumber} ${wasMerged ? 'merged' : 'closed'}`);
+
+            // ── Load config ──────────────────────────────────────────
+            if (!fs.existsSync(configPath)) {
+              console.log('config.json not found. Skipping.');
+              return;
+            }
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+            // ── Find per-PR file ─────────────────────────────────────
+            const prFileKey = `${context.repo.owner}_${context.repo.repo}_${prNumber}`;
+            const prFilePath = path.join(prsDir, `${prFileKey}.json`);
+
+            if (!fs.existsSync(prFilePath)) {
+              console.log(`No per-PR file for #${prNumber}. Not tracked by the bot.`);
+              return;
+            }
+
+            const prData = JSON.parse(fs.readFileSync(prFilePath, 'utf8'));
+
+            if (['merged', 'closed'].includes(prData.status)) {
+              console.log(`PR #${prNumber} already in status "${prData.status}". Skipping.`);
+              return;
+            }
+
+            // ── Slack helper ─────────────────────────────────────────
+            async function slackApi(method, body) {
+              try {
+                const resp = await fetch(`https://slack.com/api/${method}`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+                  },
+                  body: JSON.stringify(body),
+                });
+                const data = await resp.json();
+                if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+                return data;
+              } catch (err) {
+                console.log(`Slack ${method} failed: ${err.message}`);
+                return { ok: false };
+              }
+            }
+
+            // ── Fetch reviews for final reviewer statuses ────────────
+            const STATUS_EMOJI = {
+              pending:           ':hourglass_flowing_sand:',
+              approved:          ':approved:',
+              changes_requested: ':git-request-changes:',
+              commented:         ':git-comment:',
+            };
+            const STATUS_LABEL = {
+              pending:           'Pending',
+              approved:          'Approved',
+              changes_requested: 'Changes Requested',
+              commented:         'Commented',
+            };
+
+            let allReviews = [];
+            try {
+              const resp = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              allReviews = resp.data;
+            } catch (err) {
+              console.log(`Could not fetch reviews: ${err.message}`);
+            }
+
+            const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
+            function getLatestStatus(login) {
+              const userReviews = allReviews.filter(
+                r => r.user.login.toLowerCase() === login.toLowerCase() &&
+                     REVIEW_STATES.includes(r.state)
+              );
+              if (userReviews.length === 0) return 'pending';
+              return userReviews[userReviews.length - 1].state.toLowerCase();
+            }
+
+            // Build reviewer status lines
+            const mainStatus = getLatestStatus(prData.main_reviewer);
+            const reviewerObjs = [{ login: prData.main_reviewer, slack: prData.main_reviewer_slack, status: mainStatus }];
+
+            if (prData.second_reviewer) {
+              const secondStatus = getLatestStatus(prData.second_reviewer);
+              reviewerObjs.push({ login: prData.second_reviewer, slack: prData.second_reviewer_slack, status: secondStatus });
+            }
+
+            const authorSlackId = config.github_to_slack[prData.author];
+            const authorIsAlways = authorSlackId === config.always_reviewer_slack;
+
+            let alwaysReviewerObj = null;
+            if (!authorIsAlways) {
+              const alwaysEntry = Object.entries(config.github_to_slack).find(
+                ([, slackId]) => slackId === config.always_reviewer_slack
+              );
+              if (alwaysEntry) {
+                const alwaysStatus = getLatestStatus(alwaysEntry[0]);
+                alwaysReviewerObj = { slack: config.always_reviewer_slack, status: alwaysStatus };
+              }
+            }
+
+            const reviewerLines = reviewerObjs.map(r =>
+              `${STATUS_EMOJI[r.status]}  <@${r.slack}> — ${STATUS_LABEL[r.status]}`
+            );
+            if (alwaysReviewerObj) {
+              reviewerLines.push(`${STATUS_EMOJI[alwaysReviewerObj.status]}  <@${alwaysReviewerObj.slack}> — ${STATUS_LABEL[alwaysReviewerObj.status]}`);
+            }
+
+            // ── Update original Slack message ────────────────────────
+            if (prData.slack_thread_ts) {
+              const statusEmoji = wasMerged ? ':merged:' : ':x:';
+              const headerText = `${statusEmoji}  Review Requested`;
+
+              const blocks = [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: headerText, emoji: true },
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: `~<${prUrl}|#${prNumber} ${prTitle}>~\nAuthor: *${prData.author}*`,
+                  },
+                },
+                { type: 'divider' },
+                {
+                  type: 'section',
+                  text: { type: 'mrkdwn', text: reviewerLines.join('\n') },
+                },
+              ];
+
+              await slackApi('chat.update', {
+                channel: config.slack_channel_id,
+                ts: prData.slack_thread_ts,
+                text: `PR #${prNumber} ${wasMerged ? 'merged' : 'closed'}`,
+                blocks,
+              });
+              console.log(`Updated Slack message for PR #${prNumber}`);
+            }
+
+            // ── Update bot state ─────────────────────────────────────
+            prData.status = wasMerged ? 'merged' : 'closed';
+            prData.resolved_at = new Date().toISOString();
+            fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
+            console.log(`Marked PR #${prNumber} as ${prData.status}`);
+
+      - name: Commit and push bot-state
+        working-directory: bot-state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "bot: mark PR #${{ github.event.pull_request.number }} as ${{ github.event.pull_request.merged && 'merged' || 'closed' }}"
+
+          for attempt in 1 2 3; do
+            if git pull --rebase origin bot-state && git push origin bot-state; then
+              echo "Push succeeded (attempt $attempt)"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying in 2s…"
+            sleep 2
+          done
+
+          echo "::error::Failed to push bot-state after 3 attempts"
+          exit 1

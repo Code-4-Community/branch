@@ -16,7 +16,7 @@ import {
 import { CognitoUser, CognitoUserPool, AuthenticationDetails } from 'amazon-cognito-identity-js';
 import db from './db';
 
-// Initialize Cognito client
+// Initialize Cognito client (region defaults to us-east-2)
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-2',
 });
