@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
+import { authenticateRequest } from './auth';
 
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
@@ -15,6 +16,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
+    }
+
+    const authContext = await authenticateRequest(event);
+    if (!authContext.isAuthenticated || !authContext.user) {
+      return json(401, { message: 'Authentication required' });
     }
 
     // >>> ROUTES-START (do not remove this marker)

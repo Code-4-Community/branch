@@ -1,9 +1,18 @@
+jest.mock('../auth');
 import { handler } from '../handler';
+import { authenticateRequest } from '../auth';
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+
+const adminUser = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'admin-sub', userId: 1, email: 'ashley@branch.org', isAdmin: true },
+};
 
 function event(body: unknown) {
   return {
     rawPath: '/projects',
     requestContext: { http: { method: 'POST' } },
+    headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify(body),
   } as any;
 }
@@ -14,6 +23,10 @@ beforeAll(() => {
   process.env.DB_USER = process.env.DB_USER ?? 'branch_dev';
   process.env.DB_PASSWORD = process.env.DB_PASSWORD ?? 'password';
   process.env.DB_NAME = process.env.DB_NAME ?? 'branch_db';
+});
+
+beforeEach(() => {
+  mockAuthenticateRequest.mockResolvedValue(adminUser);
 });
 
 test('201: creates project with number budget', async () => {
@@ -41,6 +54,7 @@ test('201: creates project with all fields', async () => {
   const res = await handler({
     rawPath: '/',
     requestContext: { http: { method: 'POST' } },
+    headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify({
       name: 'AllFieldsUnit',
       total_budget: 12345.67,
