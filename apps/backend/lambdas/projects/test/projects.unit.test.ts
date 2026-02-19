@@ -45,8 +45,9 @@ test('201: creates project with all fields', async () => {
       name: 'AllFieldsUnit',
       total_budget: 12345.67,
       start_date: '2025-01-01',
-      end_date: '2025-12-31',
-      currency: 'USD',
+        end_date: '2025-12-31',
+        currency: 'USD',
+        description: 'Unit test project description',
     }),
   } as any);
   expect(res.statusCode).toBe(201);
@@ -56,6 +57,7 @@ test('201: creates project with all fields', async () => {
   expect(json.start_date).toContain('2025-01-01');
   expect(json.end_date).toContain('2025-12-31');
   expect(json.currency).toBe('USD');
+  expect(json.description).toBe('Unit test project description');
 });
 
 // Validation errors (400)

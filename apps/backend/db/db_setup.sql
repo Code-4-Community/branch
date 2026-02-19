@@ -14,6 +14,7 @@ CREATE TABLE users (
 CREATE TABLE projects (
     project_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
+    description TEXT,
     total_budget NUMERIC(12,2),
     start_date DATE,
     end_date DATE,
@@ -64,10 +65,10 @@ INSERT INTO users (name, email, is_admin) VALUES
 ('Renee Reddy', 'renee@branch.org', TRUE),
 ('Nour Shoreibah', 'nour@branch.org', TRUE);
 
-INSERT INTO projects (name, total_budget, start_date, end_date, currency) VALUES
-('Clinician Communication Study', 500000, '2025-01-01', '2026-01-01', 'USD'),
-('Health Education Initiative', 300000, '2025-03-01', '2026-03-01', 'USD'),
-('Policy Advocacy Program', 200000, '2025-06-01', '2026-06-01', 'USD');
+INSERT INTO projects (name, description, total_budget, start_date, end_date, currency) VALUES
+('Clinician Communication Study', 'Study of clinician-patient communication patterns', 500000, '2025-01-01', '2026-01-01', 'USD'),
+('Health Education Initiative', 'Community health education and outreach', 300000, '2025-03-01', '2026-03-01', 'USD'),
+('Policy Advocacy Program', 'Advocacy and policy change efforts', 200000, '2025-06-01', '2026-06-01', 'USD');
 
 INSERT INTO donors (organization, contact_name, contact_email) VALUES
 ('NIH', 'Dr. Sarah Lee', 'sarah@nih.gov'),

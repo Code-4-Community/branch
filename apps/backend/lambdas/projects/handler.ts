@@ -58,11 +58,15 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!currencyResult.isValid) return json(400, { message: currencyResult.error });
       if (currencyResult.value !== null) values.currency = currencyResult.value;
 
+      const descriptionResult = ProjectValidationUtils.validateDescription(body.description);
+      if (!descriptionResult.isValid) return json(400, { message: descriptionResult.error });
+      if (descriptionResult.value !== null) values.description = descriptionResult.value;
+
       try {
         const inserted = await db
           .insertInto('branch.projects')
           .values(values)
-          .returning(['project_id','name','total_budget','currency','start_date','end_date','created_at'])
+          .returning(['project_id','name','description','total_budget','currency','start_date','end_date','created_at'])
           .executeTakeFirst();
 
         return json(201, inserted);

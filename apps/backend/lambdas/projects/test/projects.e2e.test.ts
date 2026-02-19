@@ -36,6 +36,7 @@ describe('POST /projects (e2e)', () => {
         start_date: '2025-03-01',
         end_date: '2025-09-30',
         currency: 'EUR',
+        description: 'End-to-end project description',
       }),
     });
     expect(res.status).toBe(201);
@@ -45,6 +46,7 @@ describe('POST /projects (e2e)', () => {
     expect(json.start_date).toContain('2025-03-01');
     expect(json.end_date).toContain('2025-09-30');
     expect(json.currency).toBe('EUR');
+    expect(json.description).toBe('End-to-end project description');
   });
 
   test('400 when name missing', async () => {

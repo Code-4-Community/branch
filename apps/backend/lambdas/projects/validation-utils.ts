@@ -72,4 +72,19 @@ export class ProjectValidationUtils {
     }
     return { isValid: true, value: c };
   }
+
+  // validates optional description field - if provided, trims the whitespace
+  static validateDescription(input: unknown): ValidationResult<string | null> {
+    if (input === undefined || input === null) {
+      return { isValid: true, value: null };
+    }
+    if (typeof input !== 'string') {
+      return { isValid: true, value: null };
+    }
+    const d = input.trim();
+    if (d.length === 0) {
+      return { isValid: true, value: null };
+    }
+    return { isValid: true, value: d };
+  }
 }
