@@ -1,10 +1,8 @@
-import { APIGatewayProxyEvent } from 'aws-lambda';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import db from './db';
 
 // Load from environment variables
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
-const COGNITO_REGION = process.env.AWS_REGION || 'us-east-2';
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
 
 // Create verifier instance lazily (only when needed)
@@ -101,89 +99,3 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
   }
 }
 
-/**
- * Authorization helpers for different access levels
- */
-export type AccessLevel = 'PUBLIC' | 'AUTHENTICATED' | 'ADMIN' | 'SELF' | 'ADMIN_OR_SELF';
-
-export interface AuthorizationCheck {
-  allowed: boolean;
-  reason?: string;
-}
-
-/**
- * Check if user is authorized for a given access level
- * @param authContext - The authentication context
- * @param requiredAccess - Required access level
- * @param resourceUserId - The user_id of the resource being accessed (for SELF/ADMIN_OR_SELF checks)
- */
-export function checkAuthorization(
-  authContext: AuthContext,
-  requiredAccess: AccessLevel,
-  resourceUserId?: number | string
-): AuthorizationCheck {
-  if (requiredAccess === 'PUBLIC') {
-    return { allowed: true };
-  }
-
-  // All other access levels require authentication
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return { 
-      allowed: false, 
-      reason: 'Authentication required' 
-    };
-  }
-
-  const { user } = authContext;
-
-  switch (requiredAccess) {
-    case 'AUTHENTICATED':
-      return { allowed: true };
-
-    case 'ADMIN':
-      if (!user.isAdmin) {
-        return { 
-          allowed: false, 
-          reason: 'Admin access required' 
-        };
-      }
-      return { allowed: true };
-
-    case 'SELF':
-      if (!resourceUserId) {
-        return { 
-          allowed: false, 
-          reason: 'Resource user ID required for SELF access check' 
-        };
-      }
-      if (user.userId !== Number(resourceUserId)) {
-        return { 
-          allowed: false, 
-          reason: 'Can only access own resources' 
-        };
-      }
-      return { allowed: true };
-
-    case 'ADMIN_OR_SELF':
-      if (!resourceUserId) {
-        return { 
-          allowed: false, 
-          reason: 'Resource user ID required for ADMIN_OR_SELF access check' 
-        };
-      }
-      // Admin can access anything, or user can access their own resources
-      if (user.isAdmin || user.userId === Number(resourceUserId)) {
-        return { allowed: true };
-      }
-      return { 
-        allowed: false, 
-        reason: 'Admin access or resource ownership required' 
-      };
-
-    default:
-      return { 
-        allowed: false, 
-        reason: 'Unknown access level' 
-      };
-  }
-}
