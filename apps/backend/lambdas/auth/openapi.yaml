@@ -107,3 +107,57 @@ paths:
                   message:
                     type: string
                     example: Failed to create user account
+
+  /login:
+    post:
+      summary: POST /login
+      parameters:
+        - in: query
+          name: username
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+
+  /verify-email:
+    post:
+      summary: POST /verify-email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                code:
+                  type: string
+      responses:
+        '200':
+          description: OK
+
+  /resend-code:
+    post:
+      summary: POST /resend-code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+      responses:
+        '200':
+          description: OK
+
+  /logout:
+    post:
+      summary: POST /logout
+      responses:
+        '200':
+          description: OK
