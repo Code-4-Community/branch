@@ -35,7 +35,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         .updateTable("branch.projects")
         .set(body)
         .where("project_id", "=", Number(id))
-        .returning(["project_id", "name", "total_budget"]) // control returned fields
+        .returning(["project_id", "name", "description", "total_budget"]) // control returned fields
         .executeTakeFirst();
       if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, updatedProject);
