@@ -35,6 +35,22 @@ test('201: creates project with numeric string budget', async () => {
 test('201: creates minimal project with only name', async () => {
   const res = await handler(event({ name: 'Minimal' }));
   expect(res.statusCode).toBe(201);
+  const json = JSON.parse(res.body);
+  expect(json.description).toBe('');
+});
+
+test('201: creates project with empty string description', async () => {
+  const res = await handler(event({ name: 'EmptyDesc', description: '' }));
+  expect(res.statusCode).toBe(201);
+  const json = JSON.parse(res.body);
+  expect(json.description).toBe('');
+});
+
+test('201: creates project with whitespace-only description', async () => {
+  const res = await handler(event({ name: 'WhitespaceDesc', description: '   ' }));
+  expect(res.statusCode).toBe(201);
+  const json = JSON.parse(res.body);
+  expect(json.description).toBe('');
 });
 
 test('201: creates project with all fields', async () => {
@@ -87,4 +103,20 @@ test('400: currency empty or too long', async () => {
 
   const tooLong = await handler(event({ name: 'X', currency: 'ABCDEFGHIJK' })); // 11 chars
   expect(tooLong.statusCode).toBe(400);
+});
+
+test('400: description exceeds 1000 characters', async () => {
+  const longDesc = 'a'.repeat(1001);
+  const res = await handler(event({ name: 'LongDesc', description: longDesc }));
+  expect(res.statusCode).toBe(400);
+  const json = JSON.parse(res.body);
+  expect(json.message).toContain('1000');
+});
+
+test('201: creates project with exactly 1000 character description', async () => {
+  const desc1000 = 'a'.repeat(1000);
+  const res = await handler(event({ name: 'MaxDesc', description: desc1000 }));
+  expect(res.statusCode).toBe(201);
+  const json = JSON.parse(res.body);
+  expect(json.description).toBe(desc1000);
 });

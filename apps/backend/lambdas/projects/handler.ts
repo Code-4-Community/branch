@@ -75,7 +75,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const descriptionResult = ProjectValidationUtils.validateDescription(body.description);
       if (!descriptionResult.isValid) return json(400, { message: descriptionResult.error });
-      if (descriptionResult.value !== null) values.description = descriptionResult.value;
+      values.description = descriptionResult.value;
 
       try {
         const inserted = await db

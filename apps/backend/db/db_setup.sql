@@ -14,7 +14,7 @@ CREATE TABLE users (
 CREATE TABLE projects (
     project_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    description TEXT,
+    description TEXT NOT NULL,
     total_budget NUMERIC(12,2),
     start_date DATE,
     end_date DATE,
