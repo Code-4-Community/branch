@@ -76,6 +76,14 @@ test('201: creates project with all fields', async () => {
   expect(json.description).toBe('Unit test project description');
 });
 
+test('201: creates project with exactly 1000 character description', async () => {
+  const desc1000 = 'a'.repeat(1000);
+  const res = await handler(event({ name: 'MaxDesc', description: desc1000 }));
+  expect(res.statusCode).toBe(201);
+  const json = JSON.parse(res.body);
+  expect(json.description).toBe(desc1000);
+});
+
 // Validation errors (400)
 test('400: missing name', async () => {
   const res = await handler(event({ total_budget: 10 }));
@@ -111,12 +119,4 @@ test('400: description exceeds 1000 characters', async () => {
   expect(res.statusCode).toBe(400);
   const json = JSON.parse(res.body);
   expect(json.message).toContain('1000');
-});
-
-test('201: creates project with exactly 1000 character description', async () => {
-  const desc1000 = 'a'.repeat(1000);
-  const res = await handler(event({ name: 'MaxDesc', description: desc1000 }));
-  expect(res.statusCode).toBe(201);
-  const json = JSON.parse(res.body);
-  expect(json.description).toBe(desc1000);
 });
