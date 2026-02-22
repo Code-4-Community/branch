@@ -17,7 +17,7 @@ variable "repository_collaborators" {
 variable "review_bot_roster" {
   description = "Ordered list of GitHub usernames for round-robin review assignment"
   type        = list(string)
-  default     = ["denniwang", "bhuvanh66", "Rayna-Yu", "mehanana", "tsudhakar87", "saumyapalk23"]
+  default     = ["denniwang", "bhuvanh66", "Rayna-Yu", "mehanana", "tsudhakar87", "saumyapalk23", "Vaibhav978"]
 }
 
 variable "review_bot_github_to_slack" {
