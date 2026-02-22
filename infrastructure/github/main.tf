@@ -27,9 +27,6 @@ resource "github_branch_default" "main" {
 }
 
 # NOTE: Merge queue is enabled manually in the GitHub UI
-# (Settings > Branches > branch protection rule for "main" >
-# "Require merge queue") because the Terraform provider does
-# not yet support merge_queue configuration.
 resource "github_branch_protection" "main" {
   repository_id = github_repository.branch.node_id
   pattern       = "main"
