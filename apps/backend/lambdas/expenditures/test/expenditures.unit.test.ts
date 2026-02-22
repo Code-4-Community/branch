@@ -2,11 +2,14 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock the database module BEFORE importing handler
 jest.mock('../db');
+jest.mock('../auth');
 
 import { handler } from '../handler';
 import db from '../db';
+import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
 // Helper function to create a POST event
 function postEvent(body: Record<string, unknown>) {
@@ -17,13 +20,114 @@ function postEvent(body: Record<string, unknown>) {
         method: 'POST',
       },
     },
+    headers: {
+      Authorization: 'Bearer fake-token',
+    },
     body: JSON.stringify(body),
   };
 }
 
+// Default authenticated admin user
+const adminAuthContext = {
+  isAuthenticated: true as const,
+  user: {
+    cognitoSub: 'test-sub',
+    userId: 1,
+    email: 'admin@example.com',
+    isAdmin: true,
+  },
+};
+
 describe('POST /expenditures unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: requests are from an authenticated admin
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  describe('Authentication & Authorization', () => {
+    test('401: unauthenticated request', async () => {
+      mockAuthenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+        })
+      );
+
+      expect(res.statusCode).toBe(401);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBe('Authentication required');
+    });
+
+    test('403: user without required project role', async () => {
+      mockAuthenticateRequest.mockResolvedValue({
+        isAuthenticated: true,
+        user: {
+          cognitoSub: 'staff-sub',
+          userId: 2,
+          email: 'staff@example.com',
+          isAdmin: false,
+        },
+      });
+
+      // Mock: no membership found for this user on this project
+      mockDb.selectFrom.mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnValue({
+              executeTakeFirst: jest.fn().mockReturnValue(null as any),
+            }),
+          }),
+        }),
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+        })
+      );
+
+      expect(res.statusCode).toBe(403);
+      const json = JSON.parse(res.body);
+      expect(json.message).toContain('Unable to create expenditure');
+    });
+
+    test('403: user with Staff role is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({
+        isAuthenticated: true,
+        user: {
+          cognitoSub: 'staff-sub',
+          userId: 2,
+          email: 'staff@example.com',
+          isAdmin: false,
+        },
+      });
+
+      // Mock: user has Staff role
+      mockDb.selectFrom.mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnValue({
+              executeTakeFirst: jest.fn().mockReturnValue({ role: 'Staff' } as any),
+            }),
+          }),
+        }),
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+        })
+      );
+
+      expect(res.statusCode).toBe(403);
+    });
   });
 
   describe('Input Validation', () => {
@@ -203,6 +307,7 @@ describe('POST /expenditures unit tests', () => {
       expect(json).toHaveProperty('body');
       expect(json.body).toHaveProperty('projectID');
       expect(json.body).toHaveProperty('amount');
+      expect(json.body.enteredBy).toBe(1); // authenticated user's ID
     });
 
     test('404: returns 404 when project not found', async () => {
@@ -315,41 +420,6 @@ describe('POST /expenditures unit tests', () => {
       expect(res.statusCode).toBe(500);
       const json = JSON.parse(res.body);
       expect(json.message).toBe('Internal Server Error');
-    });
-
-    test('404: returns 404 when enteredBy user not found', async () => {
-      // Mock: project exists
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 1,
-              name: 'Test Project',
-            } as any),
-          }),
-        }),
-      });
-
-      // Mock: user doesn't exist
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue(null as any),
-          }),
-        }),
-      });
-
-      const res = await handler(
-        postEvent({
-          projectID: 1,
-          amount: 1000,
-          enteredBy: 999,
-        })
-      );
-
-      expect(res.statusCode).toBe(404);
-      const json = JSON.parse(res.body);
-      expect(json.message).toBe('User not found');
     });
   });
 });

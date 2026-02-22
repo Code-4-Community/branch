@@ -1,6 +1,7 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
+import { authenticateRequest } from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -21,15 +22,37 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     
     // POST /expenditures
     if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
+      // Authenticate the request
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const { user } = authContext;
+
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
-      
+
       // Validate input
       const validationResult = ExpenditureValidationUtils.validateExpenditureInput(body);
       if (validationResult instanceof Error) {
         return json(400, { message: validationResult.message });
       }
 
-      const { projectID, enteredBy, amount, category, description, spentOn } = validationResult;
+      const { projectID, amount, category, description, spentOn } = validationResult;
+
+      // Authorize: must be global admin, or PI/Accountant/Admin on this project
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', projectID)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+          return json(403, { message: 'Unable to create expenditure for this project' });
+        }
+      }
 
       // Check if project exists
       const project = await db
@@ -42,26 +65,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Project not found' });
       }
 
-      // Check if enteredBy user exists (if provided)
-      if (enteredBy !== undefined && enteredBy !== null) {
-        const user = await db
-          .selectFrom('branch.users')
-          .where('user_id', '=', enteredBy)
-          .selectAll()
-          .executeTakeFirst();
-
-        if (!user) {
-          return json(404, { message: 'User not found' });
-        }
-      }
-
-      // Insert expenditure
+      // Insert expenditure with authenticated user as entered_by
       try {
         await db
           .insertInto('branch.expenditures')
           .values({
             project_id: projectID,
-            entered_by: enteredBy ?? null,
+            entered_by: user.userId!,
             amount,
             category: category ?? null,
             description: description ?? null,
@@ -78,7 +88,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         route: 'POST /expenditures',
         body: {
           projectID,
-          enteredBy: enteredBy ?? null,
+          enteredBy: user.userId!,
           amount,
           category: category ?? null,
           description: description ?? null,
