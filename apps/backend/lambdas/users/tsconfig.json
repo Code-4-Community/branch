@@ -10,6 +10,6 @@
     "outDir": "dist",
     "sourceMap": true
   },
-  "include": ["*.ts", "test/test-cognito.ts"],
+  "include": ["*.ts"],
   "exclude": ["node_modules", "dist", "dev-server.ts", "swagger-utils.ts"]
 }

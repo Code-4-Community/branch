@@ -2,6 +2,15 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db'
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
 
+function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
+  const authCheck = checkAuthorization(authContext, level, resourceUserId);
+  if (!authCheck.allowed) {
+    return authContext.isAuthenticated
+      ? json(403, { message: authCheck.reason || 'Forbidden' })
+      : json(401, { message: 'Authentication required' });
+  }
+}
+
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -31,12 +40,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // GET /users
     if ((normalizedPath === '/users' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
-      const authCheck = checkAuthorization(authContext, 'ADMIN');
-      if (!authCheck.allowed) {
-        return authContext.isAuthenticated 
-          ? json(403, { message: authCheck.reason || 'Forbidden' })
-          : json(401, { message: 'Authentication required' });
-      }
+      const authError = requireAuth(authContext, 'ADMIN');
+      if (authError) return authError;
     
       // TODO: Add your business logic here
         const queryParams = event.queryStringParameters || {};
@@ -83,14 +88,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // GET /{userId}
     if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'GET') {
-      const authCheck = checkAuthorization(authContext, 'ADMIN_OR_SELF');
-      if (!authCheck.allowed) {
-        return authContext.isAuthenticated 
-          ? json(403, { message: authCheck.reason || 'Forbidden' })
-          : json(401, { message: 'Authentication required' });
-      }
+      const userId = normalizedPath.split('/')[1]; 
+      const authError = requireAuth(authContext, 'ADMIN_OR_SELF', userId);
+      if (authError) return authError;
 
-      const userId = normalizedPath.split('/')[1];
       if (!userId) return json(400, { message: 'userId is required' });
 
       const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
@@ -111,14 +112,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     
     // PATCH /{userId} (dev server strips /users prefix)
     if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'PATCH') {
-      const authCheck = checkAuthorization(authContext, 'ADMIN_OR_SELF');
-      if (!authCheck.allowed) {
-        return authContext.isAuthenticated 
-          ? json(403, { message: authCheck.reason || 'Forbidden' })
-          : json(401, { message: 'Authentication required' });
-      }
-
       const userId = normalizedPath.split('/')[1];
+      const authError = requireAuth(authContext, 'ADMIN_OR_SELF', userId);
+      if (authError) return authError;
+      
       if (!userId) return json(400, { message: 'userId is required' });
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
@@ -145,14 +142,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     
     // DELETE /users/{userId}
     if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'DELETE') {
-      const authCheck = checkAuthorization(authContext, 'ADMIN');
-      if (!authCheck.allowed) {
-        return authContext.isAuthenticated 
-          ? json(403, { message: authCheck.reason || 'Forbidden' })
-          : json(401, { message: 'Authentication required' });
-      }
+      const authError = requireAuth(authContext, 'ADMIN');
+      if (authError) return authError;
 
-      const userId = normalizedPath.split('/')[1];  // Change from [2] to [1]
+      const userId = normalizedPath.split('/')[1];
       if (!userId) return json(400, { message: 'userId is required' });
       
       const deleted = await db.deleteFrom('branch.users').where('user_id', '=', Number(userId)).execute();
@@ -166,13 +159,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // POST /users
     if ((normalizedPath === '/' || normalizedPath === '/users') && method === 'POST') {
-      const authCheck = checkAuthorization(authContext, 'ADMIN');
-      if (!authCheck.allowed) {
-        return authContext.isAuthenticated 
-          ? json(403, { message: authCheck.reason || 'Forbidden' })
-          : json(401, { message: 'Authentication required' });
-      }
-      
+      const authError = requireAuth(authContext, 'ADMIN');
+      if (authError) return authError;
+
       const body = event.body
         ? (JSON.parse(event.body) as Record<string, unknown>)
         : {};
