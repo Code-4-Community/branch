@@ -3,6 +3,8 @@ name: Frontend CI
 on:
   pull_request:
     branches: [main, develop]
+  merge_group:
+    branches: [main]
 
 jobs:
   frontend-ci:
