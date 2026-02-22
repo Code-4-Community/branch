@@ -1,16 +1,9 @@
-export type ValidationResult<T> = {
-    isValid: boolean;
-    value?: T;
-    error?: string;
-};
-
 export interface ExpenditureInput {
     projectID: number;
-    enteredBy?: number;
     amount: number;
     category?: string;
     description?: string;
-    spentOn?: string; 
+    spentOn?: string;
 }
 
 export class ExpenditureValidationUtils {
@@ -40,18 +33,6 @@ export class ExpenditureValidationUtils {
         }
 
         return amount;
-    }
-
-    static validateEnteredBy(enteredBy: unknown): number | undefined | Error {
-        if (enteredBy === undefined || enteredBy === null) {
-            return undefined;
-        }
-
-        if (typeof enteredBy !== 'number' || !Number.isInteger(enteredBy)) {
-            return new Error('enteredBy must be an integer');
-        }
-
-        return enteredBy;
     }
 
     static validateCategory(category: unknown): string | undefined | Error {
@@ -103,11 +84,6 @@ export class ExpenditureValidationUtils {
         }
 
         // Validate optional fields
-        const enteredBy = this.validateEnteredBy(body.enteredBy);
-        if (enteredBy instanceof Error) {
-            return enteredBy;
-        }
-
         const category = this.validateCategory(body.category);
         if (category instanceof Error) {
             return category;
@@ -125,7 +101,6 @@ export class ExpenditureValidationUtils {
 
         return {
             projectID,
-            enteredBy,
             amount,
             category,
             description,

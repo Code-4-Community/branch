@@ -1,0 +1,102 @@
+name: Merge Queue — Notify on Dequeue
+
+on:
+  pull_request:
+    types: [dequeued]
+
+permissions:
+  contents: read
+
+jobs:
+  notify-dequeue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout bot-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: bot-state
+          path: bot-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify author via Slack
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const configPath = path.join('bot-state', 'config.json');
+            if (!fs.existsSync(configPath)) {
+              console.log('config.json not found. Skipping.');
+              return;
+            }
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const prTitle = pr.title;
+            const prUrl = pr.html_url;
+            const author = pr.user.login;
+
+            const reason = context.payload.reason || 'unknown';
+
+            const REASON_LABELS = {
+              CHECKS_FAILED:           'CI checks failed',
+              CI_FAILED:               'CI checks failed',
+              MERGE_CONFLICT:          'merge conflict with the base branch',
+              MANUALLY_REMOVED:        'manual removal from the queue',
+              BRANCH_PROTECTIONS_CHANGED: 'branch protection rules changed',
+              GIT_PUSH_FAILED:         'Git push failed',
+              UNKNOWN:                 'an unknown reason',
+            };
+            const reasonText = REASON_LABELS[reason] || reason.toLowerCase().replace(/_/g, ' ');
+
+            const slackId = config.github_to_slack[author];
+            if (!slackId) {
+              console.log(`No Slack mapping for GitHub user "${author}". Skipping notification.`);
+              return;
+            }
+
+            async function slackApi(method, body) {
+              try {
+                const resp = await fetch(`https://slack.com/api/${method}`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+                  },
+                  body: JSON.stringify(body),
+                });
+                const data = await resp.json();
+                if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+                return data;
+              } catch (err) {
+                console.log(`Slack ${method} failed: ${err.message}`);
+                return { ok: false };
+              }
+            }
+
+            const blocks = [
+              {
+                type: 'header',
+                text: { type: 'plain_text', text: ':warning:  Removed from Merge Queue', emoji: true },
+              },
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: `Your PR *<${prUrl}|#${prNumber} ${prTitle}>* was removed from the merge queue.\n\n*Reason:* ${reasonText}`,
+                },
+              },
+            ];
+
+            // DM the author
+            await slackApi('chat.postMessage', {
+              channel: slackId,
+              text: `PR #${prNumber} was removed from the merge queue: ${reasonText}`,
+              blocks,
+            });
+
+            console.log(`Notified ${author} (${slackId}) about dequeue of PR #${prNumber} — reason: ${reason}`);

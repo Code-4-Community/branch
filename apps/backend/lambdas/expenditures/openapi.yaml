@@ -28,15 +28,21 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - projectID
+                - amount
               properties:
-                enteredBy:
+                projectID:
                   type: number
                 amount:
                   type: number
+                category:
+                  type: string
                 description:
                   type: string
-                projectID:
-                  type: number
+                spentOn:
+                  type: string
+                  format: date
       responses:
         '201':
           description: Success
