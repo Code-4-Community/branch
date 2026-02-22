@@ -37,13 +37,13 @@ export default function TextInputField({
     ? 'text-error-red'
     : isValid
       ? 'text-core-green'
-      : 'text-black-700';
+      : 'text-core-black';
 
   const inputClass = isError
     ? '!border-error-red !text-error-red !font-bold placeholder:text-error-red placeholder:font-bold'
     : isValid
       ? '!border-core-green !text-core-green !font-bold placeholder:text-core-green placeholder:font-bold'
-      : '!border-black-200';
+      : '!border-black-200 !text-core-black';
 
   return (
     <Field.Root className="!w-fit font-body text-body">

@@ -62,7 +62,7 @@ export default function DropdownSelector({
                     item={item}
                     className="group !flex items-center !gap-3 !px-3 !py-2.5 cursor-pointer data-[highlighted]:!bg-primary-100 [&:not(:first-child)]:!border-t [&:not(:first-child)]:!border-black-200"
                   >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-black-200 bg-core-white group-data-[state=checked]:bg-core-green group-data-[state=checked]:border-core-green">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded !border !border-black-300 bg-core-white group-data-[state=checked]:!bg-core-green group-data-[state=checked]:!border-core-green">
                       <svg
                         className="h-3 w-3 text-core-white opacity-0 group-data-[state=checked]:opacity-100"
                         viewBox="0 0 12 12"
