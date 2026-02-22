@@ -63,98 +63,8 @@ jobs:
           echo "Unique directories with changes: $dirs"
           echo "dirs=$dirs" >> $GITHUB_OUTPUT
 
-  terraform-fmt-docs:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-
-      - name: Install tfenv
-        run: |
-          git clone --depth=1 https://github.com/tfutils/tfenv.git ~/.tfenv
-          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
-
-      - name: Install terraform-docs
-        run: |
-          curl -sSLo ./terraform-docs.tar.gz https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
-          tar -xzf terraform-docs.tar.gz
-          chmod +x terraform-docs
-          sudo mv terraform-docs /usr/local/bin/
-
-      - name: Process each directory
-        run: |
-          dirs='${{ needs.detect-changes.outputs.terraform-dirs }}'
-          echo "$dirs" | jq -r '.[]' | while read -r dir; do
-            echo "Processing directory: $dir"
-
-            # Install correct Terraform version
-            cd "$dir"
-            tfenv install
-
-            # Format Terraform files
-            echo "Formatting Terraform files in $dir"
-            terraform fmt -recursive
-
-            # Generate or update terraform-docs
-            echo "Generating documentation for $dir"
-            if [ -f "README.md" ]; then
-              # Update existing README
-              terraform-docs markdown table . --output-file README.md --output-mode inject
-            else
-              # Create new README using printf
-              printf '# Terraform Module\n\n<!-- BEGIN_TF_DOCS -->\n<!-- END_TF_DOCS -->\n' > README.md
-              terraform-docs markdown table . --output-file README.md --output-mode inject
-            fi
-
-            # Return to root for next iteration
-            cd - > /dev/null
-          done
-
-      - name: Check for changes
-        id: check-changes
-        run: |
-          if git diff --quiet; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            git diff --name-only
-          fi
-
-      - name: Commit changes
-        if: steps.check-changes.outputs.changed == 'true'
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # Only add .tf and .md files
-          git add '*.tf' '**/*.tf'
-          git add '*.md' '**/*.md'
-
-          # Check if there are staged changes
-          if git diff --staged --quiet; then
-            echo "No .tf or .md files to commit"
-          else
-            git commit -m "chore: auto-format terraform and update documentation
-
-            - Auto-formatted .tf files with terraform fmt
-            - Updated README.md with terraform-docs
-
-            Co-authored-by: ${{ github.event.pull_request.user.login }} <${{ github.event.pull_request.user.login }}@users.noreply.github.com>"
-
-            git push
-          fi
-
   terraform-plan:
-    needs: [detect-changes, terraform-fmt-docs]
+    needs: [detect-changes]
     if: |
       always() &&
       needs.detect-changes.result == 'success' &&
@@ -298,7 +208,7 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
-            
+
             let planOutput = 'No plan output captured';
             try {
               // Read from the existing plan_output.txt file
@@ -312,7 +222,7 @@ jobs:
             } catch (error) {
               console.log('Error reading plan output file:', error.message);
             }
-            
+
             const output = `#### Terraform Plan Failed ❌ \`${{ matrix.directory }}\`
             #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
             #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
@@ -340,7 +250,7 @@ jobs:
 
   # Summary job to ensure all plans completed
   terraform-plan-summary:
-    needs: [detect-changes, terraform-fmt-docs, terraform-plan]
+    needs: [detect-changes, terraform-plan]
     if: always()
     runs-on: ubuntu-latest
     steps:
