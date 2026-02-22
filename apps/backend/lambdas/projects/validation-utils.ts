@@ -72,4 +72,19 @@ export class ProjectValidationUtils {
     }
     return { isValid: true, value: c };
   }
+
+  // validates description field - required, defaults to empty string if not provided
+  static validateDescription(input: unknown): ValidationResult<string> {
+    if (input === undefined || input === null || input === '') {
+      return { isValid: true, value: '' };
+    }
+    if (typeof input !== 'string') {
+      return { isValid: true, value: '' };
+    }
+    const d = input.trim();
+    if (d.length > 1000) {
+      return { isValid: false, error: "'description' must be <= 1000 chars" };
+    }
+    return { isValid: true, value: d.length === 0 ? '' : d };
+  }
 }

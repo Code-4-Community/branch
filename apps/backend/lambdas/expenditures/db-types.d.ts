@@ -53,6 +53,7 @@ export interface BranchProjects {
   created_at: Generated<Timestamp | null>;
   currency: Generated<string | null>;
   end_date: Timestamp | null;
+  description: string;
   name: string;
   project_id: Generated<number>;
   start_date: Timestamp | null;
