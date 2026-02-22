@@ -4,10 +4,6 @@ on:
   pull_request:
     types: [opened, ready_for_review, reopened]
 
-concurrency:
-  group: pr-assign-rotation
-  cancel-in-progress: false
-
 permissions:
   contents: write
   pull-requests: write
