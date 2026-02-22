@@ -61,6 +61,7 @@ export interface BranchProjects {
 }
 
 export interface BranchUsers {
+  cognito_sub: string | null;
   created_at: Generated<Timestamp | null>;
   email: string;
   is_admin: Generated<boolean | null>;
