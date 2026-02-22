@@ -25,6 +25,44 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const projects = await db.selectFrom("branch.projects").selectAll().execute();
       return json(200, projects);
     }
+
+    // GET /projects/{id}/donors
+      const parts = normalizedPath.split('/');
+      if (parts.length === 3 && parts[2] === 'donors' && method === 'GET') {
+        const id = parts[1];
+
+        
+      if (!id) return json(400, { message: 'id is required' });
+      if (isNaN(Number(id))) {
+        return json(400, { message: 'Project id must be a valid number' });
+      }
+      const queryString = event.rawQueryString || event.queryStringParameters;
+
+      if (queryString && (typeof queryString === 'string' ? queryString.length > 0 : Object.keys(queryString).length > 0)) {
+        return json(400, { message: 'Bad Request: Query parameters are not allowed' });
+      }
+
+      const project = await db
+        .selectFrom("branch.projects as p")
+        .where("p.project_id", "=", Number(id))
+        .selectAll()
+        .executeTakeFirst();
+      
+      if (!project) {
+        return json(404, { message: 'Project not found' });
+      }
+
+      const donors = await db.selectFrom("branch.projects as p").where("p.project_id", "=", Number(id)).innerJoin(
+        "branch.project_donations as bpd",
+        "bpd.project_id",
+        "p.project_id"
+      ).innerJoin(
+        "branch.donors as bd",
+        "bd.donor_id",
+        "bpd.donor_id"
+      ).selectAll().execute();
+        return json(200, { donors });
+    }
     
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
