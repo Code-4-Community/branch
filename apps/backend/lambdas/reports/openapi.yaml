@@ -3,11 +3,15 @@ info:
   title: reports (Local)
   version: 1.0.0
 servers:
+  - url: http://localhost:3005/reports
   - url: http://localhost:3000/reports
+security:
+  - BearerAuth: []
 paths:
   /health:
     get:
       summary: Health check
+      security: []
       responses:
         '200':
           description: OK
@@ -18,3 +22,55 @@ paths:
                 properties:
                   ok:
                     type: boolean
+
+  /reports:
+    post:
+      summary: Generate a project report PDF
+      description: >
+        Generates a PDF report for the given project containing project info,
+        participants and roles, donations, and expenditures. Uploads the PDF to
+        S3 and records it in the database. Requires the caller to be a member
+        of the project or a global admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project_id
+              properties:
+                project_id:
+                  type: integer
+                  description: The ID of the project to generate a report for
+                  example: 1
+      responses:
+        '201':
+          description: Report generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  report_id:
+                    type: integer
+                  object_url:
+                    type: string
+        '400':
+          description: Invalid input
+        '401':
+          description: Authentication required
+        '403':
+          description: Not a member of this project
+        '404':
+          description: Project not found
+        '500':
+          description: Internal server error
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
