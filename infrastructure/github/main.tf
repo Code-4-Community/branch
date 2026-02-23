@@ -12,6 +12,7 @@ resource "github_repository" "branch" {
   allow_merge_commit = false
   allow_squash_merge = true
   allow_rebase_merge = false
+  allow_auto_merge   = true
 
   squash_merge_commit_message = "COMMIT_MESSAGES"
   squash_merge_commit_title   = "COMMIT_OR_PR_TITLE"
@@ -25,19 +26,20 @@ resource "github_branch_default" "main" {
   branch     = "main"
 }
 
+# NOTE: Merge queue is enabled manually in the GitHub UI
 resource "github_branch_protection" "main" {
   repository_id = github_repository.branch.node_id
   pattern       = "main"
 
   required_pull_request_reviews {
     required_approving_review_count = 2
-    dismiss_stale_reviews           = true
+    dismiss_stale_reviews           = false
     require_code_owner_reviews      = true
   }
 
   required_status_checks {
     strict   = true
-    contexts = ["terraform-plan-summary", "lambda-tests"]
+    contexts = ["terraform-plan-summary", "lambda-tests", "frontend-ci"]
   }
 
   enforce_admins = false

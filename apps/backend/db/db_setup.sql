@@ -14,6 +14,7 @@ CREATE TABLE users (
 CREATE TABLE projects (
     project_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
+    description TEXT NOT NULL,
     total_budget NUMERIC(12,2),
     start_date DATE,
     end_date DATE,
@@ -59,15 +60,22 @@ CREATE TABLE expenditures (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE reports (
+    report_id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    object_url TEXT NOT NULL,
+    date_created DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
 INSERT INTO users (name, email, is_admin) VALUES
 ('Ashley Duggan', 'ashley@branch.org', TRUE),
 ('Renee Reddy', 'renee@branch.org', TRUE),
 ('Nour Shoreibah', 'nour@branch.org', TRUE);
 
-INSERT INTO projects (name, total_budget, start_date, end_date, currency) VALUES
-('Clinician Communication Study', 500000, '2025-01-01', '2026-01-01', 'USD'),
-('Health Education Initiative', 300000, '2025-03-01', '2026-03-01', 'USD'),
-('Policy Advocacy Program', 200000, '2025-06-01', '2026-06-01', 'USD');
+INSERT INTO projects (name, description, total_budget, start_date, end_date, currency) VALUES
+('Clinician Communication Study', 'Study of clinician-patient communication patterns', 500000, '2025-01-01', '2026-01-01', 'USD'),
+('Health Education Initiative', 'Community health education and outreach', 300000, '2025-03-01', '2026-03-01', 'USD'),
+('Policy Advocacy Program', 'Advocacy and policy change efforts', 200000, '2025-06-01', '2026-06-01', 'USD');
 
 INSERT INTO donors (organization, contact_name, contact_email) VALUES
 ('NIH', 'Dr. Sarah Lee', 'sarah@nih.gov'),
@@ -88,3 +96,10 @@ INSERT INTO expenditures (project_id, entered_by, amount, category, description,
 (1, 1, 5000, 'Travel', 'Conference attendance', '2025-02-10'),
 (2, 2, 3000, 'Equipment', 'Purchase of recording devices', '2025-04-05'),
 (3, 3, 2500, 'Supplies', 'Educational materials', '2025-07-12');
+
+INSERT INTO reports (project_id, object_url) VALUES
+(1, 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),
+(2, 'https://s3.amazonaws.com/branch-reports/health_education_initiative_report.pdf'),
+(3, 'https://s3.amazonaws.com/branch-reports/policy_advocacy_program_report.pdf'),
+(2, 'https://s3.amazonaws.com/branch-reports/research_program_reports.pdf'),
+(3, 'https://s3.amazonaws.com/branch-reports/health_care_data_reports.pdf');

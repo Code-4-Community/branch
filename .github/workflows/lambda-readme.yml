@@ -1,0 +1,43 @@
+name: Lambda README Generation
+
+on:
+  workflow_run:
+    workflows: ["Terraform Plan on Changed Files"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  generate-readmes:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate READMEs
+        working-directory: apps/backend/lambdas
+        run: node tools/lambda-cli.js generate-readme
+
+      - name: Commit updated READMEs
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add apps/backend/lambdas/*/README.md
+
+          if git diff --staged --quiet; then
+            echo "No README changes to commit"
+          else
+            git commit -m "chore: regenerate lambda READMEs"
+            git push
+          fi
