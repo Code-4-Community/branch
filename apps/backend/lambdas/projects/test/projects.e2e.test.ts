@@ -36,6 +36,7 @@ describe('POST /projects (e2e)', () => {
         start_date: '2025-03-01',
         end_date: '2025-09-30',
         currency: 'EUR',
+        description: 'End-to-end project description',
       }),
     });
     expect(res.status).toBe(201);
@@ -45,6 +46,7 @@ describe('POST /projects (e2e)', () => {
     expect(json.start_date).toContain('2025-03-01');
     expect(json.end_date).toContain('2025-09-30');
     expect(json.currency).toBe('EUR');
+    expect(json.description).toBe('End-to-end project description');
   });
 
   test('400 when name missing', async () => {
@@ -72,5 +74,42 @@ describe('POST /projects (e2e)', () => {
       body: JSON.stringify({ name: 'Minimal' }),
     });
     expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.description).toBe(''); // description defaults to empty string
+  });
+
+  test('201: creates project with empty string description', async () => {
+    const res = await fetch(`${base}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'EmptyDesc', description: '' }),
+    });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.description).toBe('');
+  });
+
+  test('400: description exceeds 1000 characters', async () => {
+    const longDesc = 'a'.repeat(1001);
+    const res = await fetch(`${base}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'LongDesc', description: longDesc }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.message).toContain('1000');
+  });
+
+  test('201: creates project with exactly 1000 character description', async () => {
+    const desc1000 = 'a'.repeat(1000);
+    const res = await fetch(`${base}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'MaxDesc', description: desc1000 }),
+    });
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.description).toBe(desc1000);
   });
 });

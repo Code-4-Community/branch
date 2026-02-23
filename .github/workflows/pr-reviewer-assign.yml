@@ -1,0 +1,313 @@
+name: PR Reviewer Assignment
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  assign-reviewer:
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - name: Checkout bot-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: bot-state
+          path: bot-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assign reviewer and notify Slack
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const BOT_STATE_DIR = 'bot-state';
+            const configPath = path.join(BOT_STATE_DIR, 'config.json');
+            const statePath = path.join(BOT_STATE_DIR, 'state.json');
+            const prsDir = path.join(BOT_STATE_DIR, 'prs');
+
+            // ── Load config (Terraform-managed) and state (bot-managed) ──
+            if (!fs.existsSync(configPath)) {
+              core.setFailed('config.json not found on bot-state branch. Run Terraform to initialize.');
+              return;
+            }
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const state = fs.existsSync(statePath)
+              ? JSON.parse(fs.readFileSync(statePath, 'utf8'))
+              : { cursor: 0 };
+
+            // ── PR metadata ─────────────────────────────────────────
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const prAuthor = pr.user.login;
+            const prUrl = pr.html_url;
+            const prTitle = pr.title;
+            const repoFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const prFileKey = `${context.repo.owner}_${context.repo.repo}_${prNumber}`;
+            const prFilePath = path.join(prsDir, `${prFileKey}.json`);
+
+            // ── Ensure prs/ directory exists ─────────────────────────
+            if (!fs.existsSync(prsDir)) {
+              fs.mkdirSync(prsDir, { recursive: true });
+            }
+
+            // ── Slack helpers ───────────────────────────────────────
+            async function slackApi(method, body) {
+              try {
+                const resp = await fetch(`https://slack.com/api/${method}`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+                  },
+                  body: JSON.stringify(body),
+                });
+                const data = await resp.json();
+                if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+                return data;
+              } catch (err) {
+                console.log(`Slack ${method} failed: ${err.message}`);
+                return { ok: false };
+              }
+            }
+
+            const STATUS_EMOJI = {
+              pending:           ':hourglass_flowing_sand:',
+              approved:          ':approved:',
+              changes_requested: ':git-request-changes:',
+              commented:         ':git-comment:',
+            };
+            const STATUS_LABEL = {
+              pending:           'Pending',
+              approved:          'Approved',
+              changes_requested: 'Changes Requested',
+              commented:         'Commented',
+            };
+
+            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer }) {
+              const allDone = reviewers.every(r => r.status !== 'pending')
+                && (!alwaysReviewer || alwaysReviewer.status !== 'pending');
+              const anyChangesRequested = reviewers.some(r => r.status === 'changes_requested')
+                || (alwaysReviewer && alwaysReviewer.status === 'changes_requested');
+
+              let headerText;
+              if (allDone && !anyChangesRequested) {
+                headerText = ':approved:  All Reviews Complete';
+              } else if (allDone && anyChangesRequested) {
+                headerText = ':git-request-changes:  Changes Requested';
+              } else {
+                headerText = ':evergreen_tree:  Review Requested';
+              }
+
+              const reviewerLines = reviewers.map(r =>
+                `${STATUS_EMOJI[r.status]}  <@${r.slack}> — ${STATUS_LABEL[r.status]}`
+              );
+              if (alwaysReviewer) {
+                reviewerLines.push(`${STATUS_EMOJI[alwaysReviewer.status]}  <@${alwaysReviewer.slack}> — ${STATUS_LABEL[alwaysReviewer.status]}`);
+              }
+
+              const infoText = allDone
+                ? `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*`
+                : `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*\n_Please review as soon as you can! Thank you!_`;
+
+              return [
+                {
+                  type: 'header',
+                  text: { type: 'plain_text', text: headerText, emoji: true },
+                },
+                {
+                  type: 'section',
+                  text: { type: 'mrkdwn', text: infoText },
+                },
+                { type: 'divider' },
+                {
+                  type: 'section',
+                  text: { type: 'mrkdwn', text: reviewerLines.join('\n') },
+                },
+              ];
+            }
+
+            // ── Idempotency: PR already tracked ──────────────────────
+            if (fs.existsSync(prFilePath)) {
+              const existing = JSON.parse(fs.readFileSync(prFilePath, 'utf8'));
+
+              if (existing.status === 'open') {
+                console.log(`PR #${prNumber} already has reviewer ${existing.main_reviewer}. Skipping.`);
+                return;
+              }
+
+              // PR was closed/reviewed/merged but reopened — re-notify, keep same reviewer
+              console.log(`PR #${prNumber} was "${existing.status}", now reopened. Re-notifying.`);
+              existing.status = 'open';
+              existing.last_reminded_at = null;
+
+              const reopenReviewers = [existing.main_reviewer];
+              if (existing.second_reviewer) reopenReviewers.push(existing.second_reviewer);
+
+              try {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  reviewers: reopenReviewers,
+                });
+              } catch (err) {
+                console.log(`Warning: could not re-request reviewers: ${err.message}`);
+              }
+
+              const authorSlackId = config.github_to_slack[prAuthor];
+              const authorIsAlways = authorSlackId === config.always_reviewer_slack;
+              const reviewerObjs = [{ login: existing.main_reviewer, slack: existing.main_reviewer_slack, status: 'pending' }];
+              if (existing.second_reviewer) {
+                reviewerObjs.push({ login: existing.second_reviewer, slack: existing.second_reviewer_slack, status: 'pending' });
+              }
+
+              const blocks = buildBlocks({
+                prUrl, prNumber, prTitle, prAuthor,
+                reviewers: reviewerObjs,
+                alwaysReviewer: authorIsAlways ? null : { slack: config.always_reviewer_slack, status: 'pending' },
+              });
+
+              const res = await slackApi('chat.postMessage', {
+                channel: config.slack_channel_id,
+                text: `PR reopened: #${prNumber} ${prTitle}`,
+                blocks,
+              });
+              if (res.ok) existing.slack_thread_ts = res.ts;
+
+              fs.writeFileSync(prFilePath, JSON.stringify(existing, null, 2) + '\n');
+              return;
+            }
+
+            // ── Detect if author is the always-reviewer ─────────────
+            const authorSlackId = config.github_to_slack[prAuthor];
+            const authorIsAlwaysReviewer = authorSlackId === config.always_reviewer_slack;
+            const reviewersNeeded = authorIsAlwaysReviewer ? 2 : 1;
+
+            // ── Round-robin: pick reviewer(s) ─────────────────────────
+            const roster = config.roster;
+            let cursor = state.cursor || 0;
+            const pickedReviewers = [];
+            let newCursor = cursor;
+
+            for (let i = 0; i < roster.length && pickedReviewers.length < reviewersNeeded; i++) {
+              const idx = (cursor + i) % roster.length;
+              const candidate = roster[idx];
+              if (candidate.toLowerCase() !== prAuthor.toLowerCase()) {
+                pickedReviewers.push(candidate);
+                newCursor = (idx + 1) % roster.length;
+              }
+            }
+
+            // Fallback: if we couldn't find enough reviewers
+            if (pickedReviewers.length === 0) {
+              const alwaysEntry = Object.entries(config.github_to_slack).find(
+                ([, slackId]) => slackId === config.always_reviewer_slack
+              );
+              if (alwaysEntry) {
+                pickedReviewers.push(alwaysEntry[0]);
+              } else {
+                core.setFailed('No eligible reviewer found and could not determine always-reviewer.');
+                return;
+              }
+              newCursor = (cursor + 1) % roster.length;
+            }
+
+            const mainReviewer = pickedReviewers[0];
+            const secondReviewer = pickedReviewers.length > 1 ? pickedReviewers[1] : null;
+
+            const mainReviewerSlack = config.github_to_slack[mainReviewer];
+            if (!mainReviewerSlack) {
+              core.setFailed(`No Slack ID mapping found for reviewer "${mainReviewer}".`);
+              return;
+            }
+            const secondReviewerSlack = secondReviewer ? config.github_to_slack[secondReviewer] : null;
+
+            console.log(`Assigning ${pickedReviewers.join(' + ')} to PR #${prNumber} (author: ${prAuthor}, cursor: ${cursor} → ${newCursor})`);
+
+            // ── Request review on GitHub ─────────────────────────────
+            try {
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                reviewers: pickedReviewers,
+              });
+              console.log(`Review requested from ${pickedReviewers.join(', ')}`);
+            } catch (err) {
+              console.log(`Warning: could not request reviewers: ${err.message}`);
+            }
+
+            // ── Post Slack notification ──────────────────────────────
+            const reviewerObjs = [{ login: mainReviewer, slack: mainReviewerSlack, status: 'pending' }];
+            if (secondReviewer) {
+              reviewerObjs.push({ login: secondReviewer, slack: secondReviewerSlack, status: 'pending' });
+            }
+
+            const blocks = buildBlocks({
+              prUrl, prNumber, prTitle, prAuthor,
+              reviewers: reviewerObjs,
+              alwaysReviewer: authorIsAlwaysReviewer ? null : { slack: config.always_reviewer_slack, status: 'pending' },
+            });
+
+            const slackRes = await slackApi('chat.postMessage', {
+              channel: config.slack_channel_id,
+              text: `New PR for review: #${prNumber} ${prTitle}`,
+              blocks,
+            });
+            const slackTs = slackRes.ok ? slackRes.ts : null;
+
+            // ── Persist state (only state.json + per-PR file) ────────
+            state.cursor = newCursor;
+            fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');
+
+            const prData = {
+              pr_url: prUrl,
+              repo: repoFullName,
+              pr_number: prNumber,
+              author: prAuthor,
+              main_reviewer: mainReviewer,
+              main_reviewer_slack: mainReviewerSlack,
+              second_reviewer: secondReviewer,
+              second_reviewer_slack: secondReviewerSlack,
+              created_at: new Date().toISOString(),
+              last_reminded_at: null,
+              slack_thread_ts: slackTs,
+              status: 'open',
+            };
+            fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
+            console.log(`State written: cursor=${newCursor}, file=${prFilePath}`);
+
+      - name: Commit and push bot-state
+        working-directory: bot-state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "bot: assign reviewer for PR #${{ github.event.pull_request.number }}"
+
+          for attempt in 1 2 3; do
+            if git pull --rebase origin bot-state && git push origin bot-state; then
+              echo "Push succeeded (attempt $attempt)"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying in 2s…"
+            sleep 2
+          done
+
+          echo "::error::Failed to push bot-state after 3 attempts"
+          exit 1

@@ -44,6 +44,8 @@ paths:
                   type: string
                 total_budget:
                   type: number
+                description:
+                  type: string
       responses:
         '200':
           description: OK

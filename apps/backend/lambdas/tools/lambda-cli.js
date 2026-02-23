@@ -141,6 +141,63 @@ export function getSwaggerHtml(specUrl: string): string {
 `;
 }
 
+function templateReadme(handlerName, routes, options = {}) {
+  if (!routes) {
+    routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
+  }
+
+  const description = options.description || `TODO: Add a description of the ${handlerName} lambda.`;
+
+  const endpointRows = routes
+    .map((r) => `| ${r.method} | ${r.path} | ${r.description || ''} |`)
+    .join('\n');
+
+  const customSections = options.customSections ? `\n${options.customSections}\n` : '';
+
+  return `# ${handlerName}
+
+## Description
+
+${description}
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+${endpointRows}
+
+## Setup
+
+\`\`\`bash
+cd apps/backend/lambdas/${handlerName}
+npm install
+npm run dev
+\`\`\`
+
+The handler will be available at \`http://localhost:3000/${handlerName}\`.
+
+Swagger UI: \`http://localhost:3000/${handlerName}/swagger\`
+
+## Adding Routes
+
+From the \`apps/backend/lambdas\` directory:
+
+\`\`\`bash
+node tools/lambda-cli.js add-route ${handlerName} GET /${handlerName}/{id}
+node tools/lambda-cli.js add-route ${handlerName} POST /${handlerName} --body name:string
+\`\`\`
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| \`npm run dev\` | Start local development server |
+| \`npm run build\` | Compile TypeScript |
+| \`npm test\` | Run tests |
+| \`npm run package\` | Build and zip for deployment |
+${customSections}`;
+}
+
 function templateJestSetup(handlerName) {
   return `
 test("health test 🌞", async () => {
@@ -907,6 +964,7 @@ function cmdInitHandler(nameArg) {
   const handlerPath = path.join(baseDir, 'handler.ts');
   const swaggerUtilsPath = path.join(baseDir, 'swagger-utils.ts');
   const devServerPath = path.join(baseDir, 'dev-server.ts');
+  const readmePath = path.join(baseDir, 'README.md');
   fs.mkdirSync(path.join(baseDir, 'test'));
   const testPath = path.join(baseDir, 'test/example.test.ts')
 
@@ -917,6 +975,7 @@ function cmdInitHandler(nameArg) {
   writeFileIfAbsent(devServerPath, templateDevServer(nameArg));
   writeFileIfAbsent(handlerPath, templateHandlerTsClean());
   writeFileIfAbsent(testPath, templateJestSetup(nameArg));
+  writeFileIfAbsent(readmePath, templateReadme(nameArg));
 
   log(`Created handler at ${baseDir} `);
   log('Next:');
@@ -1024,6 +1083,134 @@ function cmdAddRoute(handlerRel, method, apiPath, options = {}) {
   log(`Added route ${method.toUpperCase()} ${apiPath} to ${handlerRel} `);
 }
 
+function parseExistingReadme(readmePath) {
+  if (!fs.existsSync(readmePath)) return null;
+  const content = fs.readFileSync(readmePath, 'utf8');
+
+  // Extract description (between ## Description and ## Endpoints)
+  let description = '';
+  const descMatch = content.match(/## Description\n\n([\s\S]*?)\n\n## Endpoints/);
+  if (descMatch) {
+    description = descMatch[1].trim();
+  }
+
+  // Extract endpoint descriptions from the table (keyed by "METHOD|path")
+  const endpointDescriptions = new Map();
+  const tableRowRegex = /^\|\s*(\w+)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\|$/gm;
+  let match;
+  while ((match = tableRowRegex.exec(content)) !== null) {
+    const method = match[1];
+    const routePath = match[2];
+    const desc = match[3].trim();
+    if (method === 'Method' || method === '--------') continue;
+    if (desc) {
+      endpointDescriptions.set(`${method}|${routePath}`, desc);
+    }
+  }
+
+  // Extract custom sections after ## Scripts table
+  let customSections = '';
+  const scriptsIndex = content.indexOf('## Scripts');
+  if (scriptsIndex !== -1) {
+    // Find the end of the scripts table (last table row starting with |)
+    const afterScripts = content.substring(scriptsIndex);
+    const lines = afterScripts.split('\n');
+    let lastTableLine = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('|')) {
+        lastTableLine = i;
+      }
+    }
+    const trailing = lines.slice(lastTableLine + 1).join('\n').trim();
+    if (trailing) {
+      customSections = trailing;
+    }
+  }
+
+  return { description, endpointDescriptions, customSections };
+}
+
+function collectRoutes(handlerPath, openapiPath) {
+  const handlerRoutes = extractRoutesFromHandler(handlerPath);
+  const openApiRoutes = extractRoutesFromOpenApi(openapiPath);
+
+  const routeMap = new Map();
+  for (const route of [...handlerRoutes, ...openApiRoutes]) {
+    const key = `${route.method}:${route.path}`;
+    if (!routeMap.has(key)) {
+      routeMap.set(key, route);
+    }
+  }
+
+  const routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
+  for (const route of routeMap.values()) {
+    if (route.method === 'GET' && route.path === '/health') continue;
+    routes.push({ method: route.method, path: route.path, description: '' });
+  }
+  return routes;
+}
+
+function cmdGenerateReadme(handlerRel) {
+  const lambdasRoot = path.resolve(__dirname, '..');
+
+  // if no handler specified, generate for all lambdas
+  const handlers = [];
+  if (!handlerRel) {
+    const entries = fs.readdirSync(lambdasRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name !== 'tools' && entry.name !== 'node_modules') {
+        const handlerPath = path.join(lambdasRoot, entry.name, 'handler.ts');
+        if (fs.existsSync(handlerPath)) {
+          handlers.push(entry.name);
+        }
+      }
+    }
+    if (handlers.length === 0) {
+      error('No lambda handlers found');
+    }
+  } else {
+    handlers.push(handlerRel);
+  }
+
+  for (const name of handlers) {
+    const baseDir = path.resolve(lambdasRoot, name);
+    const handlerPath = path.join(baseDir, 'handler.ts');
+    const openapiPath = path.join(baseDir, 'openapi.yaml');
+    const readmePath = path.join(baseDir, 'README.md');
+
+    if (!fs.existsSync(handlerPath)) {
+      log(`Skipping ${name}: handler.ts not found`);
+      continue;
+    }
+
+    const routes = fs.existsSync(openapiPath)
+      ? collectRoutes(handlerPath, openapiPath)
+      : [{ method: 'GET', path: '/health', description: 'Health check' }];
+
+    // Preserve existing customizations
+    const existing = parseExistingReadme(readmePath);
+    const options = {};
+    if (existing) {
+      if (existing.description) {
+        options.description = existing.description;
+      }
+      if (existing.customSections) {
+        options.customSections = existing.customSections;
+      }
+      // Carry over endpoint descriptions from existing table
+      for (const route of routes) {
+        const key = `${route.method}|${route.path}`;
+        if (existing.endpointDescriptions.has(key)) {
+          route.description = existing.endpointDescriptions.get(key);
+        }
+      }
+    }
+
+    overwriteFile(readmePath, templateReadme(name, routes, options));
+    log(`Generated README.md for ${name}`);
+  }
+}
+
 function main() {
   const [, , cmd, ...rest] = process.argv;
   if (!cmd || ['-h', '--help', 'help'].includes(cmd)) {
@@ -1044,6 +1231,9 @@ function main() {
     log('  list-routes <handlerRel>');
     log('    Lists all routes in a handler');
     log('');
+    log('  generate-readme [handlerRel]');
+    log('    Generates/regenerates README.md for a handler (or all handlers if omitted)');
+    log('');
     log('  Examples:');
     log('    node lambda-cli.js init-handler users');
     log('    node lambda-cli.js add-route users GET /users/{id}');
@@ -1057,6 +1247,8 @@ function main() {
       '    node lambda-cli.js add-route users POST /users --body name:string --headers authorization:string --status 201',
     );
     log('    node lambda-cli.js list-routes users');
+    log('    node lambda-cli.js generate-readme users');
+    log('    node lambda-cli.js generate-readme');
     process.exit(0);
   }
   if (cmd === 'init-handler') {
@@ -1094,6 +1286,11 @@ function main() {
     }
 
     cmdAddRoute(handlerRel, method, apiPath, options);
+    return;
+  }
+  if (cmd === 'generate-readme') {
+    const handlerRel = rest[0];
+    cmdGenerateReadme(handlerRel);
     return;
   }
   error(`Unknown command: ${cmd} `);

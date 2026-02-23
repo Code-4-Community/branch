@@ -1,0 +1,149 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: branch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-branch_dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-branch_db}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/db_setup.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${DB_USER:-branch_dev} -d ${DB_NAME:-branch_db}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Users Service
+  users:
+    build:
+      context: ./lambdas/users
+      dockerfile: Dockerfile
+    container_name: branch-users
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+    ports:
+      - '3001:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Projects Service
+  projects:
+    build:
+      context: ./lambdas/projects
+      dockerfile: Dockerfile
+    container_name: branch-projects
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+    ports:
+      - '3002:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Donors Service
+  donors:
+    build:
+      context: ./lambdas/donors
+      dockerfile: Dockerfile
+    container_name: branch-donors
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+    ports:
+      - '3003:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Expenditures Service
+  expenditures:
+    build:
+      context: ./lambdas/expenditures
+      dockerfile: Dockerfile
+    container_name: branch-expenditures
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+    ports:
+      - '3004:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Reports Service
+  reports:
+    build:
+      context: ./lambdas/reports
+      dockerfile: Dockerfile
+    container_name: branch-reports
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+    ports:
+      - '3005:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Auth Service
+  auth:
+    build:
+      context: ./lambdas/auth
+      dockerfile: Dockerfile
+    container_name: branch-auth
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+    ports:
+      - '3006:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: branch-network
