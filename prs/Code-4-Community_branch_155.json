@@ -10,5 +10,6 @@
   "created_at": "2026-02-23T02:15:42.931Z",
   "last_reminded_at": null,
   "slack_thread_ts": "1771812942.882399",
-  "status": "open"
+  "status": "merged",
+  "resolved_at": "2026-02-23T02:15:48.455Z"
 }
