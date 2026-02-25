@@ -46,12 +46,12 @@ export default function TextInputField({
       : '!border-black-200 !text-core-black';
 
   return (
-    <Field.Root className="!w-fit font-body text-body">
+    <Field.Root className="!w-full font-body text-body">
       <Field.Label className={`!block !mb-1 !text-base !font-normal !font-body ${labelClass}`}>
         {label}
       </Field.Label>
       <Input
-        className={`!w-[235px] !rounded !px-3 !py-2 !h-10 !bg-core-white focus:!outline-none focus:!ring-0 !shadow-none !border !font-body !text-body placeholder:font-body ${inputClass}`}
+        className={`!w-full !rounded !px-3 !py-2 !h-10 !bg-core-white focus:!outline-none focus:!ring-0 !shadow-none !border !font-body !text-body placeholder:font-body ${inputClass}`}
         value={currentValue}
         onChange={handleChange}
         placeholder={placeholder}
