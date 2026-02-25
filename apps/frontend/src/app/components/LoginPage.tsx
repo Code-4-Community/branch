@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import { useState } from 'react';
 import TextInputField from './TextInputField';
+import Link from 'next/link';
+import { Button } from '@chakra-ui/react';
 
 export default function LoginPage() {
     return (
@@ -13,8 +14,12 @@ export default function LoginPage() {
                 <TextInputField label="Email *" placeholder="Enter email address" errorMessage="Please enter a valid email address"/>
                 <TextInputField label="Password *" placeholder="Enter password" errorMessage="Please enter valid password"/>
             </div>
-            <button className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10">Login</button>
-            <h5 className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">Forgot password?</h5>
+            <Button className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10">
+                Login
+            </Button>
+            <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
+                Forgot password?
+            </Link>
         </div>
         
     );
