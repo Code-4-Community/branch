@@ -29,6 +29,6 @@ describe('Login Page Component', () => {
         render(<LoginPage />);
         const link = screen.getByRole('link', { name: 'Forgot password?' });
         expect(link).toBeInTheDocument();
-        expect(link).toHaveAttribute('href', '/forgot-password');
+        expect(link).toHaveAttribute('href', '#');
     });
 });

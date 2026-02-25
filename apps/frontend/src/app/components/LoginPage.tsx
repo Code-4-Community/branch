@@ -19,7 +19,7 @@ export default function LoginPage() {
                 Login
             </Button>
             {/* TODO: Update href when forgot password page is created */}
-            <Link href="" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
+            <Link href="#" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
             </Link>
         </div>
