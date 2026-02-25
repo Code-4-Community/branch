@@ -14,10 +14,12 @@ export default function LoginPage() {
                 <TextInputField label="Email *" placeholder="Enter email address" errorMessage="Please enter a valid email address"/>
                 <TextInputField label="Password *" placeholder="Enter password" errorMessage="Please enter valid password"/>
             </div>
+            {/* TODO: form validation*/}
             <Button className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10">
                 Login
             </Button>
-            <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
+            {/* TODO: Update href when forgot password page is created */}
+            <Link href="" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
             </Link>
         </div>
