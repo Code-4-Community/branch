@@ -9,6 +9,7 @@ Lambda for managing projects.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
+| GET | /projects/{id}/members |  |
 | GET | /projects |  |
 | PUT | /projects/{id} |  |
 
