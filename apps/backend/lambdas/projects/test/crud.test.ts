@@ -46,7 +46,7 @@ test("get project by id test 🌞", async () => {
   let body = await res.json();
   console.log(body);
   expect(body.project_id).toBe(1);
-  expect(body.name).toContain("Project 1");
+  expect(body.name).toContain("Clinician Communication Study");
 });
 
 test("project get 400 test 🌞", async () => {
