@@ -19,6 +19,15 @@ paths:
                   ok:
                     type: boolean
 
+  /projects/{id}/members:
+    get:
+      summary: GET /projects/{id}/members
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
   /projects:
     post:
       summary: POST /projects
@@ -35,6 +44,8 @@ paths:
                   type: string
                 total_budget:
                   type: number
+                description:
+                  type: string
       responses:
         '200':
           description: OK

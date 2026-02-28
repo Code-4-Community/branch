@@ -41,6 +41,12 @@ resource "github_actions_secret" "infisical_client_secret" {
   plaintext_value = data.infisical_secrets.infisical_folder.secrets["infisical-tf-client-secret"].value
 }
 
+resource "github_actions_secret" "gh_pat" {
+  repository      = github_repository.branch.name
+  secret_name     = "GH_PAT"
+  plaintext_value = data.infisical_secrets.github_folder.secrets["branch-gh-admin"].value
+}
+
 # ── Cognito (for lambda CI tests) ────────────────────────────
 
 data "infisical_secrets" "cognito_folder" {
