@@ -5,9 +5,13 @@ on:
     branches:
       - main
       - develop
+  merge_group:
+    branches:
+      - main
 
 jobs:
   detect-changes:
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     outputs:
       terraform-dirs: ${{ steps.set-dirs.outputs.dirs }}
@@ -66,7 +70,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
@@ -338,6 +342,10 @@ jobs:
     steps:
       - name: Summary
         run: |
+          if [ "${{ github.event_name }}" == "merge_group" ]; then
+            echo "Merge queue — terraform plan already reviewed during PR. Skipping."
+            exit 0
+          fi
           if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
             echo "No Terraform changes detected"
           else
