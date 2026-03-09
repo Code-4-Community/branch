@@ -76,6 +76,12 @@ describe("Donor API with data", () => {
     expect(res.statusCode).toBe(200);
   });
 
+  test("Status check for get all donors when donors exist 🌞 - with admin", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+    const res = await handler(createEvent('GET', '/'));
+    expect(res.statusCode).toBe(200);
+  });
+
   test("Content check for get all donors when donors exist 🌞 - with auth", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
     const res = await handler(createEvent('GET', '/'));
@@ -101,6 +107,14 @@ describe("Donor API when DB is empty", () => {
     } finally {
       client.release();
     }
+  });
+
+  test("Status check for get all donors when DB is empty - with auth", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(
+      createEvent('GET', '/')
+    );
+    expect(res.statusCode).toBe(200);
   });
 
   test("Status check for get all donors when DB is empty - with auth", async () => {
