@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock the database module BEFORE importing handler
@@ -37,6 +38,20 @@ const adminAuthContext = {
     isAdmin: true,
   },
 };
+
+// Helper to create a GET event
+function getEvent(path: string, queryStringParameters?: Record<string, string>) {
+  return {
+    rawPath: path,
+    requestContext: {
+      http: {
+        method: 'GET',
+      },
+    },
+    headers: {},
+    queryStringParameters: queryStringParameters ?? {},
+  };
+}
 
 describe('POST /expenditures unit tests', () => {
   beforeEach(() => {
@@ -421,5 +436,108 @@ describe('POST /expenditures unit tests', () => {
       const json = JSON.parse(res.body);
       expect(json.message).toBe('Internal Server Error');
     });
+  });
+});
+
+describe('GET /expenditures unit tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('200: returns all expenditures without pagination', async () => {
+    const fakeExpenditures = [
+      { expenditure_id: 1, project_id: 1, amount: 100 },
+      { expenditure_id: 2, project_id: 2, amount: 200 },
+    ];
+
+    (mockDb.selectFrom as jest.Mock).mockReturnValue({
+      selectAll: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnValue({
+          execute: jest.fn().mockResolvedValue(fakeExpenditures as any),
+        }),
+      }),
+    });
+
+    const res = await handler(getEvent('/expenditures'));
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data).toHaveLength(2);
+  });
+
+  test('200: returns paginated expenditures with metadata', async () => {
+    const fakeExpenditures = [
+      { expenditure_id: 1, project_id: 1, amount: 100 },
+      { expenditure_id: 2, project_id: 1, amount: 200 },
+    ];
+
+    mockDb.fn = {
+      count: jest.fn(() => ({
+        as: jest.fn(() => 'count'),
+      })),
+    };
+
+    let callCount = 0;
+    (mockDb.selectFrom as jest.Mock).mockImplementation(() => {
+      callCount += 1;
+      // First call: baseQuery
+      if (callCount === 1) {
+        return {
+          selectAll: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnThis(),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockReturnValue({
+                offset: jest.fn().mockReturnValue({
+                  execute: jest.fn().mockResolvedValue(fakeExpenditures as any),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      // Second call: count query
+      const countObject = {
+        where: jest.fn().mockReturnThis(),
+        executeTakeFirst: jest.fn().mockResolvedValue({ count: 3 } as any),
+      };
+      return {
+        select: jest.fn().mockReturnValue(countObject),
+      };
+    });
+
+    const res = await handler(
+      getEvent('/expenditures', { page: '1', limit: '2' })
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data).toHaveLength(2);
+    expect(body.pagination.page).toBe(1);
+    expect(body.pagination.limit).toBe(2);
+    expect(body.pagination.totalItems).toBe(3);
+    expect(body.pagination.totalPages).toBe(2);
+  });
+
+  test('400: page without limit returns validation error', async () => {
+    const res = await handler(
+      getEvent('/expenditures', { page: '1' })
+    );
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.message).toContain('Both page and limit are required');
+  });
+
+  test('400: invalid projectId returns validation error', async () => {
+    const res = await handler(
+      getEvent('/expenditures', { projectId: 'abc' })
+    );
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body);
+    expect(body.message).toContain('projectId must be a positive integer');
   });
 });

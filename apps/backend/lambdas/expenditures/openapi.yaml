@@ -20,6 +20,50 @@ paths:
                     type: boolean
 
   /expenditures:
+    get:
+      summary: GET /expenditures
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: projectId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+                    nullable: true
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      totalItems:
+                        type: integer
+                      totalPages:
+                        type: integer
+        '400':
+          description: Invalid pagination parameters
     post:
       summary: POST /expenditures
       requestBody:

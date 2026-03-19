@@ -33,11 +33,12 @@ function postEvent(body: Record<string, unknown>) {
   };
 }
 
-function getEvent(path: string) {
+function getEvent(path: string, queryStringParameters?: Record<string, string>) {
   return {
     rawPath: path,
     requestContext: { http: { method: 'GET' } },
     headers: {},
+    queryStringParameters: queryStringParameters ?? {},
   };
 }
 
@@ -109,6 +110,82 @@ describe('Expenditures integration tests', () => {
       const body = JSON.parse(res.body);
       expect(body.ok).toBe(true);
       expect(body.timestamp).toBeDefined();
+    });
+  });
+
+  describe('GET /expenditures pagination', () => {
+    test('200: returns all expenditures without pagination', async () => {
+      const res = await handler(getEvent('/expenditures'));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(3);
+      expect(body.pagination).toBeUndefined();
+    });
+
+    test('200: returns paginated expenditures with metadata', async () => {
+      const res = await handler(
+        getEvent('/expenditures', { page: '1', limit: '2' })
+      );
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(2);
+      expect(body.pagination).toBeDefined();
+      expect(body.pagination.page).toBe(1);
+      expect(body.pagination.limit).toBe(2);
+      expect(body.pagination.totalItems).toBe(3);
+      expect(body.pagination.totalPages).toBe(2);
+    });
+
+    test('200: filters by projectId', async () => {
+      const res = await handler(
+        getEvent('/expenditures', { projectId: '2' })
+      );
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(1);
+      expect(body.data[0].project_id).toBe(2);
+    });
+
+    test('400: page without limit', async () => {
+      const res = await handler(
+        getEvent('/expenditures', { page: '1' })
+      );
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.message).toContain('Both page and limit are required');
+    });
+
+    test('400: limit without page', async () => {
+      const res = await handler(
+        getEvent('/expenditures', { limit: '10' })
+      );
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.message).toContain('Both page and limit are required');
+    });
+
+    test('400: invalid page/limit values', async () => {
+      const res = await handler(
+        getEvent('/expenditures', { page: '0', limit: '-1' })
+      );
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.message).toContain('page and limit must be positive integers');
+    });
+
+    test('400: invalid projectId', async () => {
+      const res = await handler(
+        getEvent('/expenditures', { projectId: 'abc' })
+      );
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.message).toContain('projectId must be a positive integer');
     });
   });
 

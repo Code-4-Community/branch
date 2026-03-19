@@ -1,9 +1,14 @@
-import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
+
+type LambdaResponse = {
+  statusCode: number;
+  headers?: Record<string, string>;
+  body: string;
+};
 import { ExpenditureValidationUtils } from './validation-utils';
 import { authenticateRequest } from './auth';
 
-export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: any): Promise<LambdaResponse> => {
   try {
     // Support both API Gateway and Lambda Function URL events
     // API Gateway: event.path, event.httpMethod
@@ -20,6 +25,85 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     
+    // GET /expenditures
+    if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
+      const queryParams = event.queryStringParameters || {};
+
+      const pageParam = queryParams.page;
+      const limitParam = queryParams.limit;
+      const projectIdParam = queryParams.projectId;
+
+      const hasPage = pageParam !== undefined;
+      const hasLimit = limitParam !== undefined;
+
+      if ((hasPage && !hasLimit) || (!hasPage && hasLimit)) {
+        return json(400, { message: 'Both page and limit are required for pagination' });
+      }
+
+      let projectId: number | undefined;
+      if (projectIdParam !== undefined) {
+        const parsedProjectId = Number(projectIdParam);
+        if (!Number.isInteger(parsedProjectId) || parsedProjectId <= 0) {
+          return json(400, { message: 'projectId must be a positive integer' });
+        }
+        projectId = parsedProjectId;
+      }
+
+      let baseQuery = db
+        .selectFrom('branch.expenditures')
+        .selectAll();
+
+      if (projectId) {
+        baseQuery = baseQuery.where('project_id', '=', projectId);
+      }
+
+      baseQuery = baseQuery.orderBy('created_at', 'desc');
+
+      // Paginated response
+      if (hasPage && hasLimit) {
+        const page = Number(pageParam);
+        const limit = Number(limitParam);
+
+        if (!Number.isInteger(page) || !Number.isInteger(limit) || page <= 0 || limit <= 0) {
+          return json(400, { message: 'page and limit must be positive integers' });
+        }
+
+        const offset = (page - 1) * limit;
+
+        let countQuery = db
+          .selectFrom('branch.expenditures')
+          .select(db.fn.count('expenditure_id').as('count'));
+
+        if (projectId) {
+          countQuery = countQuery.where('project_id', '=', projectId);
+        }
+
+        const totalCountResult = await countQuery.executeTakeFirst();
+
+        const totalItems = Number(totalCountResult?.count || 0);
+        const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / limit);
+
+        const expenditures = await baseQuery
+          .limit(limit)
+          .offset(offset)
+          .execute();
+
+        return json(200, {
+          data: expenditures,
+          pagination: {
+            page,
+            limit,
+            totalItems,
+            totalPages,
+          },
+        });
+      }
+
+      // Unpaginated response
+      const expenditures = await baseQuery.execute();
+      return json(200, { data: expenditures });
+    }
+
     // POST /expenditures
     if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
       // Authenticate the request
@@ -105,7 +189,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   }
 };
 
-function json(statusCode: number, body: unknown): APIGatewayProxyResult {
+function json(statusCode: number, body: unknown): LambdaResponse {
   return {
     statusCode,
     headers: {
