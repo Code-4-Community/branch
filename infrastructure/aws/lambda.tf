@@ -4,8 +4,8 @@ resource "aws_iam_role" "lambda_role" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "lambda.amazonaws.com" }
     }]
   })
@@ -26,7 +26,7 @@ resource "aws_s3_bucket" "lambda_deployments" {
 
 resource "aws_s3_bucket_versioning" "lambda_deployments" {
   bucket = aws_s3_bucket.lambda_deployments.id
-  
+
   versioning_configuration {
     status = "Enabled"
   }
@@ -46,7 +46,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
 locals {
   lambda_functions = toset([
     "projects",
-    "reports", 
+    "reports",
     "users",
     "donors",
     "expenditures"
@@ -66,34 +66,34 @@ data "archive_file" "lambda_placeholder" {
 # This allows Terraform to create the Lambda functions initially
 resource "aws_s3_object" "lambda_placeholder" {
   for_each = local.lambda_functions
-  
+
   bucket = aws_s3_bucket.lambda_deployments.id
   key    = "${each.key}/initial.zip"
   source = data.archive_file.lambda_placeholder.output_path
-  
+
   content_type = "application/zip"
 }
 
 # Create all Lambda functions with a single resource block
 resource "aws_lambda_function" "functions" {
   for_each = local.lambda_functions
-  
+
   function_name = "branch-${each.key}"
   runtime       = "nodejs20.x"
   handler       = "handler.handler"
   timeout       = 30
   memory_size   = 256
   role          = aws_iam_role.lambda_role.arn
-  
+
   # Use S3 for deployment (initial placeholder, replaced by GitHub Actions)
   s3_bucket = aws_s3_bucket.lambda_deployments.id
   s3_key    = aws_s3_object.lambda_placeholder[each.key].key
-  
+
   # Prevent Terraform from reverting code deployments made by GitHub Actions
   lifecycle {
     ignore_changes = [s3_key]
   }
-  
+
   environment {
     variables = {
       NODE_ENV    = "production"
