@@ -1,5 +1,5 @@
 "use client";
-
+import Image from "next/image";
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -26,19 +26,18 @@ const NAV_ITEMS: NavItem[] = [
 
 const COLORS = {
   white: "#FFFFFF",
-  brandGreen: "#2E6038", // Your requested color
-  // Overlay version of 2E6038 at 85% opacity for better visibility
-  menuOverlay: "rgba(46, 96, 56, 0.75)", 
+  brandGreen: "#2E6038",
+  menuOverlay: "rgba(46, 96, 56, 0.75)",
   hoverBg: "rgba(255, 255, 255, 0.2)",
 };
 
-export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({ 
-  role = "admin", 
-  activePath 
+export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
+  role = "admin",
+  activePath
 }) => {
   const pathname = usePathname?.() ?? "/dashboard";
   const currentPath = activePath ?? pathname;
-  
+
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const visibleItems = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(role));
@@ -55,24 +54,20 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
         flexDirection: "column",
         fontFamily: ptSans.style.fontFamily,
         position: "relative",
-        overflow: "hidden"
+        overflow: "hidden",
       }}
     >
       {/* Background Image Layer */}
-      <img
-        src="/leaves-bg.png"
-        alt=""
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          zIndex: 0,
-        }}
-      />
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+        <Image
+          src="/leaves-bg.png"
+          alt=""
+          fill
+          style={{ objectFit: "cover" }}
+        />
+      </div>
 
-      {/* Logo Section (No overlay here, just like Figma) */}
+      {/* Logo Section */}
       <div style={{
         position: "relative",
         zIndex: 1,
@@ -81,25 +76,25 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
         flexDirection: "column",
         alignItems: "center",
       }}>
-        <img src="/branch-logo.png" alt="Branch" width={75} height={75} />
-        <div style={{ 
-          color: COLORS.white, 
-          fontSize: 18, 
-          marginTop: 8, 
+        <Image src="/branch-logo.png" alt="Branch" width={75} height={75} />
+        <div style={{
+          color: COLORS.white,
+          fontSize: 18,
+          marginTop: 8,
           fontWeight: 400,
-          letterSpacing: "0.05em" 
+          letterSpacing: "0.05em",
         }}>
           BRANCH
         </div>
       </div>
 
-      {/* Nav Overlay Section (Uses #2E6038 with opacity) */}
+      {/* Nav Overlay Section */}
       <div style={{
         position: "relative",
         zIndex: 2,
         backgroundColor: COLORS.menuOverlay,
         flexGrow: 1,
-        paddingTop: "4px"
+        paddingTop: "4px",
       }}>
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {visibleItems.map((item, index) => {
@@ -107,7 +102,7 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
             const isHovered = hoveredIndex === index;
 
             return (
-              <li 
+              <li
                 key={item.href}
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
@@ -120,10 +115,8 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
                     fontSize: "15px",
                     textDecoration: "none",
                     transition: "background-color 0.2s ease",
-                    
-                    // State Styling
-                    backgroundColor: active 
-                      ? COLORS.white 
+                    backgroundColor: active
+                      ? COLORS.white
                       : (isHovered ? COLORS.hoverBg : "transparent"),
                     color: active ? COLORS.brandGreen : COLORS.white,
                     fontWeight: active ? 700 : 400,
@@ -137,7 +130,7 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
         </ul>
       </div>
 
-      {/* Bottom spacer to keep the overlay full-height */}
+      {/* Bottom spacer */}
       <div style={{ height: "40px", backgroundColor: COLORS.menuOverlay, zIndex: 2 }} />
     </nav>
   );
