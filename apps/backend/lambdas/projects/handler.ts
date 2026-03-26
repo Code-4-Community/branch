@@ -19,7 +19,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
         // GET /projects/{id}/members
-    if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && method === 'GET') {
+    if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && normalizedPath.endsWith('/members') && method === 'GET') {
       const id = normalizedPath.split('/')[2];
       if (!id) return json(400, { message: 'id is required' });
       const users = await db
@@ -117,7 +117,46 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to create project' });
       }
     }
-    // <<< ROUTES-END
+    
+    // GET /projects/{id}/expenditures
+    if (normalizedPath.endsWith('/expenditures') && method === 'GET') {
+      const pathParts = normalizedPath.split('/').filter(Boolean);
+
+      let id: string | undefined;
+      if (pathParts.length === 3 && pathParts[0] === 'projects') {
+        id = pathParts[1];
+      } else if (pathParts.length === 2) {
+        id = pathParts[0];
+      }
+      if (!id) return json(400, { message: 'id is required' });
+
+      try {
+
+        const project = await db
+          .selectFrom('branch.projects')
+          .where('project_id', '=', parseInt(id))
+          .selectAll()
+          .executeTakeFirst();
+
+        if (!project) {
+          return json(404, { message: 'Project not found' });
+        }
+
+
+        const expenditures = await db
+          .selectFrom('branch.expenditures')
+          .where('project_id', '=', parseInt(id))
+          .selectAll()
+          .orderBy('spent_on', 'desc')
+          .execute();
+
+        return json(200, expenditures);
+      } catch (err) {
+        console.error('Database error:', err);
+        return json(500, { message: 'Failed to fetch expenditures', error: err instanceof Error ? err.message : 'Unknown error' });
+      }
+    }
+
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
     console.error('Lambda error:', err);
