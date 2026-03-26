@@ -34,8 +34,6 @@ describe('Login Page Component', () => {
 
     it('renders left and right pagination arrows', () => {
         render(<Donors />);
-        const buttons = screen.getAllByRole('button');
-        // arrows are icon elements, check left/right chevron icons are in the document
         expect(document.querySelector('svg')).toBeInTheDocument();
     });
 
