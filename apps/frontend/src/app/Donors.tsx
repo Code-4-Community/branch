@@ -1,6 +1,6 @@
 'use client'
 import React, { useState } from 'react';
-import { HStack, Input, Button, Table, Heading, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
+import { HStack, Input, Button, Table, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from './components/TextInputField';
 import { CiFilter } from "react-icons/ci";
 import { LuArrowDownUp } from "react-icons/lu";
@@ -26,46 +26,6 @@ const mockDonors: Donor[] = [
     { donor_id: 8, organization: 'Evergreen Partners', contact_name: 'Rachel Singh', contact_email: 'rachel@evergreenpartners.org', num_projects: 6, last_donation: '03/05/2024' },
     { donor_id: 9, organization: 'New Horizons Society', contact_name: 'Tom Bradley', contact_email: 'tom@newhorizons.org', num_projects: 9, last_donation: '04/10/2024' },
     { donor_id: 10, organization: 'Coastal Care Foundation', contact_name: 'Nina Rossi', contact_email: 'nina@coastalcare.org', num_projects: 3, last_donation: '03/22/2024' },
-    { donor_id: 11, organization: 'Valley Hope Fund', contact_name: 'Carlos Rivera', contact_email: 'carlos@valleyhope.org', num_projects: 2, last_donation: '02/08/2024' },
-    { donor_id: 12, organization: 'Summit Philanthropy Group', contact_name: null, contact_email: null, num_projects: 4, last_donation: '01/30/2024' },
-    { donor_id: 13, organization: 'Harbor Light Charity', contact_name: 'Emily Nguyen', contact_email: 'emily@harborlight.org', num_projects: 8, last_donation: '03/17/2024' },
-    { donor_id: 14, organization: 'Prairie Roots Foundation', contact_name: 'Michael Scott', contact_email: 'michael@praireroots.org', num_projects: 1, last_donation: '04/05/2024' },
-    { donor_id: 15, organization: 'Starlight Endowment', contact_name: 'Laura White', contact_email: 'laura@starlightend.org', num_projects: 5, last_donation: '02/25/2024' },
-    { donor_id: 16, organization: 'Redwood Community Trust', contact_name: 'Kevin Park', contact_email: 'kevin@redwoodtrust.org', num_projects: 3, last_donation: '03/09/2024' },
-    { donor_id: 17, organization: 'Silver Lining Fund', contact_name: null, contact_email: null, num_projects: 6, last_donation: '01/15/2024' },
-    { donor_id: 18, organization: 'Lakeside Giving Circle', contact_name: 'Amanda Foster', contact_email: 'amanda@lakesidegiving.org', num_projects: 2, last_donation: '04/02/2024' },
-    { donor_id: 19, organization: 'Northstar Charitable Fund', contact_name: 'Brian Walsh', contact_email: 'brian@northstarfund.org', num_projects: 7, last_donation: '03/28/2024' },
-    { donor_id: 20, organization: 'Desert Bloom Foundation', contact_name: 'Priya Mehta', contact_email: 'priya@desertbloom.org', num_projects: 4, last_donation: '02/19/2024' },
-    { donor_id: 21, organization: 'Willow Creek Society', contact_name: 'Jason Turner', contact_email: 'jason@willowcreek.org', num_projects: 3, last_donation: '03/14/2024' },
-    { donor_id: 22, organization: 'Ironwood Philanthropy', contact_name: null, contact_email: null, num_projects: 5, last_donation: '01/25/2024' },
-    { donor_id: 23, organization: 'Clearwater Endowment', contact_name: 'Sophia Adams', contact_email: 'sophia@clearwaterend.org', num_projects: 2, last_donation: '04/07/2024' },
-    { donor_id: 24, organization: 'Goldfinch Foundation', contact_name: 'Daniel Lee', contact_email: 'daniel@goldfinchfdn.org', num_projects: 9, last_donation: '03/01/2024' },
-    { donor_id: 25, organization: 'Meadowbrook Trust', contact_name: 'Hannah Clark', contact_email: 'hannah@meadowbrook.org', num_projects: 1, last_donation: '02/11/2024' },
-    { donor_id: 26, organization: 'Tidewater Giving Fund', contact_name: 'Marcus Hill', contact_email: 'marcus@tidewaterfund.org', num_projects: 4, last_donation: '03/20/2024' },
-    { donor_id: 27, organization: 'Pinecrest Charitable Trust', contact_name: null, contact_email: null, num_projects: 6, last_donation: '01/10/2024' },
-    { donor_id: 28, organization: 'Foxglove Foundation', contact_name: 'Olivia Martin', contact_email: 'olivia@foxglovefdn.org', num_projects: 3, last_donation: '04/14/2024' },
-    { donor_id: 29, organization: 'Stonegate Philanthropy', contact_name: 'Ethan Brooks', contact_email: 'ethan@stonegatephil.org', num_projects: 7, last_donation: '02/03/2024' },
-    { donor_id: 30, organization: 'Riverview Society', contact_name: 'Isabella Young', contact_email: 'isabella@riverviewsoc.org', num_projects: 2, last_donation: '03/25/2024' },
-    { donor_id: 31, organization: 'Thunderbird Fund', contact_name: 'Noah Perez', contact_email: 'noah@thunderbirdfund.org', num_projects: 5, last_donation: '01/28/2024' },
-    { donor_id: 32, organization: 'Aspen Grove Foundation', contact_name: null, contact_email: null, num_projects: 8, last_donation: '04/09/2024' },
-    { donor_id: 33, organization: 'Brightwater Giving', contact_name: 'Chloe Evans', contact_email: 'chloe@brightwatergiving.org', num_projects: 1, last_donation: '03/06/2024' },
-    { donor_id: 34, organization: 'Cedarwood Endowment', contact_name: 'Liam Robinson', contact_email: 'liam@cedarwoodend.org', num_projects: 4, last_donation: '02/22/2024' },
-    { donor_id: 35, organization: 'Moonstone Charitable Trust', contact_name: 'Ava Mitchell', contact_email: 'ava@moonstonetrust.org', num_projects: 3, last_donation: '03/31/2024' },
-    { donor_id: 36, organization: 'Harborview Partners', contact_name: 'Mason Carter', contact_email: 'mason@harborviewpartners.org', num_projects: 6, last_donation: '01/18/2024' },
-    { donor_id: 37, organization: 'Cloverfield Foundation', contact_name: null, contact_email: null, num_projects: 2, last_donation: '04/03/2024' },
-    { donor_id: 38, organization: 'Sycamore Hill Trust', contact_name: 'Emma Phillips', contact_email: 'emma@sycamorehill.org', num_projects: 7, last_donation: '02/16/2024' },
-    { donor_id: 39, organization: 'Falcon Ridge Fund', contact_name: 'William Turner', contact_email: 'william@falconridge.org', num_projects: 4, last_donation: '03/13/2024' },
-    { donor_id: 40, organization: 'Whitestone Giving Circle', contact_name: 'Mia Campbell', contact_email: 'mia@whitestonegiving.org', num_projects: 5, last_donation: '01/07/2024' },
-    { donor_id: 41, organization: 'Birchwood Society', contact_name: 'James Nelson', contact_email: 'james@birchwoodsoc.org', num_projects: 3, last_donation: '04/11/2024' },
-    { donor_id: 42, organization: 'Ember Light Foundation', contact_name: null, contact_email: null, num_projects: 9, last_donation: '02/27/2024' },
-    { donor_id: 43, organization: 'Saltgrass Endowment', contact_name: 'Charlotte Baker', contact_email: 'charlotte@saltgrassend.org', num_projects: 2, last_donation: '03/04/2024' },
-    { donor_id: 44, organization: 'Ironstone Philanthropy', contact_name: 'Henry Gonzalez', contact_email: 'henry@ironstonephil.org', num_projects: 6, last_donation: '01/23/2024' },
-    { donor_id: 45, organization: 'Dawnwood Trust', contact_name: 'Amelia Scott', contact_email: 'amelia@dawnwoodtrust.org', num_projects: 1, last_donation: '04/08/2024' },
-    { donor_id: 46, organization: 'Copperleaf Fund', contact_name: 'Benjamin Harris', contact_email: 'benjamin@copperleaffund.org', num_projects: 4, last_donation: '03/19/2024' },
-    { donor_id: 47, organization: 'Snowcap Foundation', contact_name: null, contact_email: null, num_projects: 3, last_donation: '02/06/2024' },
-    { donor_id: 48, organization: 'Thornberry Giving', contact_name: 'Ella Walker', contact_email: 'ella@thornberrygiving.org', num_projects: 7, last_donation: '03/26/2024' },
-    { donor_id: 49, organization: 'Granite Peak Society', contact_name: 'Alexander Hall', contact_email: 'alexander@granitepeak.org', num_projects: 5, last_donation: '01/31/2024' },
-    { donor_id: 50, organization: 'Wren Valley Foundation', contact_name: 'Sofia Allen', contact_email: 'sofia@wrenvalley.org', num_projects: 2, last_donation: '04/15/2024' },
 ];
 
 export default function Donors() {
@@ -120,7 +80,7 @@ export default function Donors() {
 
     return (
         <div style={{margin: '2%', display: 'flex', flexDirection: 'column', minHeight: '90vh'}}>
-            <Heading fontWeight={600} fontFamily={'var(--font-heading)'} fontSize={'var(--font-size-heading-1)'}>Donors</Heading>
+            <h1 style={{ fontWeight: 600, fontFamily: 'var(--font-heading)', fontSize: 'var(--font-size-heading-1)' }}>Donors</h1>
             <HStack width="100%" justify="space-between" paddingTop="3%" paddingBottom="3%">            
                 <HStack width='30%'>
                     <Input placeholder="🔍︎ Search..." variant="outline"/>
