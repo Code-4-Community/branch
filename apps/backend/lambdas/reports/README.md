@@ -9,6 +9,7 @@ Lambda for generating reports.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
+| GET | /reports |  |
 
 ## Setup
 
