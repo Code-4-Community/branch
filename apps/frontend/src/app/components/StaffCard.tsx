@@ -28,7 +28,7 @@ export default function StaffCard({
                 
             )}
             <div className="flex flex-col items-center gap-1 !w-[90px]">
-                <p className="![font-family:var(--font-body)] !text-[length:var(--font-size-body)] !font-bold break-words w-full text-center">{name}</p> 
+                <p className="![font-family:var(--font-body)] !text-[length:var(--font-size-callout)] !font-bold break-words w-full text-center">{name}</p> 
             </div>
         </div>
     )
