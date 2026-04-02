@@ -37,7 +37,7 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_api_base_url"></a> [api\_base\_url](#input\_api\_base\_url) | Base URL for the backend API, injected as NEXT\_PUBLIC\_API\_BASE\_URL | `string` | n/a | yes |
+| <a name="input_api_base_url"></a> [api\_base\_url](#input\_api\_base\_url) | Base URL for the backend API, injected as NEXT\_PUBLIC\_API\_BASE\_URL | `string` | `""` | no |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
