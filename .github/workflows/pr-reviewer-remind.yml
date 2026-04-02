@@ -34,7 +34,7 @@ jobs:
             const BOT_STATE_DIR = 'bot-state';
             const configPath = path.join(BOT_STATE_DIR, 'config.json');
             const prsDir = path.join(BOT_STATE_DIR, 'prs');
-            const REMINDER_INTERVAL_MS = 36 * 60 * 60 * 1000; // 24 hours
+            const REMINDER_INTERVAL_MS = 36 * 60 * 60 * 1000; // 36 hours
             const CLEANUP_AGE_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
 
             // ── Load config (Terraform-managed) ──────────────────────
