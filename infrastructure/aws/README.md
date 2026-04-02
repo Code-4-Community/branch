@@ -22,16 +22,22 @@ No modules.
 
 | Name | Type |
 |------|------|
+| [aws_amplify_app.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/amplify_app) | resource |
+| [aws_amplify_branch.main](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/amplify_branch) | resource |
 | [aws_cognito_user_pool.branch_user_pool](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool) | resource |
 | [aws_cognito_user_pool_client.branch_client](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool_client) | resource |
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
 | [aws_s3_bucket.reports_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
+| [aws_s3_bucket_policy.reports_bucket_policy](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_policy) | resource |
+| [aws_s3_bucket_public_access_block.reports_bucket_public_access](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_public_access_block) | resource |
+| [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_api_base_url"></a> [api\_base\_url](#input\_api\_base\_url) | Base URL for the backend API, injected as NEXT\_PUBLIC\_API\_BASE\_URL | `string` | n/a | yes |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
@@ -40,9 +46,8 @@ No modules.
 
 | Name | Description |
 |------|-------------|
-| <a name="output_cognito_client_id"></a> [cognito\_client\_id](#output\_cognito\_client\_id) | Cognito User Pool Client ID |
 | <a name="output_cognito_region"></a> [cognito\_region](#output\_cognito\_region) | AWS Region for Cognito |
 | <a name="output_cognito_user_pool_arn"></a> [cognito\_user\_pool\_arn](#output\_cognito\_user\_pool\_arn) | Cognito User Pool ARN |
 | <a name="output_cognito_user_pool_endpoint"></a> [cognito\_user\_pool\_endpoint](#output\_cognito\_user\_pool\_endpoint) | Cognito User Pool Endpoint |
-| <a name="output_cognito_user_pool_id"></a> [cognito\_user\_pool\_id](#output\_cognito\_user\_pool\_id) | Cognito User Pool ID |
+| <a name="output_reports_bucket_name"></a> [reports\_bucket\_name](#output\_reports\_bucket\_name) | Name of the S3 bucket for generated reports |
 <!-- END_TF_DOCS -->
