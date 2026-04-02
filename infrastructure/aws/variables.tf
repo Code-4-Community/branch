@@ -6,4 +6,5 @@ variable "infisical_workspace_id" {
 variable "api_base_url" {
   type        = string
   description = "Base URL for the backend API, injected as NEXT_PUBLIC_API_BASE_URL"
+  default     = ""
 }
