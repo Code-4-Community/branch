@@ -18,7 +18,7 @@ export default function StaffCard({
     const [imgError, setImgError] = useState(false);
 
     return (
-        <div className="relative !w-full !flex flex-col items-center !p-3 !gap-1 overflow-hidden !border-1 !border-[var(--color-black-300)] !border-solid">
+        <div data-testid="staff-card" className="relative !w-full !flex flex-col items-center !p-3 !gap-1 overflow-hidden !border-1 !border-[var(--color-black-300)] !border-solid">
             <div className="w-full aspect-square">
                 {(image && !imgError) ? (
                     <Image src={image} alt="Staff" width={120} height={120} className="object-cover w-full h-full" onError={() => setImgError(true)}/>

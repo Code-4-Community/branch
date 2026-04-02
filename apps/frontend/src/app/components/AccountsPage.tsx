@@ -29,8 +29,8 @@ const mockUsers: User[] = [
     { user_id: 15, name: 'Blake Fernandez',   email: 'fernandez.b@northeastern.edu',is_admin: false },
 ];
 
-const facilitationTeam = mockUsers.filter(u => u.is_admin);
-const teamMembers = mockUsers.filter(u => !u.is_admin);
+export const facilitationTeam = mockUsers.filter(u => u.is_admin);
+export const teamMembers = mockUsers.filter(u => !u.is_admin);
 
 
 
@@ -38,13 +38,13 @@ export default function AccountsPage() {
     return (
         <div>
             <h1 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-1)] !font-semibold">Accounts</h1>
-            <h2 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">Core BRANCH Facilitation Team</h2>
+            <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">Core BRANCH Facilitation Team</h3>
             <div className="grid grid-cols-3 md:grid-cols-7 gap-3 !pt-3 !pb-7">
                 {facilitationTeam.map(user => (
                     <StaffCard key={user.user_id} name={user.name} />
                 ))}
             </div>
-            <h2 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">BRANCH Team Members</h2>
+            <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">BRANCH Team Members</h3>
             <div className="grid grid-cols-3 md:grid-cols-7 gap-3 !pt-3 !pb-7">
                 {teamMembers.map(user => (
                     <StaffCard key={user.user_id} name={user.name} />
