@@ -9,8 +9,8 @@ TODO: Add a description of the reports lambda.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
-| GET | /reports |  |
 | POST | /reports |  |
+| GET | /reports |  |
 
 ## Setup
 
