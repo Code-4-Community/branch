@@ -4,10 +4,6 @@ on:
   pull_request_review:
     types: [submitted]
 
-concurrency:
-  group: pr-review-status-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 permissions:
   contents: write
   pull-requests: read
@@ -225,33 +221,6 @@ jobs:
                 thread_ts: prData.slack_thread_ts,
                 text: `${emoji} ${mention} ${verb} <${prData.pr_url}|PR #${prNumber}>`,
               });
-            }
-
-            // ── DM author when fully approved ─────────────────────────────────
-            const anyChangesRequested = reviewerObjs.some(r => r.status === 'changes_requested')
-              || (alwaysReviewerObj && alwaysReviewerObj.status === 'changes_requested');
-
-            if (allDone && !anyChangesRequested && prData.status === 'open' && authorSlackId) {
-              const dmBlocks = [
-                {
-                  type: 'header',
-                  text: { type: 'plain_text', text: ':approved:  Your PR is Fully Approved', emoji: true },
-                },
-                {
-                  type: 'section',
-                  text: {
-                    type: 'mrkdwn',
-                    text: `*<${prUrl}|#${prNumber} ${prTitle}>* has been approved by all reviewers and is ready to merge!`,
-                  },
-                },
-              ];
-
-              await slackApi('chat.postMessage', {
-                channel: authorSlackId,
-                text: `PR #${prNumber} is fully approved and ready to merge!`,
-                blocks: dmBlocks,
-              });
-              console.log(`DM'd author ${prData.author} (${authorSlackId}) — PR #${prNumber} fully approved`);
             }
 
             // ── DM author when fully approved ─────────────────────────────────

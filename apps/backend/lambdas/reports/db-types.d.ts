@@ -61,10 +61,10 @@ export interface BranchProjects {
 }
 
 export interface BranchReports {
-  report_id: Generated<number>;
-  project_id: number;
-  object_url: string;
   date_created: Generated<Timestamp>;
+  object_url: string;
+  project_id: number;
+  report_id: Generated<number>;
 }
 
 export interface BranchUsers {

@@ -81,10 +81,7 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
       user.isAdmin = true;
     }
 
-    return {
-      user,
-      isAuthenticated: true,
-    };
+    return { user, isAuthenticated: true };
   } catch (error) {
     console.error('Token verification failed:', error);
     return { isAuthenticated: false };

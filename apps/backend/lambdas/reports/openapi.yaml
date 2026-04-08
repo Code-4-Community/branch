@@ -24,6 +24,64 @@ paths:
                     type: boolean
 
   /reports:
+    get:
+      summary: GET /reports — paginated list
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+          description: Page number (requires limit)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+          description: Items per page (requires page)
+        - in: query
+          name: projectId
+          schema:
+            type: integer
+            minimum: 1
+          description: Filter reports by project
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        report_id:
+                          type: integer
+                        project_id:
+                          type: integer
+                        object_url:
+                          type: string
+                        date_created:
+                          type: string
+                          format: date
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      totalItems:
+                        type: integer
+                      totalPages:
+                        type: integer
+        '400':
+          description: Invalid pagination params
+        '401':
+          description: Unauthorized
     post:
       summary: Generate a project report PDF
       description: >

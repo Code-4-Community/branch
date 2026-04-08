@@ -33,11 +33,12 @@ function postEvent(body: Record<string, unknown>) {
   };
 }
 
-function getEvent(path: string) {
+function getEvent(path: string, queryStringParameters?: Record<string, string>) {
   return {
     rawPath: path,
     requestContext: { http: { method: 'GET' } },
-    headers: {},
+    headers: { Authorization: 'Bearer fake-token' },
+    queryStringParameters: queryStringParameters ?? {},
   };
 }
 
@@ -119,6 +120,13 @@ describe('Expenditures integration tests', () => {
       const res = await handler(postEvent({ projectID: 1, amount: 1000 }));
       expect(res.statusCode).toBe(401);
       expect(JSON.parse(res.body).message).toBe('Authentication required');
+    });
+
+    test('401: GET /expenditures rejects unauthenticated request', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+
+      const res = await handler(getEvent('/'));
+      expect(res.statusCode).toBe(401);
     });
   });
 
@@ -206,6 +214,130 @@ describe('Expenditures integration tests', () => {
       const res = await handler(postEvent({ projectID: 999, amount: 1000 }));
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+  });
+
+  describe('GET /expenditures — list and pagination', () => {
+    test('200: returns all expenditures with data envelope', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/'));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(3);
+      expect(body.pagination).toBeUndefined();
+    });
+
+    test('200: ordered newest first by spent_on', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/'));
+      const body = JSON.parse(res.body);
+      const dates = body.data.map((e: any) => new Date(e.spent_on).getTime());
+      expect(dates[0]).toBeGreaterThanOrEqual(dates[1]);
+      expect(dates[1]).toBeGreaterThanOrEqual(dates[2]);
+    });
+
+    test('200: paginated response with page and limit', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '1', limit: '1' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.data.length).toBe(1);
+      expect(body.pagination).toBeDefined();
+      expect(body.pagination.page).toBe(1);
+      expect(body.pagination.limit).toBe(1);
+      expect(body.pagination.totalItems).toBe(3);
+      expect(body.pagination.totalPages).toBe(3);
+    });
+
+    test('200: page 2 returns second item', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '2', limit: '1' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.length).toBe(1);
+      expect(body.pagination.page).toBe(2);
+    });
+
+    test('200: limit larger than total returns all items', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '1', limit: '100' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.length).toBe(3);
+      expect(body.pagination.totalItems).toBe(3);
+      expect(body.pagination.totalPages).toBe(1);
+    });
+
+    test('200: only page provided returns all without pagination', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '1' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.pagination).toBeUndefined();
+      expect(body.data.length).toBe(3);
+    });
+
+    test('200: only limit provided returns all without pagination', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { limit: '2' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.pagination).toBeUndefined();
+      expect(body.data.length).toBe(3);
+    });
+
+    test('200: filter by projectId returns only matching expenditures', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { projectId: '1' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.every((e: any) => e.project_id === 1)).toBe(true);
+    });
+
+    test('200: projectId filter with pagination', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { projectId: '1', page: '1', limit: '10' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.pagination.totalItems).toBe(1);
+      expect(body.data.every((e: any) => e.project_id === 1)).toBe(true);
+    });
+
+    test('400: page=0 returns 400', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '0', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: negative page returns 400', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '-1', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: non-integer page returns 400', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: 'abc', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: limit=0 returns 400', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '1', limit: '0' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: decimal limit returns 400', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { page: '1', limit: '1.5' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: invalid projectId returns 400', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(getEvent('/', { projectId: 'abc' }));
+      expect(res.statusCode).toBe(400);
     });
   });
 });

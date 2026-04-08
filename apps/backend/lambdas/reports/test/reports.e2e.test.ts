@@ -39,11 +39,21 @@ function postEvent(body: Record<string, unknown>) {
   };
 }
 
-function getEvent(rawPath: string) {
+function getEvent(queryStringParameters?: Record<string, string>) {
   return {
-    rawPath,
+    rawPath: '/',
+    requestContext: { http: { method: 'GET' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    queryStringParameters: queryStringParameters ?? {},
+  };
+}
+
+function healthEvent() {
+  return {
+    rawPath: '/health',
     requestContext: { http: { method: 'GET' } },
     headers: {},
+    queryStringParameters: {},
   };
 }
 
@@ -72,7 +82,6 @@ describe('Reports e2e tests', () => {
     jest.clearAllMocks();
     mockAuth.mockResolvedValue(adminUser);
 
-    // Set env so uploadToS3 doesn't throw for missing bucket
     process.env.REPORTS_BUCKET_NAME = 'test-bucket';
 
     const client = await pool.connect();
@@ -89,7 +98,7 @@ describe('Reports e2e tests', () => {
 
   describe('Health check', () => {
     test('200: health check returns ok', async () => {
-      const res = await handler(getEvent('/reports/health'));
+      const res = await handler(healthEvent());
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(body.ok).toBe(true);
@@ -97,15 +106,21 @@ describe('Reports e2e tests', () => {
   });
 
   describe('Authentication', () => {
-    test('401: unauthenticated request is rejected', async () => {
+    test('401: unauthenticated POST request is rejected', async () => {
       mockAuth.mockResolvedValue({ isAuthenticated: false });
 
       const res = await handler(postEvent({ project_id: 1 }));
       expect(res.statusCode).toBe(401);
     });
+
+    test('401: unauthenticated GET request is rejected', async () => {
+      mockAuth.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(401);
+    });
   });
 
-  describe('Authorization', () => {
+  describe('POST /reports — authorization', () => {
     test('201: PI on project can generate report', async () => {
       mockAuth.mockResolvedValue(piUser);
 
@@ -136,7 +151,7 @@ describe('Reports e2e tests', () => {
     });
   });
 
-  describe('Success cases', () => {
+  describe('POST /reports — success cases', () => {
     test('201: generates report with correct response shape', async () => {
       const res = await handler(postEvent({ project_id: 1 }));
       expect(res.statusCode).toBe(201);
@@ -181,7 +196,7 @@ describe('Reports e2e tests', () => {
     });
   });
 
-  describe('Error cases', () => {
+  describe('POST /reports — error cases', () => {
     test('404: project does not exist', async () => {
       const res = await handler(postEvent({ project_id: 999 }));
       expect(res.statusCode).toBe(404);
@@ -195,6 +210,114 @@ describe('Reports e2e tests', () => {
 
     test('400: invalid project_id type', async () => {
       const res = await handler(postEvent({ project_id: 'abc' }));
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('GET /reports — list and pagination', () => {
+    test('200: returns all reports with data envelope', async () => {
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(Array.isArray(body.data)).toBe(true);
+      expect(body.data.length).toBe(5); // seed has 5 reports
+      expect(body.pagination).toBeUndefined();
+    });
+
+    test('200: ordered newest first by date_created', async () => {
+      const res = await handler(getEvent());
+      const body = JSON.parse(res.body);
+      const dates = body.data.map((r: any) => new Date(r.date_created).getTime());
+      expect(dates[0]).toBeGreaterThanOrEqual(dates[1]);
+    });
+
+    test('200: paginated with page=1 limit=2', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '2' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.data.length).toBe(2);
+      expect(body.pagination.page).toBe(1);
+      expect(body.pagination.limit).toBe(2);
+      expect(body.pagination.totalItems).toBe(5);
+      expect(body.pagination.totalPages).toBe(3);
+    });
+
+    test('200: page=2 limit=2 returns next slice', async () => {
+      const res = await handler(getEvent({ page: '2', limit: '2' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.length).toBe(2);
+      expect(body.pagination.page).toBe(2);
+    });
+
+    test('200: limit larger than total returns all', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '100' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.length).toBe(5);
+      expect(body.pagination.totalPages).toBe(1);
+    });
+
+    test('200: only page provided returns all without pagination', async () => {
+      const res = await handler(getEvent({ page: '1' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.pagination).toBeUndefined();
+      expect(body.data.length).toBe(5);
+    });
+
+    test('200: only limit provided returns all without pagination', async () => {
+      const res = await handler(getEvent({ limit: '3' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.pagination).toBeUndefined();
+      expect(body.data.length).toBe(5);
+    });
+
+    test('200: filter by projectId returns only matching reports', async () => {
+      const res = await handler(getEvent({ projectId: '1' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.every((r: any) => r.project_id === 1)).toBe(true);
+      expect(body.data.length).toBe(1);
+    });
+
+    test('200: projectId filter with pagination', async () => {
+      // project 2 has 2 reports, project 3 has 2 reports in seed data
+      const res = await handler(getEvent({ projectId: '2', page: '1', limit: '10' }));
+      const body = JSON.parse(res.body);
+      expect(res.statusCode).toBe(200);
+      expect(body.data.every((r: any) => r.project_id === 2)).toBe(true);
+      expect(body.pagination.totalItems).toBe(2);
+    });
+
+    test('400: page=0 returns 400', async () => {
+      const res = await handler(getEvent({ page: '0', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: negative page returns 400', async () => {
+      const res = await handler(getEvent({ page: '-1', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: non-integer page returns 400', async () => {
+      const res = await handler(getEvent({ page: 'abc', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: limit=0 returns 400', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '0' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: decimal limit returns 400', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '2.5' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: invalid projectId returns 400', async () => {
+      const res = await handler(getEvent({ projectId: 'abc' }));
       expect(res.statusCode).toBe(400);
     });
   });
