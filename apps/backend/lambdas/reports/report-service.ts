@@ -6,6 +6,8 @@ import path from 'path';
 // pdfmake's server-side Printer has no TS declarations; use require
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PdfPrinter = require('pdfmake/js/Printer').default;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const URLResolver = require('pdfmake/js/URLResolver').default;
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
 
@@ -176,7 +178,8 @@ function formatCurrency(amount: string | null, currency: string | null): string 
 }
 
 export async function generatePdf(data: ReportData): Promise<Buffer> {
-  const printer = new PdfPrinter(fonts);
+  const urlResolver = new URLResolver(require('fs'));
+  const printer = new PdfPrinter(fonts, null, urlResolver);
 
   const content: Content[] = [
     { text: data.project.name, style: 'title' },

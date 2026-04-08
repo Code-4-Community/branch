@@ -40,14 +40,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'project_id must be a positive integer' });
       }
 
-      const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
-      if (!hasAccess) {
-        return json(403, { message: 'You do not have access to generate reports for this project' });
-      }
-
       const reportData = await fetchReportData(projectId);
       if (!reportData) {
         return json(404, { message: 'Project not found' });
+      }
+
+      const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to generate reports for this project' });
       }
 
       let pdfBuffer: Buffer;
