@@ -10,7 +10,11 @@ const PdfPrinter = require('pdfmake/js/Printer').default;
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
 
 function getBucketName(): string {
-  return process.env.REPORTS_BUCKET_NAME ?? '';
+  const bucket = process.env.REPORTS_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error('REPORTS_BUCKET_NAME environment variable is not set');
+  }
+  return bucket;
 }
 
 const PDFMAKE_ROOT = path.join(require.resolve('pdfmake'), '..', '..');
@@ -61,6 +65,14 @@ export async function checkProjectAccess(
   projectId: number,
   isAdmin: boolean,
 ): Promise<boolean> {
+  const projectExists = await db
+    .selectFrom('branch.projects')
+    .where('project_id', '=', projectId)
+    .select('project_id')
+    .executeTakeFirst();
+
+  if (!projectExists) return false;
+
   if (isAdmin) return true;
 
   const membership = await db
@@ -303,9 +315,6 @@ export async function generatePdf(data: ReportData): Promise<Buffer> {
 
 export async function uploadToS3(pdfBuffer: Buffer, projectId: number): Promise<string> {
   const bucketName = getBucketName();
-  if (!bucketName) {
-    throw new Error('REPORTS_BUCKET_NAME environment variable is not set');
-  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const key = `reports/${projectId}/${timestamp}.pdf`;
