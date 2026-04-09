@@ -9,7 +9,7 @@
   "second_reviewer_slack": null,
   "created_at": "2026-03-25T02:27:00.680Z",
   "last_reminded_at": null,
-  "slack_thread_ts": "1775701954.930639",
-  "status": "reviewed",
+  "slack_thread_ts": "1775776609.342829",
+  "status": "open",
   "resolved_at": "2026-04-09T07:13:54.486Z"
 }
