@@ -13,7 +13,7 @@ resource "aws_iam_role" "lambda_role" {
 
 # Attach basic execution policy for CloudWatch Logs
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  role       = "aws_iam_role.lambda_role.name"
+  role       = aws_iam_role.lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
@@ -35,28 +35,26 @@ resource "aws_s3_bucket_versioning" "lambda_deployments" {
 resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployments" {
   bucket = aws_s3_bucket.lambda_deployments.id
 
-  rule {
+  rules {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
   }
 }
 
-# Define all Lambda functions in one place
+# Define all Lambda functions dynamically from folder structure
 locals {
   lambda_functions = toset([
-    "projects",
-    "reports",
-    "users",
-    "donors",
-    "expenditures"
+    for dir in fileset("${path.module}/../../apps/backend/lambdas", "*") :
+    dir
+    if dir != "tools" && !startswith(dir, ".")
   ])
 }
 
 # Minimal placeholder that will be replaced by GitHub Actions on first deployment
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
-  output_path = "$${path.module}/lambda-placeholder.zip"
+  output_path = "${path.module}/lambda-placeholder.zip"
   source {
     content  = "exports.handler = async () => ({ statusCode: 200, body: JSON.stringify({ message: 'Placeholder - will be replaced by CI/CD' }) });"
     filename = "handler.js"
