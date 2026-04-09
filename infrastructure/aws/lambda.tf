@@ -42,12 +42,15 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
   }
 }
 
-# Define all Lambda functions dynamically from folder structure
+# Define all Lambda functions
 locals {
   lambda_functions = toset([
-    for dir in fileset(abspath("${path.module}/../../apps/backend/lambdas"), "*") :
-    dir
-    if dir != "tools" && !startswith(dir, ".")
+    "auth",
+    "donors",
+    "expenditures",
+    "projects",
+    "reports",
+    "users",
   ])
 }
 
