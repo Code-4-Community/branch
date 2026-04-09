@@ -35,7 +35,7 @@ resource "aws_s3_bucket_versioning" "lambda_deployments" {
 resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployments" {
   bucket = aws_s3_bucket.lambda_deployments.id
 
-  rules {
+  rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
     }
