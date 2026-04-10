@@ -45,17 +45,17 @@ resource "aws_api_gateway_method" "lambda_methods" {
     for lambda, methods in local.lambda_methods : {
       for method in methods :
       "${lambda}-${method}" => {
-        lambda    = lambda
-        method    = method
+        lambda = lambda
+        method = method
       }
     }
   ]...)
 
-  rest_api_id            = aws_api_gateway_rest_api.branch_api.id
-  resource_id            = aws_api_gateway_resource.lambda_resources[each.value.lambda].id
-  http_method            = each.value.method
-  authorization          = "COGNITO_USER_POOLS"
-  authorizer_id          = aws_api_gateway_authorizer.cognito_authorizer.id
+  rest_api_id   = aws_api_gateway_rest_api.branch_api.id
+  resource_id   = aws_api_gateway_resource.lambda_resources[each.value.lambda].id
+  http_method   = each.value.method
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito_authorizer.id
 }
 
 # Create Lambda integrations
@@ -64,8 +64,8 @@ resource "aws_api_gateway_integration" "lambda_integrations" {
     for lambda, methods in local.lambda_methods : {
       for method in methods :
       "${lambda}-${method}" => {
-        lambda    = lambda
-        method    = method
+        lambda = lambda
+        method = method
       }
     }
   ]...)
