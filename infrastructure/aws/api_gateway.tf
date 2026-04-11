@@ -46,7 +46,6 @@ resource "aws_api_gateway_method" "lambda_methods" {
   resource_id   = aws_api_gateway_resource.lambda_resources[each.value.lambda].id
   http_method   = each.value.method
   authorization = "COGNITO_USER_POOLS"
-  authorizer_id = aws_api_gateway_authorizer.cognito_authorizer.id
 }
 
 # Create Lambda integrations
