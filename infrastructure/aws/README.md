@@ -23,7 +23,6 @@ No modules.
 
 | Name | Type |
 |------|------|
-| [aws_api_gateway_authorizer.cognito_authorizer](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_authorizer) | resource |
 | [aws_api_gateway_deployment.branch_deployment](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_deployment) | resource |
 | [aws_api_gateway_integration.lambda_integrations](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
 | [aws_api_gateway_method.lambda_methods](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
