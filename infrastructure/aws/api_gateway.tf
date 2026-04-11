@@ -30,15 +30,6 @@ resource "aws_api_gateway_resource" "lambda_resources" {
   path_part   = each.key
 }
 
-# API Gateway Authorizer using Cognito
-resource "aws_api_gateway_authorizer" "cognito_authorizer" {
-  name            = "branch-cognito-authorizer"
-  rest_api_id     = aws_api_gateway_rest_api.branch_api.id
-  type            = "COGNITO_USER_POOLS"
-  provider_arns   = [aws_cognito_user_pool.branch_user_pool.arn]
-  identity_source = "method.request.header.Authorization"
-}
-
 # Create methods for each resource based on supported methods
 resource "aws_api_gateway_method" "lambda_methods" {
   for_each = merge([
