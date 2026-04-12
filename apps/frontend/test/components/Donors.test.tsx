@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '../utils';
-import Donors from '@/app/Donors';
+import Donors from '@/app/donors/page';
 
 describe('Login Page Component', () => {
     it('renders the login heading', () => {
