@@ -76,7 +76,8 @@ INSERT INTO users (name, email, is_admin) VALUES
 INSERT INTO projects (name, description, total_budget, start_date, end_date, currency) VALUES
 ('Clinician Communication Study', 'Study of clinician-patient communication patterns', 500000, '2025-01-01', '2026-01-01', 'USD'),
 ('Health Education Initiative', 'Community health education and outreach', 300000, '2025-03-01', '2026-03-01', 'USD'),
-('Policy Advocacy Program', 'Advocacy and policy change efforts', 200000, '2025-06-01', '2026-06-01', 'USD');
+('Policy Advocacy Program', 'Advocacy and policy change efforts', 200000, '2025-06-01', '2026-06-01', 'USD'),
+('Proj B', '', 2500.50, NULL, NULL, 'USD');
 
 INSERT INTO donors (organization, contact_name, contact_email) VALUES
 ('NIH', 'Dr. Sarah Lee', 'sarah@nih.gov'),
