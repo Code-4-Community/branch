@@ -29,6 +29,11 @@ paths:
           schema:
             type: string
   /projects:
+    get:
+      summary: GET /projects
+      responses:
+        '200':
+          description: OK
     post:
       summary: POST /projects
       requestBody:
@@ -37,7 +42,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: 
+              required:
                 - name
               properties:
                 name:
@@ -49,3 +54,59 @@ paths:
       responses:
         '200':
           description: OK
+
+  /projects/{id}:
+    get:
+      summary: GET /projects/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    put:
+      summary: PUT /projects/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /projects/{id}/expenditures:
+    get:
+      summary: GET /projects/{id}/expenditures
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /projects/{id}/donors:
+    get:
+      summary: GET /projects/{id}/donors
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+      

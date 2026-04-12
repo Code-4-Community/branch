@@ -39,7 +39,7 @@ resource "github_branch_protection" "main" {
 
   required_status_checks {
     strict   = true
-    contexts = ["terraform-plan-summary", "lambda-tests", "frontend-ci"]
+    contexts = ["terraform-plan-summary", "lambda-tests", "frontend-ci", "Deployment Summary"]
   }
 
   enforce_admins = false

@@ -2,11 +2,44 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock the database module BEFORE importing handler
 jest.mock('../db');
+jest.mock('../auth');
 
 import { handler } from '../handler';
 import db from '../db';
+import { authenticateRequest, checkAuthorization } from '../auth';
+import { before } from 'node:test';
 
 const mockDb = db as any;
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
+
+mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
+  if (requiredAccess === 'PUBLIC') {
+    return { allowed: true };
+  }
+  
+  if (!authContext.isAuthenticated || !authContext.user) {
+    return { allowed: false, reason: 'Authentication required' };
+  }
+  
+  if (requiredAccess === 'ADMIN') {
+    return { 
+      allowed: authContext.user.isAdmin, 
+      reason: authContext.user.isAdmin ? undefined : 'Admin access required' 
+    };
+  }
+  
+  if (requiredAccess === 'ADMIN_OR_SELF') {
+    const allowed = authContext.user.isAdmin || authContext.user.userId === Number(resourceUserId);
+    return { 
+      allowed, 
+      reason: allowed ? undefined : 'Admin access or resource ownership required' 
+    };
+  }
+  
+  return { allowed: false, reason: 'Unknown access level' };
+});
+
 
 // Helper function to create a POST event
 function postEvent(body: Record<string, unknown>) {
@@ -21,12 +54,130 @@ function postEvent(body: Record<string, unknown>) {
   };
 }
 
+function mockAdminAuth() {
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    user: {
+      cognitoSub: 'admin-123',
+      userId: 1,
+      email: 'admin@example.com',
+      isAdmin: true,
+    },
+  });
+}
+
+function mockRegularUserAuth() {
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: true,
+    user: {
+      cognitoSub: 'user-123',
+      userId: 2,
+      email: 'user@example.com',
+      isAdmin: false,
+    },
+  });
+}
+
+function mockNoAuth() {
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: false,
+  });
+}
+
 describe('POST /users unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
+  describe('Authentication', () => {
+    test('401: unauthenticated user cannot create users', async () => {
+      mockNoAuth();
+
+      const res = await handler(
+        postEvent({
+          name: 'John Doe',
+          email: 'john@example.com',
+          isAdmin: false,
+        })
+      );
+
+      expect(res.statusCode).toBe(401);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBe('Authentication required');
+    });
+
+    test('403: regular user cannot create users', async () => {
+      mockRegularUserAuth();
+
+      const res = await handler(
+        postEvent({
+          name: 'John Doe',
+          email: 'john@example.com',
+          isAdmin: false,
+        })
+      );
+
+      expect(res.statusCode).toBe(403);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+    });
+
+    test('401: unauthenticated user cannot view all users', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/users',
+        requestContext: { http: { method: 'GET' } },
+        body: null,
+      });
+  
+      expect(res.statusCode).toBe(401);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBe('Authentication required');
+    });
+
+    test('401: unauthenticated user cannot view specific user', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/1',
+        requestContext: { http: { method: 'GET' } },
+        body: null,
+      });
+  
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('401: unauthenticated user cannot update users', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/1',
+        requestContext: { http: { method: 'PATCH' } },
+        body: JSON.stringify({ name: 'New Name' }),
+      });
+  
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('401: unauthenticated user cannot delete users', async () => {
+      mockNoAuth();
+  
+      const res = await handler({
+        rawPath: '/1',
+        requestContext: { http: { method: 'DELETE' } },
+        body: null,
+      });
+  
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+
   describe('Input Validation', () => {
+    beforeEach(() => {
+      mockAdminAuth();
+    })
     test('400: missing email field', async () => {
       const res = await handler(
         postEvent({
@@ -117,6 +268,10 @@ describe('POST /users unit tests', () => {
   });
 
   describe('Success Cases', () => {
+    beforeEach(() => {
+      mockAdminAuth();
+    });
+
     test('201: successful POST returns 201 status and correct response shape', async () => {
       // Setup mocks for successful user creation
       // Mock the email check to return null (user doesn't exist)
