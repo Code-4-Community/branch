@@ -6,10 +6,8 @@ import {
   AdminDeleteUserCommand,
   InitiateAuthCommand,
   InitiateAuthCommandInput,
-  ConfirmSignUpCommandInput,
   ConfirmSignUpCommand,
   ResendConfirmationCodeCommand,
-  ResendConfirmationCodeCommandInput,
   GlobalSignOutCommand,
   GlobalSignOutCommandInput,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -32,6 +30,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const rawPath = event.rawPath || event.path || '/';
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
+
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      return json(200, {});
+    }
 
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
@@ -59,18 +62,34 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!email || !code) {
         return json(400, { message: 'email and code are required' });
       }
-      const params: ConfirmSignUpCommandInput = {
-        ClientId: USER_POOL_CLIENT_ID,
-        Username: email as string,
-        ConfirmationCode: code as string,
-      };
-      const response = await cognitoClient.send(new ConfirmSignUpCommand(params));
-      if (!response.Session) {
-        return json(400, { message: 'Invalid code or email' });
+      try {
+        await cognitoClient.send(new ConfirmSignUpCommand({
+          ClientId: USER_POOL_CLIENT_ID,
+          Username: email as string,
+          ConfirmationCode: code as string,
+        }));
+        return json(200, { message: `Email verified successfully for ${email}` });
+      } catch (error: any) {
+        if (error.name === 'ExpiredCodeException') {
+          return json(400, { message: 'Verification code has expired, please request a new one' });
+        }
+        if (error.name === 'CodeMismatchException') {
+          return json(400, { message: 'Invalid verification code' });
+        }
+        if (error.name === 'NotAuthorizedException') {
+          return json(400, { message: 'User is already confirmed' });
+        }
+        if (error.name === 'UserNotFoundException') {
+          return json(404, { message: 'User not found' });
+        }
+        if (error.name === 'LimitExceededException') {
+          return json(429, { message: 'Too many attempts, please try again later' });
+        }
+        console.error('Verify email error:', error);
+        return json(500, { message: 'Failed to verify email' });
       }
-      return json(200, { message: `Email verified successfully for ${email}, session: ${response.Session}` });
     }
-    
+
     // POST /resend-code
     if (normalizedPath === '/resend-code' && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
@@ -78,15 +97,25 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!email) {
         return json(400, { message: 'email is required' });
       }
-      const params: ResendConfirmationCodeCommandInput = {
-        ClientId: USER_POOL_CLIENT_ID,
-        Username: email as string,
-      };
-      const response = await cognitoClient.send(new ResendConfirmationCodeCommand(params));
-      if (!response.CodeDeliveryDetails) {
-        return json(400, { message: 'Failed to resend code' });
+      try {
+        await cognitoClient.send(new ResendConfirmationCodeCommand({
+          ClientId: USER_POOL_CLIENT_ID,
+          Username: email as string,
+        }));
+        return json(200, { message: `Verification code resent to ${email}` });
+      } catch (error: any) {
+        if (error.name === 'UserNotFoundException') {
+          return json(404, { message: 'User not found' });
+        }
+        if (error.name === 'InvalidParameterException') {
+          return json(400, { message: 'User is already confirmed' });
+        }
+        if (error.name === 'LimitExceededException') {
+          return json(429, { message: 'Too many attempts, please try again later' });
+        }
+        console.error('Resend code error:', error);
+        return json(500, { message: 'Failed to resend verification code' });
       }
-      return json(200, { message: `Code resent successfully for ${email}, delivery details: ${response.CodeDeliveryDetails}` });
     }
     
     // POST /logout

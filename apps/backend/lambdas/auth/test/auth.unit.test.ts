@@ -133,3 +133,45 @@ test("invalid path returns 404", async () => {
 
   expect(res.statusCode).toBe(404);
 });
+
+test("OPTIONS preflight returns 200 with CORS headers", async () => {
+  const res = await handler(createEvent('/login', 'OPTIONS'));
+  expect(res.statusCode).toBe(200);
+  expect(res.headers?.['Access-Control-Allow-Origin']).toBe('*');
+});
+
+test("verify-email missing email returns 400", async () => {
+  const res = await handler(createEvent('/verify-email', 'POST', { code: '123456' }));
+  expect(res.statusCode).toBe(400);
+  expect(JSON.parse(res.body).message).toContain('required');
+});
+
+test("verify-email missing code returns 400", async () => {
+  const res = await handler(createEvent('/verify-email', 'POST', { email: 'test@example.com' }));
+  expect(res.statusCode).toBe(400);
+  expect(JSON.parse(res.body).message).toContain('required');
+});
+
+test("resend-code missing email returns 400", async () => {
+  const res = await handler(createEvent('/resend-code', 'POST', {}));
+  expect(res.statusCode).toBe(400);
+  expect(JSON.parse(res.body).message).toContain('required');
+});
+
+test("logout missing authorization header returns 401", async () => {
+  const res = await handler(createEvent('/logout', 'POST'));
+  expect(res.statusCode).toBe(401);
+  expect(JSON.parse(res.body).message).toContain('Authorization');
+});
+
+test("login missing email returns 400", async () => {
+  const res = await handler(createEvent('/login', 'POST', { password: 'TestPassword123' }));
+  expect(res.statusCode).toBe(400);
+  expect(JSON.parse(res.body).message).toContain('required');
+});
+
+test("login missing password returns 400", async () => {
+  const res = await handler(createEvent('/login', 'POST', { email: 'test@example.com' }));
+  expect(res.statusCode).toBe(400);
+  expect(JSON.parse(res.body).message).toContain('required');
+});
