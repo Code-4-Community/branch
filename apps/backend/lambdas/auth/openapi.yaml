@@ -3,7 +3,7 @@ info:
   title: auth (Local)
   version: 1.0.0
 servers:
-  - url: /auth
+  - url: http://localhost:3000/auth
 paths:
   /health:
     get:
@@ -110,60 +110,16 @@ paths:
 
   /login:
     post:
-      summary: Log in a user
-      description: Authenticates a user with email and password via Cognito SRP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-                - password
-              properties:
-                email:
-                  type: string
-                  format: email
-                  example: user@example.com
-                password:
-                  type: string
-                  format: password
-                  example: Password123
+      summary: POST /login
+      parameters:
+        - in: query
+          name: username
+          required: false
+          schema:
+            type: string
       responses:
         '200':
-          description: Login successful
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  AccessToken:
-                    type: string
-                  IdToken:
-                    type: string
-                  RefreshToken:
-                    type: string
-        '401':
-          description: Invalid credentials
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Invalid email or password
-        '403':
-          description: Email not verified or password change required
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Email not verified
+          description: OK
 
   /verify-email:
     post:
@@ -205,117 +161,3 @@ paths:
       responses:
         '200':
           description: OK
-
-  /forgot-password:
-    post:
-      summary: Request a password reset code
-      description: Sends a verification code to the user's email for password reset
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-              properties:
-                email:
-                  type: string
-                  format: email
-                  example: user@example.com
-      responses:
-        '200':
-          description: Reset code sent (or generic message if user not found)
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Password reset code sent
-                  deliveryMedium:
-                    type: string
-                    example: EMAIL
-                  destination:
-                    type: string
-                    example: u***@e***.com
-        '400':
-          description: Invalid request
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-        '429':
-          description: Too many requests
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Too many requests, please try again later
-
-  /reset-password:
-    post:
-      summary: Reset password with verification code
-      description: Confirms the password reset using the code sent to the user's email
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-                - code
-                - newPassword
-              properties:
-                email:
-                  type: string
-                  format: email
-                  example: user@example.com
-                code:
-                  type: string
-                  example: "123456"
-                newPassword:
-                  type: string
-                  format: password
-                  minLength: 8
-                  description: New password (min 8 chars, must contain uppercase, lowercase, and number)
-                  example: NewPassword123
-      responses:
-        '200':
-          description: Password reset successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Password reset successfully
-        '400':
-          description: Invalid code or password
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Invalid verification code
-        '429':
-          description: Too many attempts
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: Too many attempts, please try again later
