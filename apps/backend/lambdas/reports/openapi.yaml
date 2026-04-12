@@ -3,11 +3,15 @@ info:
   title: reports (Local)
   version: 1.0.0
 servers:
+  - url: http://localhost:3005/reports
   - url: http://localhost:3000/reports
+security:
+  - BearerAuth: []
 paths:
   /health:
     get:
       summary: Health check
+      security: []
       responses:
         '200':
           description: OK
@@ -78,6 +82,40 @@ paths:
           description: Invalid pagination params
         '401':
           description: Unauthorized
+    post:
+      summary: POST /reports — save a manually uploaded report
+      description: >
+        Creates a report record using the S3 object URL obtained from
+        GET /reports/upload-url after the client has uploaded the file directly
+        to S3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - projectId
+                - objectUrl
+              properties:
+                title:
+                  type: string
+                projectId:
+                  type: integer
+                  minimum: 1
+                objectUrl:
+                  type: string
+                  description: S3 object URL returned by GET /reports/upload-url
+      responses:
+        '201':
+          description: Report created
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '404':
+          description: Project not found
 
   /reports/upload-url:
     get:
@@ -117,9 +155,14 @@ paths:
         '404':
           description: Project not found
 
-  /reports:
+  /reports/generate:
     post:
-      summary: POST /reports — create a report record after uploading the file to S3
+      summary: Auto-generate a PDF report from project data
+      description: >
+        Generates a PDF report for the given project containing project info,
+        participants and roles, donations, and expenditures. Uploads the PDF to
+        S3 and records it in the database. Requires the caller to be a member
+        of the project or a global admin.
       requestBody:
         required: true
         content:
@@ -127,24 +170,40 @@ paths:
             schema:
               type: object
               required:
-                - title
-                - projectId
-                - objectUrl
+                - project_id
               properties:
-                title:
-                  type: string
-                projectId:
+                project_id:
                   type: integer
-                  minimum: 1
-                objectUrl:
-                  type: string
-                  description: S3 object URL returned by GET /reports/upload-url
+                  description: The ID of the project to generate a report for
+                  example: 1
       responses:
         '201':
-          description: Report created
+          description: Report generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  report_id:
+                    type: integer
+                  object_url:
+                    type: string
         '400':
-          description: Validation error
+          description: Invalid input
         '401':
-          description: Unauthorized
+          description: Authentication required
+        '403':
+          description: Not a member of this project
         '404':
           description: Project not found
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

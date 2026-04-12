@@ -3,9 +3,16 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { authenticateRequest } from './auth';
+import {
+  checkProjectAccess,
+  fetchReportData,
+  generatePdf,
+  uploadToS3,
+  saveReportRecord,
+} from './report-service';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
-const BUCKET = process.env.S3_BUCKET_NAME ?? '';
+const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx'] as const;
@@ -16,20 +23,70 @@ const MIME_TYPES: Record<string, string> = {
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
-    // Support both API Gateway and Lambda Function URL events
-    // API Gateway: event.path, event.httpMethod
-    // Function URL: event.rawPath, event.requestContext.http.method
     const rawPath = event.rawPath || event.path || '/';
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
-    // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
+
+    // POST /reports/generate
+    if (normalizedPath === '/reports/generate' && method === 'POST') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const { user } = authContext;
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+
+      const projectId = body.project_id;
+      if (projectId === undefined || projectId === null) {
+        return json(400, { message: 'project_id is required' });
+      }
+      if (typeof projectId !== 'number' || !Number.isInteger(projectId) || projectId <= 0) {
+        return json(400, { message: 'project_id must be a positive integer' });
+      }
+
+      const reportData = await fetchReportData(projectId);
+      if (!reportData) {
+        return json(404, { message: 'Project not found' });
+      }
+
+      const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to generate reports for this project' });
+      }
+
+      let pdfBuffer: Buffer;
+      try {
+        pdfBuffer = await generatePdf(reportData);
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        return json(500, { message: 'Failed to generate report PDF' });
+      }
+
+      let objectUrl: string;
+      try {
+        objectUrl = await uploadToS3(pdfBuffer, projectId);
+      } catch (err) {
+        console.error('S3 upload error:', err);
+        return json(500, { message: 'Failed to upload report' });
+      }
+
+      const title = `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+      const record = await saveReportRecord(projectId, objectUrl, title);
+
+      return json(201, {
+        ok: true,
+        report_id: record.report_id,
+        object_url: record.object_url,
+      });
+    }
 
     // GET /reports
     if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {

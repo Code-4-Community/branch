@@ -2,13 +2,14 @@
 
 ## Description
 
-Lambda for generating reports.
+TODO: Add a description of the reports lambda.
 
 ## Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
+| POST | /reports |  |
 | GET | /reports |  |
 | GET | /reports/upload-url |  |
 | POST | /reports |  |
