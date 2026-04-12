@@ -9,7 +9,7 @@ TODO: Add a description of the reports lambda.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
-| POST | /reports |  |
+| POST | /reports/generate |  |
 | GET | /reports |  |
 | GET | /reports/upload-url |  |
 | POST | /reports |  |
