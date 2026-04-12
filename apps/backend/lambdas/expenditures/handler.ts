@@ -1,6 +1,7 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
+import { authenticateRequest } from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -18,18 +19,101 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    
+
+    // GET /expenditures
+    if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const queryParams = event.queryStringParameters || {};
+      const pageStr = queryParams.page as string | undefined;
+      const limitStr = queryParams.limit as string | undefined;
+      const projectIdStr = queryParams.projectId as string | undefined;
+
+      if (pageStr !== undefined) {
+        if (!/^\d+$/.test(pageStr) || parseInt(pageStr, 10) < 1) {
+          return json(400, { message: 'page must be a positive integer' });
+        }
+      }
+
+      if (limitStr !== undefined) {
+        if (!/^\d+$/.test(limitStr) || parseInt(limitStr, 10) < 1) {
+          return json(400, { message: 'limit must be a positive integer' });
+        }
+      }
+
+      if (projectIdStr !== undefined) {
+        if (!/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
+          return json(400, { message: 'projectId must be a positive integer' });
+        }
+      }
+
+      const page = pageStr ? parseInt(pageStr, 10) : null;
+      const limit = limitStr ? parseInt(limitStr, 10) : null;
+      const projectId = projectIdStr ? parseInt(projectIdStr, 10) : null;
+
+      if (page && limit) {
+        const offset = (page - 1) * limit;
+
+        const totalCount = projectId !== null
+          ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).select(db.fn.count('expenditure_id').as('count')).executeTakeFirst()
+          : await db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
+
+        const totalItems = Number(totalCount?.count || 0);
+        const totalPages = Math.ceil(totalItems / limit);
+
+        const expenditures = projectId !== null
+          ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute()
+          : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute();
+
+        return json(200, {
+          data: expenditures,
+          pagination: { page, limit, totalItems, totalPages },
+        });
+      }
+
+      const expenditures = projectId !== null
+        ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').execute()
+        : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').execute();
+
+      return json(200, { data: expenditures });
+    }
+
     // POST /expenditures
     if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
+      // Authenticate the request
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const { user } = authContext;
+
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
-      
+
       // Validate input
       const validationResult = ExpenditureValidationUtils.validateExpenditureInput(body);
       if (validationResult instanceof Error) {
         return json(400, { message: validationResult.message });
       }
 
-      const { projectID, enteredBy, amount, category, description, spentOn } = validationResult;
+      const { projectID, amount, category, description, spentOn } = validationResult;
+
+      // Authorize: must be global admin, or PI/Accountant/Admin on this project
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', projectID)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+          return json(403, { message: 'Unable to create expenditure for this project' });
+        }
+      }
 
       // Check if project exists
       const project = await db
@@ -42,26 +126,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Project not found' });
       }
 
-      // Check if enteredBy user exists (if provided)
-      if (enteredBy !== undefined && enteredBy !== null) {
-        const user = await db
-          .selectFrom('branch.users')
-          .where('user_id', '=', enteredBy)
-          .selectAll()
-          .executeTakeFirst();
-
-        if (!user) {
-          return json(404, { message: 'User not found' });
-        }
-      }
-
-      // Insert expenditure
+      // Insert expenditure with authenticated user as entered_by
       try {
         await db
           .insertInto('branch.expenditures')
           .values({
             project_id: projectID,
-            entered_by: enteredBy ?? null,
+            entered_by: user.userId!,
             amount,
             category: category ?? null,
             description: description ?? null,
@@ -78,7 +149,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         route: 'POST /expenditures',
         body: {
           projectID,
-          enteredBy: enteredBy ?? null,
+          enteredBy: user.userId!,
           amount,
           category: category ?? null,
           description: description ?? null,
@@ -86,7 +157,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         },
       });
     }
-    // <<< ROUTES-END 
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

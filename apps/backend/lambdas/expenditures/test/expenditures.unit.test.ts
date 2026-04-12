@@ -2,11 +2,14 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock the database module BEFORE importing handler
 jest.mock('../db');
+jest.mock('../auth');
 
 import { handler } from '../handler';
 import db from '../db';
+import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
 // Helper function to create a POST event
 function postEvent(body: Record<string, unknown>) {
@@ -17,13 +20,139 @@ function postEvent(body: Record<string, unknown>) {
         method: 'POST',
       },
     },
+    headers: {
+      Authorization: 'Bearer fake-token',
+    },
     body: JSON.stringify(body),
   };
 }
 
+function getEvent(queryStringParameters?: Record<string, string>) {
+  return {
+    rawPath: '/',
+    requestContext: {
+      http: {
+        method: 'GET',
+      },
+    },
+    headers: {
+      Authorization: 'Bearer fake-token',
+    },
+    queryStringParameters: queryStringParameters ?? {},
+  };
+}
+
+// Default authenticated admin user
+const adminAuthContext = {
+  isAuthenticated: true as const,
+  user: {
+    cognitoSub: 'test-sub',
+    userId: 1,
+    email: 'admin@example.com',
+    isAdmin: true,
+  },
+};
+
+const fakeExpenditures = [
+  { expenditure_id: 3, project_id: 1, amount: '2500', category: 'Supplies', spent_on: new Date('2025-07-12') },
+  { expenditure_id: 2, project_id: 2, amount: '3000', category: 'Equipment', spent_on: new Date('2025-04-05') },
+  { expenditure_id: 1, project_id: 1, amount: '5000', category: 'Travel', spent_on: new Date('2025-02-10') },
+];
+
 describe('POST /expenditures unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: requests are from an authenticated admin
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    // db.fn is used by GET pagination queries
+    mockDb.fn = {
+      count: jest.fn().mockReturnValue({ as: jest.fn().mockReturnValue('count') }),
+    };
+  });
+
+  describe('Authentication & Authorization', () => {
+    test('401: unauthenticated request', async () => {
+      mockAuthenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+        })
+      );
+
+      expect(res.statusCode).toBe(401);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBe('Authentication required');
+    });
+
+    test('403: user without required project role', async () => {
+      mockAuthenticateRequest.mockResolvedValue({
+        isAuthenticated: true,
+        user: {
+          cognitoSub: 'staff-sub',
+          userId: 2,
+          email: 'staff@example.com',
+          isAdmin: false,
+        },
+      });
+
+      // Mock: no membership found for this user on this project
+      mockDb.selectFrom.mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnValue({
+              executeTakeFirst: jest.fn().mockReturnValue(null as any),
+            }),
+          }),
+        }),
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+        })
+      );
+
+      expect(res.statusCode).toBe(403);
+      const json = JSON.parse(res.body);
+      expect(json.message).toContain('Unable to create expenditure');
+    });
+
+    test('403: user with Staff role is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({
+        isAuthenticated: true,
+        user: {
+          cognitoSub: 'staff-sub',
+          userId: 2,
+          email: 'staff@example.com',
+          isAdmin: false,
+        },
+      });
+
+      // Mock: user has Staff role
+      mockDb.selectFrom.mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnValue({
+              executeTakeFirst: jest.fn().mockReturnValue({ role: 'Staff' } as any),
+            }),
+          }),
+        }),
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+        })
+      );
+
+      expect(res.statusCode).toBe(403);
+    });
   });
 
   describe('Input Validation', () => {
@@ -203,6 +332,7 @@ describe('POST /expenditures unit tests', () => {
       expect(json).toHaveProperty('body');
       expect(json.body).toHaveProperty('projectID');
       expect(json.body).toHaveProperty('amount');
+      expect(json.body.enteredBy).toBe(1); // authenticated user's ID
     });
 
     test('404: returns 404 when project not found', async () => {
@@ -316,40 +446,84 @@ describe('POST /expenditures unit tests', () => {
       const json = JSON.parse(res.body);
       expect(json.message).toBe('Internal Server Error');
     });
+  });
 
-    test('404: returns 404 when enteredBy user not found', async () => {
-      // Mock: project exists
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 1,
-              name: 'Test Project',
-            } as any),
+  describe('GET /expenditures unit tests', () => {
+    test('401: unauthenticated GET is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('200: returns data array without pagination when no params', async () => {
+      mockDb.selectFrom.mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({
+            execute: jest.fn().mockReturnValue(fakeExpenditures as any),
           }),
         }),
       });
 
-      // Mock: user doesn't exist
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue(null as any),
-          }),
-        }),
-      });
-
-      const res = await handler(
-        postEvent({
-          projectID: 1,
-          amount: 1000,
-          enteredBy: 999,
-        })
-      );
-
-      expect(res.statusCode).toBe(404);
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(200);
       const json = JSON.parse(res.body);
-      expect(json.message).toBe('User not found');
+      expect(Array.isArray(json.data)).toBe(true);
+      expect(json.pagination).toBeUndefined();
+    });
+
+    test('200: returns paginated response with page and limit', async () => {
+      // count query
+      mockDb.selectFrom.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue({ count: '3' } as any),
+        }),
+      });
+      // data query
+      mockDb.selectFrom.mockReturnValueOnce({
+        selectAll: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              offset: jest.fn().mockReturnValue({
+                execute: jest.fn().mockReturnValue([fakeExpenditures[0]] as any),
+              }),
+            }),
+          }),
+        }),
+      });
+
+      const res = await handler(getEvent({ page: '1', limit: '1' }));
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.pagination).toBeDefined();
+      expect(json.pagination.page).toBe(1);
+      expect(json.pagination.limit).toBe(1);
+      expect(json.pagination.totalItems).toBe(3);
+      expect(json.pagination.totalPages).toBe(3);
+    });
+
+    test('400: page=0 returns 400', async () => {
+      const res = await handler(getEvent({ page: '0', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: non-integer page returns 400', async () => {
+      const res = await handler(getEvent({ page: 'abc', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: limit=0 returns 400', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '0' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: decimal limit returns 400', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '2.5' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: invalid projectId returns 400', async () => {
+      const res = await handler(getEvent({ projectId: '-5' }));
+      expect(res.statusCode).toBe(400);
     });
   });
 });

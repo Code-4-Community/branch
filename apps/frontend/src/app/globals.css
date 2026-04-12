@@ -1,26 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&family=Roboto+Slab:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Green */
+    --color-core-green: #2D6138;
+    --color-primary-800: #57805F;
+    --color-primary-700: #6C9073;
+    --color-primary-600: #81A087;
+    --color-primary-500: #96B09B;
+    --color-primary-400: #ABC0AF;
+    --color-primary-300: #C0D0C3;
+    --color-primary-200: #D5DFD7;
+    --color-primary-100: #EAEFEB;
+  
+    /* Black */
+    --color-core-black: #2B2B2B;
+    --color-black-800: rgba(43, 43, 43, 0.8);
+    --color-black-700: rgba(43, 43, 43, 0.7);
+    --color-black-600: rgba(43, 43, 43, 0.6);
+    --color-black-500: rgba(43, 43, 43, 0.5);
+    --color-black-400: rgba(43, 43, 43, 0.4);
+    --color-black-300: rgba(43, 43, 43, 0.3);
+    --color-black-200: rgba(43, 43, 43, 0.2);
+    --color-black-100: rgba(43, 43, 43, 0.1);
+  
+    /* White */
+    --color-core-white: #FFFFFF;
+  
+    /* Accents */
+    --color-accent-dark-green: #0F3C0C;
+    --color-accent-light-green: #B5D99D;
+  
+    /* Errors */
+    --color-error-red: #AD1A00;
+    --color-error-light-red: #D68C80;
+
+  /* Font Families */
+    --font-heading: 'Roboto Slab', serif;
+    --font-body: 'PT Sans', sans-serif;
+  
+    /* Font Sizes */
+    --font-size-heading-1: 36px;
+    --font-size-heading-2: 32px;
+    --font-size-heading-3: 24px;
+    --font-size-subtitle-1: 20px;
+    --font-size-subtitle-2: 16px;
+    --font-size-body: 16px;
+    --font-size-callout: 14px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  h1 {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-heading-1);
+    font-weight: 600;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  h2 {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-heading-2);
+    font-weight: 400;
+  }
+
+  h3 {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-heading-3);
+    font-weight: 600;
+  }
+
+  h4 {
+    font-family: var(--font-body);
+    font-size: var(--font-size-subtitle-1);
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  h5 {
+    font-family: var(--font-body);
+    font-size: var(--font-size-subtitle-2);
+    font-weight: 700;
+  }
+
+  p {
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    font-weight: 400;
+  }
+
+  small {
+    font-family: var(--font-body);
+    font-size: var(--font-size-callout);
+    font-weight: 400;
+  }
 }

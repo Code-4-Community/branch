@@ -26,6 +26,7 @@ No modules.
 | [github_actions_secret.aws_secret_access_key](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.cognito_client_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.cognito_user_pool_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
+| [github_actions_secret.gh_pat](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.infisical_client_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.infisical_client_secret](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.slack_bot_token](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
@@ -52,8 +53,8 @@ No modules.
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
 | <a name="input_repository_collaborators"></a> [repository\_collaborators](#input\_repository\_collaborators) | List of GitHub users to add as collaborators | <pre>list(object({<br>    username   = string<br>    permission = string<br>  }))</pre> | `[]` | no |
 | <a name="input_review_bot_always_reviewer_slack"></a> [review\_bot\_always\_reviewer\_slack](#input\_review\_bot\_always\_reviewer\_slack) | Slack member ID of the person who reviews every PR | `string` | `"U07NGFM1QKE"` | no |
-| <a name="input_review_bot_github_to_slack"></a> [review\_bot\_github\_to\_slack](#input\_review\_bot\_github\_to\_slack) | Map of GitHub username → Slack member ID (U0…) | `map(string)` | <pre>{<br>  "Rayna-Yu": "U083UGSCU7P",<br>  "bhuvanh66": "U084JKT1GG2",<br>  "denniwang": "U07F8LM2X61",<br>  "mehanana": "U084AMND8FK",<br>  "nourshoreibah": "U07NGFM1QKE",<br>  "saumyapalk23": "U09EYETUEGP",<br>  "tsudhakar87": "U08NFFSJEG1"<br>}</pre> | no |
-| <a name="input_review_bot_roster"></a> [review\_bot\_roster](#input\_review\_bot\_roster) | Ordered list of GitHub usernames for round-robin review assignment | `list(string)` | <pre>[<br>  "denniwang",<br>  "bhuvanh66",<br>  "Rayna-Yu",<br>  "mehanana",<br>  "tsudhakar87",<br>  "saumyapalk23"<br>]</pre> | no |
+| <a name="input_review_bot_github_to_slack"></a> [review\_bot\_github\_to\_slack](#input\_review\_bot\_github\_to\_slack) | Map of GitHub username → Slack member ID (U0…) | `map(string)` | <pre>{<br>  "Rayna-Yu": "U083UGSCU7P",<br>  "Vaibhav978": "U0A6HAVCRMJ",<br>  "bhuvanh66": "U084JKT1GG2",<br>  "denniwang": "U07F8LM2X61",<br>  "mehanana": "U084AMND8FK",<br>  "nourshoreibah": "U07NGFM1QKE",<br>  "saumyapalk23": "U09EYETUEGP",<br>  "tsudhakar87": "U08NFFSJEG1"<br>}</pre> | no |
+| <a name="input_review_bot_roster"></a> [review\_bot\_roster](#input\_review\_bot\_roster) | Ordered list of GitHub usernames for round-robin review assignment | `list(string)` | <pre>[<br>  "denniwang",<br>  "bhuvanh66",<br>  "Rayna-Yu",<br>  "mehanana",<br>  "tsudhakar87",<br>  "saumyapalk23",<br>  "Vaibhav978"<br>]</pre> | no |
 | <a name="input_review_bot_slack_channel_id"></a> [review\_bot\_slack\_channel\_id](#input\_review\_bot\_slack\_channel\_id) | Slack channel ID where review notifications are posted | `string` | `"C0ADQN0B6F8"` | no |
 
 ## Outputs
