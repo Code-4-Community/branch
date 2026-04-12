@@ -1,10 +1,12 @@
-import Header from "./components/Header";
+"use client";
+import NavBar from "./components/Navbar";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
-      {/* 1. Default Header - Verify this matches Figma */}
-      <Header />
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      <NavBar role="admin" />
+      <main style={{ flex: 1, backgroundColor: "#f9fafb" }}>
+      </main>
     </div>
   );
 }
