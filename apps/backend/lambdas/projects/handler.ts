@@ -18,22 +18,22 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
-    const authContext = await authenticateRequest(event);
-    if (!authContext.isAuthenticated || !authContext.user) {
-      return json(401, { message: 'Authentication required' });
-    }
-
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    
+
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) return json(401, { message: 'Authentication required' });
       const projects = await db.selectFrom("branch.projects").selectAll().execute();
       return json(200, projects);
     }
-    
+
     // PUT /projects/{id}
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) return json(401, { message: 'Authentication required' });
+      if (!authContext.user.isAdmin) return json(403, { message: 'Admin access required' });
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
       const body = event.body ? JSON.parse(event.body) as Record<string, {name:string, total_budget:number}> : {};
@@ -49,6 +49,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // <<< ROUTES-END    
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) return json(401, { message: 'Authentication required' });
+      if (!authContext.user.isAdmin) return json(403, { message: 'Admin access required' });
       let body: Record<string, unknown>;
       try {
         body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
