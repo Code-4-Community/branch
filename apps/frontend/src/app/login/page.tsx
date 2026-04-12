@@ -44,7 +44,7 @@ export default function LoginPage() {
         try {
             await login(email, password);
             router.push('/');
-        } catch (err) {
+        } catch {
             setPasswordError('Incorrect email or password. Please try again.');
         } finally {
             setIsLoading(false);

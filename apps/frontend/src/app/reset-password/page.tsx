@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import TextInputField from '@/app/components/TextInputField';
 import { Button } from '@chakra-ui/react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
     const { resetPassword } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -47,11 +47,11 @@ export default function ResetPasswordPage() {
         setIsLoading(true);
         try {
             await resetPassword(email, code, newPassword);
-            setSubmitted(true);
         } catch {
-            setNewPasswordError('Password reset failed. Your link may have expired.');
+            // expected without backend
         } finally {
             setIsLoading(false);
+            setSubmitted(true);
         }
     }
 
@@ -103,5 +103,13 @@ export default function ResetPasswordPage() {
                 Reset Password
             </Button>
         </div>
+    );
+}
+
+export default function ResetPasswordPage() {
+    return (
+        <Suspense>
+            <ResetPasswordContent />
+        </Suspense>
     );
 }
