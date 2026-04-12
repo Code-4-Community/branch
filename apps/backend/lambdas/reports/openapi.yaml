@@ -79,30 +79,72 @@ paths:
         '401':
           description: Unauthorized
 
-  /reports:
-    post:
-      summary: POST /reports
+  /reports/upload-url:
+    get:
+      summary: Get a pre-signed S3 URL for uploading a report file
       parameters:
-        - in: header
-          name: authorization
-          required: false
+        - in: query
+          name: fileName
+          required: true
           schema:
             type: string
+          description: File name with extension (pdf or docx)
+        - in: query
+          name: projectId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: Project the report belongs to
+      responses:
+        '200':
+          description: Pre-signed upload URL and final object URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: Pre-signed S3 PUT URL (expires in 1 hour)
+                  objectUrl:
+                    type: string
+                    description: Permanent S3 URL to pass to POST /reports
+        '400':
+          description: Invalid fileName or projectId
+        '401':
+          description: Unauthorized
+        '404':
+          description: Project not found
+
+  /reports:
+    post:
+      summary: POST /reports — create a report record after uploading the file to S3
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - title
+                - projectId
+                - objectUrl
               properties:
                 title:
                   type: string
                 projectId:
-                  type: number
-                fileName:
+                  type: integer
+                  minimum: 1
+                objectUrl:
                   type: string
-                fileContent:
-                  type: string
+                  description: S3 object URL returned by GET /reports/upload-url
       responses:
         '201':
-          description: Success
+          description: Report created
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '404':
+          description: Project not found

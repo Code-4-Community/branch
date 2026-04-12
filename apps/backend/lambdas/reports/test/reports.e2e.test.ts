@@ -10,6 +10,9 @@ jest.mock('@aws-sdk/client-s3', () => ({
   })),
   PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
 }));
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
+}));
 
 import { handler } from '../handler';
 import { authenticateRequest } from '../auth';
@@ -194,8 +197,66 @@ describe('Reports e2e tests', () => {
     });
   });
 
+  describe('GET /reports/upload-url', () => {
+    function uploadUrlEvent(queryStringParameters?: Record<string, string>) {
+      return {
+        rawPath: '/reports/upload-url',
+        requestContext: { http: { method: 'GET' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: queryStringParameters ?? {},
+      };
+    }
+
+    test('200: returns uploadUrl and objectUrl for pdf', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'report.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.uploadUrl).toBe('https://presigned.example.com/upload');
+      expect(body.objectUrl).toContain('report.pdf');
+      expect(body.objectUrl).toContain('reports/1/');
+    });
+
+    test('200: returns uploadUrl and objectUrl for docx', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'doc.docx', projectId: '2' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.uploadUrl).toBeDefined();
+      expect(body.objectUrl).toContain('doc.docx');
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('404: non-existent projectId returns 404', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '99999' }));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+
+    test('400: missing fileName returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('fileName is required');
+    });
+
+    test('400: unsupported file extension returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.jpg', projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Only PDF and DOCX files are supported');
+    });
+
+    test('400: missing projectId returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+  });
+
   describe('POST /reports', () => {
-    const validBase64 = Buffer.from('fake file content').toString('base64');
+    const fakeObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/123-report.pdf';
 
     function postEvent(body: unknown) {
       return {
@@ -208,69 +269,56 @@ describe('Reports e2e tests', () => {
     }
 
     test('201: creates a new report and persists to db', async () => {
-      const res = await handler(postEvent({ title: 'New Report', projectId: 1, fileName: 'report.pdf', fileContent: validBase64 }));
+      const res = await handler(postEvent({ title: 'New Report', projectId: 1, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.body);
       expect(body.report_id).toBeDefined();
       expect(body.title).toBe('New Report');
       expect(body.project_id).toBe(1);
-      expect(body.object_url).toContain('report.pdf');
+      expect(body.object_url).toBe(fakeObjectUrl);
     });
 
     test('201: created report appears in subsequent GET /reports', async () => {
-      await handler(postEvent({ title: 'Verify Report', projectId: 2, fileName: 'verify.docx', fileContent: validBase64 }));
+      await handler(postEvent({ title: 'Verify Report', projectId: 2, objectUrl: fakeObjectUrl }));
       const getRes = await handler(getEvent());
       const getBody = JSON.parse(getRes.body);
       expect(getBody.data.some((r: any) => r.title === 'Verify Report')).toBe(true);
     });
 
-    test('201: creates report with docx file', async () => {
-      const res = await handler(postEvent({ title: 'Docx Report', projectId: 2, fileName: 'doc.docx', fileContent: validBase64 }));
-      expect(res.statusCode).toBe(201);
-      const body = JSON.parse(res.body);
-      expect(body.object_url).toContain('doc.docx');
-    });
-
     test('401: unauthenticated request is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
-      const res = await handler(postEvent({ title: 'T', projectId: 1, fileName: 'f.pdf', fileContent: validBase64 }));
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(401);
     });
 
     test('404: non-existent projectId returns 404', async () => {
-      const res = await handler(postEvent({ title: 'T', projectId: 99999, fileName: 'f.pdf', fileContent: validBase64 }));
+      const res = await handler(postEvent({ title: 'T', projectId: 99999, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Project not found');
     });
 
     test('400: missing title returns 400', async () => {
-      const res = await handler(postEvent({ projectId: 1, fileName: 'f.pdf', fileContent: validBase64 }));
+      const res = await handler(postEvent({ projectId: 1, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.body).message).toBe('title is required');
     });
 
     test('400: empty title returns 400', async () => {
-      const res = await handler(postEvent({ title: '   ', projectId: 1, fileName: 'f.pdf', fileContent: validBase64 }));
+      const res = await handler(postEvent({ title: '   ', projectId: 1, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.body).message).toBe('title is required');
     });
 
     test('400: missing projectId returns 400', async () => {
-      const res = await handler(postEvent({ title: 'T', fileName: 'f.pdf', fileContent: validBase64 }));
+      const res = await handler(postEvent({ title: 'T', objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
     });
 
-    test('400: unsupported file extension returns 400', async () => {
-      const res = await handler(postEvent({ title: 'T', projectId: 1, fileName: 'f.jpg', fileContent: validBase64 }));
+    test('400: missing objectUrl returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', projectId: 1 }));
       expect(res.statusCode).toBe(400);
-      expect(JSON.parse(res.body).message).toBe('Only PDF and DOCX files are supported');
-    });
-
-    test('400: missing fileContent returns 400', async () => {
-      const res = await handler(postEvent({ title: 'T', projectId: 1, fileName: 'f.pdf' }));
-      expect(res.statusCode).toBe(400);
-      expect(JSON.parse(res.body).message).toBe('fileContent must be a base64 encoded string');
+      expect(JSON.parse(res.body).message).toBe('objectUrl is required');
     });
 
     test('400: invalid JSON body returns 400', async () => {

@@ -1,5 +1,6 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { authenticateRequest } from './auth';
 
@@ -91,6 +92,50 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { data: reports });
     }
     
+    // GET /reports/upload-url
+    if (normalizedPath === '/reports/upload-url' && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const queryParams = event.queryStringParameters || {};
+      const { fileName, projectId: projectIdStr } = queryParams;
+
+      if (!fileName || typeof fileName !== 'string') {
+        return json(400, { message: 'fileName is required' });
+      }
+      const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+      if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
+        return json(400, { message: 'Only PDF and DOCX files are supported' });
+      }
+      if (!projectIdStr || !/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
+        return json(400, { message: 'projectId must be a positive integer' });
+      }
+      const projectId = parseInt(projectIdStr, 10);
+
+      const project = await db
+        .selectFrom('branch.projects')
+        .where('project_id', '=', projectId)
+        .select('project_id')
+        .executeTakeFirst();
+
+      if (!project) {
+        return json(404, { message: 'Project not found' });
+      }
+
+      const key = `reports/${projectId}/${Date.now()}-${fileName}`;
+      const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        ContentType: MIME_TYPES[ext],
+      }), { expiresIn: 3600 });
+
+      const objectUrl = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+
+      return json(200, { uploadUrl, objectUrl });
+    }
+
     // POST /reports
     if (normalizedPath === '/reports' && method === 'POST') {
       const authContext = await authenticateRequest(event);
@@ -105,7 +150,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'Invalid JSON in request body' });
       }
 
-      const { title, projectId, fileName, fileContent } = body;
+      const { title, projectId, objectUrl } = body;
 
       if (!title || typeof title !== 'string' || title.trim().length === 0) {
         return json(400, { message: 'title is required' });
@@ -113,15 +158,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!projectId || typeof projectId !== 'number' || !Number.isInteger(projectId) || projectId < 1) {
         return json(400, { message: 'projectId must be a positive integer' });
       }
-      if (!fileName || typeof fileName !== 'string') {
-        return json(400, { message: 'fileName is required' });
-      }
-      const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
-      if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
-        return json(400, { message: 'Only PDF and DOCX files are supported' });
-      }
-      if (!fileContent || typeof fileContent !== 'string') {
-        return json(400, { message: 'fileContent must be a base64 encoded string' });
+      if (!objectUrl || typeof objectUrl !== 'string') {
+        return json(400, { message: 'objectUrl is required' });
       }
 
       const project = await db
@@ -134,26 +172,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Project not found' });
       }
 
-      let fileBuffer: Buffer;
-      try {
-        fileBuffer = Buffer.from(fileContent, 'base64');
-      } catch {
-        return json(400, { message: 'fileContent must be a valid base64 string' });
-      }
-
-      const key = `reports/${projectId}/${Date.now()}-${fileName}`;
-      await s3.send(new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: key,
-        Body: fileBuffer,
-        ContentType: MIME_TYPES[ext],
-      }));
-
-      const objectUrl = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
-
       const report = await db
         .insertInto('branch.reports')
-        .values({ project_id: projectId, title: title.trim(), object_url: objectUrl })
+        .values({ project_id: projectId, title: title.trim(), object_url: objectUrl as string })
         .returningAll()
         .executeTakeFirst();
 
