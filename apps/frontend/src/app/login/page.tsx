@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import TextInputField from './TextInputField';
+import TextInputField from '../components/TextInputField';
 import Link from 'next/link';
 import { Button } from '@chakra-ui/react';
 
