@@ -266,3 +266,5 @@ aws lambda update-function-code \
   --zip-file fileb://lambda.zip \
   --region us-east-2
 ```
+
+**Note:** The automated workflow is the recommended approach. Manual deployment should only be used as a fallback when the CI/CD pipeline is unavailable. Always ensure your changes are reflected in git history before deploying.
