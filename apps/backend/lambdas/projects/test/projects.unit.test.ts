@@ -1,4 +1,5 @@
 import { handler } from '../handler';
+import db from '../db';
 
 function event(body: unknown) {
   return {
@@ -119,4 +120,36 @@ test('400: description exceeds 1000 characters', async () => {
   expect(res.statusCode).toBe(400);
   const json = JSON.parse(res.body);
   expect(json.message).toContain('1000');
+});
+
+function getExpendituresEvent(id: string) {
+  return {
+    rawPath: `/projects/${id}/expenditures`,
+    requestContext: { http: { method: 'GET' } },
+  } as any;
+}
+
+test('200: returns expenditures array', async () => {
+  const res = await handler(getExpendituresEvent('1'));
+  expect(res.statusCode).toBe(200);
+  const json = JSON.parse(res.body);
+  expect(Array.isArray(json)).toBe(true);
+});
+
+test('404: project not found', async () => {
+  const res = await handler(getExpendituresEvent('99999'));
+  expect(res.statusCode).toBe(404);
+  const json = JSON.parse(res.body);
+  expect(json.message).toBe('Project not found');
+});
+
+test('500: invalid id causes error', async () => {
+  const res = await handler(getExpendituresEvent('invalid'));
+  expect(res.statusCode).toBe(500);
+  const json = JSON.parse(res.body);
+  expect(json.message).toContain('Failed to fetch expenditures');
+});
+
+afterAll(async () => {
+  await db.destroy();
 });

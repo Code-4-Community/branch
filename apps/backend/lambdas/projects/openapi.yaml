@@ -78,6 +78,24 @@ paths:
       responses:
         '200':
           description: OK
+  /projects/{id}/expenditures:
+    get:
+      summary: GET /projects/{id}/expenditures
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
 
   /projects/{id}/donors:
     get:
@@ -91,3 +109,4 @@ paths:
       responses:
         '200':
           description: OK
+      
