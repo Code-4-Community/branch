@@ -27,6 +27,21 @@ function postEvent(body: Record<string, unknown>) {
   };
 }
 
+function getEvent(queryStringParameters?: Record<string, string>) {
+  return {
+    rawPath: '/',
+    requestContext: {
+      http: {
+        method: 'GET',
+      },
+    },
+    headers: {
+      Authorization: 'Bearer fake-token',
+    },
+    queryStringParameters: queryStringParameters ?? {},
+  };
+}
+
 // Default authenticated admin user
 const adminAuthContext = {
   isAuthenticated: true as const,
@@ -38,11 +53,21 @@ const adminAuthContext = {
   },
 };
 
+const fakeExpenditures = [
+  { expenditure_id: 3, project_id: 1, amount: '2500', category: 'Supplies', spent_on: new Date('2025-07-12') },
+  { expenditure_id: 2, project_id: 2, amount: '3000', category: 'Equipment', spent_on: new Date('2025-04-05') },
+  { expenditure_id: 1, project_id: 1, amount: '5000', category: 'Travel', spent_on: new Date('2025-02-10') },
+];
+
 describe('POST /expenditures unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // Default: requests are from an authenticated admin
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    // db.fn is used by GET pagination queries
+    mockDb.fn = {
+      count: jest.fn().mockReturnValue({ as: jest.fn().mockReturnValue('count') }),
+    };
   });
 
   describe('Authentication & Authorization', () => {
@@ -420,6 +445,85 @@ describe('POST /expenditures unit tests', () => {
       expect(res.statusCode).toBe(500);
       const json = JSON.parse(res.body);
       expect(json.message).toBe('Internal Server Error');
+    });
+  });
+
+  describe('GET /expenditures unit tests', () => {
+    test('401: unauthenticated GET is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('200: returns data array without pagination when no params', async () => {
+      mockDb.selectFrom.mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({
+            execute: jest.fn().mockReturnValue(fakeExpenditures as any),
+          }),
+        }),
+      });
+
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(Array.isArray(json.data)).toBe(true);
+      expect(json.pagination).toBeUndefined();
+    });
+
+    test('200: returns paginated response with page and limit', async () => {
+      // count query
+      mockDb.selectFrom.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue({ count: '3' } as any),
+        }),
+      });
+      // data query
+      mockDb.selectFrom.mockReturnValueOnce({
+        selectAll: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              offset: jest.fn().mockReturnValue({
+                execute: jest.fn().mockReturnValue([fakeExpenditures[0]] as any),
+              }),
+            }),
+          }),
+        }),
+      });
+
+      const res = await handler(getEvent({ page: '1', limit: '1' }));
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.pagination).toBeDefined();
+      expect(json.pagination.page).toBe(1);
+      expect(json.pagination.limit).toBe(1);
+      expect(json.pagination.totalItems).toBe(3);
+      expect(json.pagination.totalPages).toBe(3);
+    });
+
+    test('400: page=0 returns 400', async () => {
+      const res = await handler(getEvent({ page: '0', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: non-integer page returns 400', async () => {
+      const res = await handler(getEvent({ page: 'abc', limit: '10' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: limit=0 returns 400', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '0' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: decimal limit returns 400', async () => {
+      const res = await handler(getEvent({ page: '1', limit: '2.5' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: invalid projectId returns 400', async () => {
+      const res = await handler(getEvent({ projectId: '-5' }));
+      expect(res.statusCode).toBe(400);
     });
   });
 });

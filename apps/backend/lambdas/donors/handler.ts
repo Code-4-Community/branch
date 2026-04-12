@@ -1,5 +1,6 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
+import { authenticateRequest } from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -15,11 +16,17 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
+    const authContext = await authenticateRequest(event);
+    if (!authContext.isAuthenticated) {
+      return json(401, { message: 'Unauthorized' });
+    }
+
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     
     // GET /donors
     if (rawPath === '/' && method === 'GET') {
+
       const donors = await db.selectFrom("branch.donors").selectAll().execute()
       return json(200, donors ?? []);
     }

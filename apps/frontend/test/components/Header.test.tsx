@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom'; // Add this line to fix the error
-import Header from './Header';
+import Header from '../../src/app/components/Header';
 
 describe('Header Component', () => {
   it('renders the default title when no props are provided', () => {

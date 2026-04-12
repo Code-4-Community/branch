@@ -60,6 +60,13 @@ export interface BranchProjects {
   total_budget: Numeric | null;
 }
 
+export interface BranchReports {
+  date_created: Generated<Timestamp>;
+  object_url: string;
+  project_id: number;
+  report_id: Generated<number>;
+}
+
 export interface BranchUsers {
   cognito_sub: string | null;
   created_at: Generated<Timestamp | null>;
@@ -75,5 +82,6 @@ export interface DB {
   "branch.project_donations": BranchProjectDonations;
   "branch.project_memberships": BranchProjectMemberships;
   "branch.projects": BranchProjects;
+  "branch.reports": BranchReports;
   "branch.users": BranchUsers;
 }
