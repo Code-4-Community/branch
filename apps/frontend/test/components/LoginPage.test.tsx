@@ -1,5 +1,5 @@
 import { render, screen } from '../utils';
-import LoginPage from '@/app/components/LoginPage';
+import LoginPage from '@/app/login/page';
 
 
 describe('Login Page Component', () => {

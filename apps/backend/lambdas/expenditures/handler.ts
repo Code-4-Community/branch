@@ -19,7 +19,68 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    
+
+    // GET /expenditures
+    if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const queryParams = event.queryStringParameters || {};
+      const pageStr = queryParams.page as string | undefined;
+      const limitStr = queryParams.limit as string | undefined;
+      const projectIdStr = queryParams.projectId as string | undefined;
+
+      if (pageStr !== undefined) {
+        if (!/^\d+$/.test(pageStr) || parseInt(pageStr, 10) < 1) {
+          return json(400, { message: 'page must be a positive integer' });
+        }
+      }
+
+      if (limitStr !== undefined) {
+        if (!/^\d+$/.test(limitStr) || parseInt(limitStr, 10) < 1) {
+          return json(400, { message: 'limit must be a positive integer' });
+        }
+      }
+
+      if (projectIdStr !== undefined) {
+        if (!/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
+          return json(400, { message: 'projectId must be a positive integer' });
+        }
+      }
+
+      const page = pageStr ? parseInt(pageStr, 10) : null;
+      const limit = limitStr ? parseInt(limitStr, 10) : null;
+      const projectId = projectIdStr ? parseInt(projectIdStr, 10) : null;
+
+      if (page && limit) {
+        const offset = (page - 1) * limit;
+
+        const totalCount = projectId !== null
+          ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).select(db.fn.count('expenditure_id').as('count')).executeTakeFirst()
+          : await db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
+
+        const totalItems = Number(totalCount?.count || 0);
+        const totalPages = Math.ceil(totalItems / limit);
+
+        const expenditures = projectId !== null
+          ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute()
+          : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute();
+
+        return json(200, {
+          data: expenditures,
+          pagination: { page, limit, totalItems, totalPages },
+        });
+      }
+
+      const expenditures = projectId !== null
+        ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').execute()
+        : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').execute();
+
+      return json(200, { data: expenditures });
+    }
+
     // POST /expenditures
     if ((normalizedPath === '/expenditures' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
       // Authenticate the request
@@ -96,7 +157,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         },
       });
     }
-    // <<< ROUTES-END 
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
