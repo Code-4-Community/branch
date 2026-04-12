@@ -268,3 +268,7 @@ aws lambda update-function-code \
 ```
 
 **Note:** The automated workflow is the recommended approach. Manual deployment should only be used as a fallback when the CI/CD pipeline is unavailable. Always ensure your changes are reflected in git history before deploying.
+
+### Post-Deployment Verification
+
+After deployment, verify the Lambda function is running correctly by checking CloudWatch logs and testing endpoints with the live environment. Monitor error rates and latency to ensure the update didn't introduce regressions.
