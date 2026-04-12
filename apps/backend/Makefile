@@ -3,15 +3,10 @@
 # Default environment file
 ENV_FILE ?= .env
 
-# Start all services
+# Start all services (foreground, Ctrl+C stops everything)
 up:
 	@echo "Starting all services..."
-	docker compose --env-file $(ENV_FILE) up -d --build
-	@echo ""
-	@echo "Services are starting up..."
-	@echo "Waiting for health checks to pass..."
-	@sleep 5
-	@$(MAKE) health --no-print-directory
+	docker compose --env-file $(ENV_FILE) up --build --abort-on-container-exit
 
 # Stop all services
 down:
