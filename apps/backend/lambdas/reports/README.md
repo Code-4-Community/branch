@@ -10,6 +10,8 @@ Lambda for generating reports.
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /reports |  |
+| GET | /reports/upload-url |  |
+| POST | /reports |  |
 
 ## Setup
 
