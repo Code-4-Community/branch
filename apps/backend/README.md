@@ -205,3 +205,64 @@ Each lambda service directory contains:
 - `package.json` - Dependencies
 - `openapi.yaml` - API specification
 - `swagger-utils.ts` - Swagger UI utilities
+
+
+## Deployment to AWS
+
+Lambda functions are automatically built and deployed to AWS when changes are pushed to the `main` branch.
+
+### Lambda Deploy Workflow
+
+The GitHub Actions workflow (`.github/workflows/lambda-deploy.yml`) handles the entire deployment pipeline:
+
+1. **Change Detection** — Identifies which Lambda functions changed in the push
+2. **Build** — Runs `npm ci` and `npm run package` in parallel for each changed Lambda to produce `lambda.zip`
+3. **Deploy** — Updates AWS Lambda functions using the AWS CLI with naming convention `branch-{service-name}`
+4. **Summary** — Reports overall deployment status and blocks merges if deployment fails
+
+### Deployment Requirements
+
+- AWS credentials are configured in repository secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+- Lambda function names in AWS must follow the pattern: `branch-{service-name}`
+  - Example: `branch-auth`, `branch-users`, `branch-donors`
+- Each Lambda directory must have a `npm run package` script that produces `lambda.zip`
+- The `Deployment Summary` status check must pass in GitHub before merges are allowed
+
+### Triggering Deployment
+
+Simply push changes to the `main` branch in any Lambda directory:
+
+```bash
+git push origin main
+```
+
+The workflow will automatically detect the changed Lambdas, build them, and deploy them to AWS in parallel.
+
+### Deployment Status
+
+Monitor deployment progress in the GitHub Actions tab:
+
+```
+https://github.com/{owner}/branch/actions
+```
+
+Each deployment job produces:
+- Build artifacts (Lambda packages)
+- Deployment logs with status
+- Failures are reported and block PR merges
+
+### Manual Deployment (if needed)
+
+To manually update a Lambda function in AWS:
+
+```bash
+# Build the Lambda package
+cd apps/backend/lambdas/{service-name}
+npm run package
+
+# Deploy using AWS CLI
+aws lambda update-function-code \
+  --function-name branch-{service-name} \
+  --zip-file fileb://lambda.zip \
+  --region us-east-2
+```
