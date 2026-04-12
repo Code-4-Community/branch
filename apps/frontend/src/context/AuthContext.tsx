@@ -29,6 +29,8 @@ interface AuthContextValue {
   resendCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   getAccessToken: () => string | null;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem(STORAGE_KEYS.ACCESS);
   }
 
+  
+  async function forgotPassword(email: string) {
+    await apiFetch('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async function resetPassword(email: string, code: string, newPassword: string) {
+    await apiFetch('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, newPassword }),
+    });
+  }
+
+
   return (
     <AuthContext.Provider
       value={{
@@ -163,6 +181,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resendCode,
         logout,
         getAccessToken,
+        forgotPassword,
+        resetPassword,
       }}
     >
       {children}
