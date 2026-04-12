@@ -1,6 +1,13 @@
 import { render, screen } from '../utils';
 import LoginPage from '@/app/login/page';
 
+const mockPush = jest.fn();
+
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({
+        push: mockPush,
+    }),
+}));
 
 describe('Login Page Component', () => {
     it('renders the login heading', () => {
