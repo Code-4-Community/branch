@@ -23,6 +23,8 @@ No modules.
 
 | Name | Type |
 |------|------|
+| [aws_amplify_app.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/amplify_app) | resource |
+| [aws_amplify_branch.main](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/amplify_branch) | resource |
 | [aws_api_gateway_deployment.branch_deployment](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_deployment) | resource |
 | [aws_api_gateway_integration.lambda_integrations](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
 | [aws_api_gateway_method.lambda_methods](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
@@ -45,12 +47,14 @@ No modules.
 | [aws_s3_object.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_object) | resource |
 | [archive_file.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/caller_identity) | data source |
+| [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_api_base_url"></a> [api\_base\_url](#input\_api\_base\_url) | Base URL for the backend API, injected as NEXT\_PUBLIC\_API\_BASE\_URL | `string` | `""` | no |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |

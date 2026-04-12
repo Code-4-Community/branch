@@ -1,0 +1,131 @@
+name: Lambda Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/backend/lambdas/**'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lambdas: ${{ steps.detect.outputs.lambdas }}
+      has-changes: ${{ steps.detect.outputs.has-changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed lambdas
+        id: detect
+        run: |
+          BASE_COMMIT="${{ github.event.before }}"
+
+          all_lambdas=$(ls -d apps/backend/lambdas/*/ | grep -Ev "(tools)/" | sed 's#/$##' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          
+          changed_files=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+          
+          changed_lambdas=()
+          for lambda_path in apps/backend/lambdas/*/; do
+            lambda_name=$(basename "$lambda_path")
+            if [[ "$lambda_name" != "tools" ]]; then
+              if echo "$changed_files" | grep -q "^apps/backend/lambdas/$lambda_name/"; then
+                changed_lambdas+=("$lambda_path")
+              fi
+            fi
+          done
+          
+          if [[ ${#changed_lambdas[@]} -eq 0 ]]; then
+            echo "No specific lambda changes detected, deploying all lambdas"
+            lambdas=$all_lambdas
+            has_changes="true"
+          else
+            lambdas=$(printf '%s\n' "${changed_lambdas[@]}" | sed 's#/$##' | jq -R -s -c 'split("\n") | map(select(. != ""))')
+            has_changes="true"
+          fi
+          
+          echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
+          echo "has-changes=$has_changes" >> $GITHUB_OUTPUT
+
+  build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lambda: ${{ fromJson(needs.detect-changes.outputs.lambdas) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        working-directory: ${{ matrix.lambda }}
+        run: npm ci --legacy-peer-deps
+      
+      - name: Package lambda
+        working-directory: ${{ matrix.lambda }}
+        run: npm run package
+      
+      - name: Upload lambda artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.lambda }}
+          path: ${{ matrix.lambda }}/lambda.zip
+          if-no-files-found: error
+
+  deploy:
+    needs: [detect-changes, build]
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lambda: ${{ fromJson(needs.detect-changes.outputs.lambdas) }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-2
+    steps:
+      - name: Download lambda artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.lambda }}
+          path: ${{ matrix.lambda }}
+      
+      - name: Deploy lambda
+        run: |
+          LAMBDA_NAME=$(basename ${{ matrix.lambda }})
+          FUNCTION_NAME="branch-${LAMBDA_NAME}"
+          
+          echo "Deploying Lambda function: $FUNCTION_NAME"
+          
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://${{ matrix.lambda }}/lambda.zip
+          
+          echo "✓ Successfully deployed $FUNCTION_NAME"
+
+  summary:
+    name: Deployment Summary
+    needs: [deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployment results
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✓ All Lambda functions deployed successfully!"
+            exit 0
+          elif [ "${{ needs.deploy.result }}" == "skipped" ]; then
+            echo "⊘ No Lambda changes detected, skipping deployment"
+            exit 0
+          else
+            echo "✗ Lambda deployment failed"
+            exit 1
+          fi
