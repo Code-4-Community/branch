@@ -1,11 +1,9 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import db from './db';
 
-// Load from environment variables
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
 
-// Create verifier instance lazily (only when needed)
 let verifier: any = null;
 
 function getVerifier() {
@@ -67,6 +65,7 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
       .executeTakeFirst();
 
     if (!dbUser) {
+      console.warn('User authenticated with Cognito but not found in database:', payload.sub);
       return { isAuthenticated: false };
     }
 

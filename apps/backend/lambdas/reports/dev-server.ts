@@ -1,3 +1,6 @@
+import { config } from 'dotenv';
+config(); // Load .env file
+
 import { handler } from './handler';
 import { loadOpenApiSpec, getSwaggerHtml } from './swagger-utils';
 import * as http from 'http';
