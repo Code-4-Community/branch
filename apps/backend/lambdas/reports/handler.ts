@@ -1,6 +1,17 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import db from './db';
 import { authenticateRequest } from './auth';
+
+const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
+const BUCKET = process.env.S3_BUCKET_NAME ?? '';
+const REGION = process.env.AWS_REGION ?? 'us-east-2';
+
+const ALLOWED_EXTENSIONS = ['pdf', 'docx'] as const;
+const MIME_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -79,7 +90,76 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(200, { data: reports });
     }
-    // <<< ROUTES-END
+    
+    // POST /reports
+    if (normalizedPath === '/reports' && method === 'POST') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      let body: Record<string, unknown>;
+      try {
+        body = event.body ? JSON.parse(event.body) : {};
+      } catch {
+        return json(400, { message: 'Invalid JSON in request body' });
+      }
+
+      const { title, projectId, fileName, fileContent } = body;
+
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        return json(400, { message: 'title is required' });
+      }
+      if (!projectId || typeof projectId !== 'number' || !Number.isInteger(projectId) || projectId < 1) {
+        return json(400, { message: 'projectId must be a positive integer' });
+      }
+      if (!fileName || typeof fileName !== 'string') {
+        return json(400, { message: 'fileName is required' });
+      }
+      const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+      if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
+        return json(400, { message: 'Only PDF and DOCX files are supported' });
+      }
+      if (!fileContent || typeof fileContent !== 'string') {
+        return json(400, { message: 'fileContent must be a base64 encoded string' });
+      }
+
+      const project = await db
+        .selectFrom('branch.projects')
+        .where('project_id', '=', projectId)
+        .select('project_id')
+        .executeTakeFirst();
+
+      if (!project) {
+        return json(404, { message: 'Project not found' });
+      }
+
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = Buffer.from(fileContent, 'base64');
+      } catch {
+        return json(400, { message: 'fileContent must be a valid base64 string' });
+      }
+
+      const key = `reports/${projectId}/${Date.now()}-${fileName}`;
+      await s3.send(new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        Body: fileBuffer,
+        ContentType: MIME_TYPES[ext],
+      }));
+
+      const objectUrl = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+
+      const report = await db
+        .insertInto('branch.reports')
+        .values({ project_id: projectId, title: title.trim(), object_url: objectUrl })
+        .returningAll()
+        .executeTakeFirst();
+
+      return json(201, report);
+    }
+    // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

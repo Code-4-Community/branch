@@ -78,3 +78,31 @@ paths:
           description: Invalid pagination params
         '401':
           description: Unauthorized
+
+  /reports:
+    post:
+      summary: POST /reports
+      parameters:
+        - in: header
+          name: authorization
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                projectId:
+                  type: number
+                fileName:
+                  type: string
+                fileContent:
+                  type: string
+      responses:
+        '201':
+          description: Success

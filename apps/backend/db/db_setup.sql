@@ -63,6 +63,7 @@ CREATE TABLE expenditures (
 CREATE TABLE reports (
     report_id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
     object_url TEXT NOT NULL,
     date_created DATE NOT NULL DEFAULT CURRENT_DATE
 );
@@ -97,9 +98,9 @@ INSERT INTO expenditures (project_id, entered_by, amount, category, description,
 (2, 2, 3000, 'Equipment', 'Purchase of recording devices', '2025-04-05'),
 (3, 3, 2500, 'Supplies', 'Educational materials', '2025-07-12');
 
-INSERT INTO reports (project_id, object_url) VALUES
-(1, 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),
-(2, 'https://s3.amazonaws.com/branch-reports/health_education_initiative_report.pdf'),
-(3, 'https://s3.amazonaws.com/branch-reports/policy_advocacy_program_report.pdf'),
-(2, 'https://s3.amazonaws.com/branch-reports/research_program_reports.pdf'),
-(3, 'https://s3.amazonaws.com/branch-reports/health_care_data_reports.pdf');
+INSERT INTO reports (project_id, title, object_url) VALUES
+(1, 'Clinician Communication Study Report', 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),
+(2, 'Health Education Initiative Report', 'https://s3.amazonaws.com/branch-reports/health_education_initiative_report.pdf'),
+(3, 'Policy Advocacy Program Report', 'https://s3.amazonaws.com/branch-reports/policy_advocacy_program_report.pdf'),
+(2, 'Research Program Reports', 'https://s3.amazonaws.com/branch-reports/research_program_reports.pdf'),
+(3, 'Health Care Data Reports', 'https://s3.amazonaws.com/branch-reports/health_care_data_reports.pdf');
