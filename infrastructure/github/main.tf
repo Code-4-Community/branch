@@ -38,8 +38,10 @@ resource "github_branch_protection" "main" {
   }
 
   required_status_checks {
-    strict   = true
-    contexts = ["terraform-plan-summary", "lambda-tests", "frontend-ci", "Deployment Summary"]
+    strict = true
+    # "Deployment Summary" is intentionally excluded — it only runs on push to main
+    # (via lambda-deploy.yml) and should never be a required check on PRs.
+    contexts = ["terraform-plan-summary", "lambda-tests", "frontend-ci"]
   }
 
   enforce_admins = false
