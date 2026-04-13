@@ -11,10 +11,20 @@ jest.mock('@aws-sdk/client-s3', () => ({
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
 }));
+jest.mock('../report-service', () => ({
+  checkProjectAccess: jest.fn(),
+  fetchReportData: jest.fn(),
+  generatePdf: jest.fn(),
+  uploadToS3: jest.fn(),
+  saveReportRecord: jest.fn(),
+}));
 
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest } from '../auth';
+import { checkProjectAccess } from '../report-service';
+
+const mockCheckProjectAccess = checkProjectAccess as jest.MockedFunction<typeof checkProjectAccess>;
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
@@ -330,16 +340,6 @@ describe('POST /reports unit tests', () => {
     };
   }
 
-  function setupProjectMock(project: { project_id: number } | undefined) {
-    mockDb.selectFrom.mockReturnValueOnce({
-      where: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(project as any),
-        }),
-      }),
-    });
-  }
-
   function setupInsertMock(report: Record<string, unknown>) {
     mockDb.insertInto = jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
@@ -353,6 +353,7 @@ describe('POST /reports unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockCheckProjectAccess.mockReturnValue(true as any);
   });
 
   describe('Authentication', () => {
@@ -415,16 +416,21 @@ describe('POST /reports unit tests', () => {
   });
 
   describe('Business logic', () => {
-    test('404: project not found returns 404', async () => {
-      setupProjectMock(undefined);
+    test('403: user has no project access returns 403', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
+    });
+
+    test('403: nonexistent project returns 403', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
       const res = await handler(postEvent({ title: 'T', projectId: 999, objectUrl: fakeObjectUrl }));
-      expect(res.statusCode).toBe(404);
-      expect(JSON.parse(res.body).message).toBe('Project not found');
+      expect(res.statusCode).toBe(403);
     });
 
     test('201: creates report and returns created report', async () => {
       const fakeReport = { report_id: 10, project_id: 1, title: 'My Report', object_url: fakeObjectUrl, date_created: new Date('2025-01-01') };
-      setupProjectMock({ project_id: 1 });
       setupInsertMock(fakeReport);
 
       const res = await handler(postEvent({ title: 'My Report', projectId: 1, objectUrl: fakeObjectUrl }));
@@ -438,13 +444,6 @@ describe('POST /reports unit tests', () => {
 
     test('201: title is trimmed before inserting', async () => {
       let capturedValues: Record<string, unknown> = {};
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({ project_id: 1 } as any),
-          }),
-        }),
-      });
       mockDb.insertInto = jest.fn().mockReturnValue({
         values: jest.fn().mockImplementation((vals: any) => {
           capturedValues = vals;

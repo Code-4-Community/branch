@@ -196,9 +196,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // POST /reports
     if (normalizedPath === '/reports' && method === 'POST') {
       const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated) {
+      if (!authContext.isAuthenticated || !authContext.user) {
         return json(401, { message: 'Authentication required' });
       }
+
+      const { user } = authContext;
 
       let body: Record<string, unknown>;
       try {
@@ -219,14 +221,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'objectUrl is required' });
       }
 
-      const project = await db
-        .selectFrom('branch.projects')
-        .where('project_id', '=', projectId)
-        .select('project_id')
-        .executeTakeFirst();
-
-      if (!project) {
-        return json(404, { message: 'Project not found' });
+      const hasAccess = await checkProjectAccess(user.userId!, projectId as number, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to upload reports for this project' });
       }
 
       const report = await db

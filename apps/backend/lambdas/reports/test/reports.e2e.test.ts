@@ -291,10 +291,10 @@ describe('Reports e2e tests', () => {
       expect(res.statusCode).toBe(401);
     });
 
-    test('404: non-existent projectId returns 404', async () => {
+    test('403: non-existent projectId returns 403', async () => {
       const res = await handler(postEvent({ title: 'T', projectId: 99999, objectUrl: fakeObjectUrl }));
-      expect(res.statusCode).toBe(404);
-      expect(JSON.parse(res.body).message).toBe('Project not found');
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
     });
 
     test('400: missing title returns 400', async () => {
