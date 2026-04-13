@@ -1,7 +1,20 @@
 'use client';
-import { Input, Table } from '@chakra-ui/react';
+import React, { useEffect, useState } from 'react';
+import NavBar from '../components/Navbar';
 import Header from '../components/Header';
-import { ReactNode, useEffect, useState } from 'react';
+import Pagination from '../components/Pagination';
+import AddExpenseModal from '../components/AddExpenseModal';
+import {
+  HStack,
+  Input,
+  Button,
+  Table,
+} from '@chakra-ui/react';
+import DropdownSelector from '../components/DropdownSelector';
+import { apiFetch } from '@/lib/api';
+import { CiFilter } from 'react-icons/ci';
+import { LuArrowDownUp } from 'react-icons/lu';
+import { FaPlus } from 'react-icons/fa';
 
 type Expenditure = {
   expenditure_id: number;
@@ -14,153 +27,330 @@ type Expenditure = {
   created_at: string | null;
 };
 
-function ColumnHeader({
-  children,
-  ...rest
-}: { children: ReactNode } & React.ThHTMLAttributes<HTMLTableCellElement>) {
-  return (
-    <Table.ColumnHeader
-      fontWeight="bold"
-      color="white"
-      cursor="pointer"
-      className="bg-primary-800"
-      {...rest}
-    >
-      {children}
-    </Table.ColumnHeader>
-  );
-}
+type Project = {
+  project_id: number;
+  name: string;
+};
 
-type SortKey = 'expenditure_id' | 'spent_on' | 'description' | 'amount' | 'category';
-type SortOrder = 'asc' | 'desc';
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const SORT_OPTIONS = ['Amount', 'Date'];
+const ROWS_PER_PAGE = 10;
 
 export default function ExpensePage() {
-  const [query, setQuery] = useState('');
+  // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('spent_on');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+  // Search & Filters
+  const [query, setQuery] = useState('');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [sortOption, setSortOption] = useState<string>('');
+
+  // Dropdown visibility
+  const [showMonthFilter, setShowMonthFilter] = useState(false);
+  const [showTypeFilter, setShowTypeFilter] = useState(false);
+  const [showSortBy, setShowSortBy] = useState(false);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Modal
+  const [showNewExpense, setShowNewExpense] = useState(false);
+
+  const token = typeof window !== 'undefined' ? localStorage.getItem('branch_access_token') ?? '' : '';
+
+  // Fetch expenditures
+  async function fetchExpenditures() {
+    try {
+      const json = await apiFetch<{ data: Expenditure[] }>('/expenditures', { token });
+      setExpenditures(json.data ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load expenditures');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Fetch projects
+  async function fetchProjects() {
+    try {
+      const json = await apiFetch<Project[]>('/projects', { token });
+      setProjects(Array.isArray(json) ? json : []);
+    } catch {
+      // Projects fetch failure is non-critical
+    }
+  }
 
   useEffect(() => {
-    async function fetchExpenditures() {
-      try {
-        const res = await fetch('/api/expenditures', {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-          },
-        });
-        if (!res.ok) {
-          throw new Error(`Failed to fetch expenditures: ${res.status}`);
-        }
-        const data: Expenditure[] = await res.json();
-        setExpenditures(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load expenditures');
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchExpenditures();
+    fetchProjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortOrder('asc');
-    }
-  };
+  // Derived: unique categories
+  const uniqueCategories = [
+    ...new Set(expenditures.map((e) => e.category).filter(Boolean)),
+  ] as string[];
 
-  const sortedData = [...expenditures]
-    .filter(
-      (e) =>
-        e.expenditure_id.toString().includes(query.toLowerCase()) ||
-        (e.description ?? '').toLowerCase().includes(query.toLowerCase()) ||
-        (e.category ?? '').toLowerCase().includes(query.toLowerCase()),
-    )
-    .sort((a, b) => {
-      const aVal = a[sortKey];
-      const bVal = b[sortKey];
-
-      if (sortKey === 'amount') {
-        const diff = parseFloat(String(aVal)) - parseFloat(String(bVal));
-        return sortOrder === 'asc' ? diff : -diff;
+  // Filtered + sorted data
+  const filteredData = expenditures
+    .filter((e) => {
+      if (query) {
+        const q = query.toLowerCase();
+        const matchesId = e.expenditure_id.toString().includes(q);
+        const matchesDesc = (e.description ?? '').toLowerCase().includes(q);
+        const matchesCat = (e.category ?? '').toLowerCase().includes(q);
+        if (!matchesId && !matchesDesc && !matchesCat) return false;
       }
-
-      return sortOrder === 'asc'
-        ? String(aVal ?? '').localeCompare(String(bVal ?? ''))
-        : String(bVal ?? '').localeCompare(String(aVal ?? ''));
+      if (selectedMonths.length > 0) {
+        const month = new Date(e.spent_on).getMonth();
+        if (!selectedMonths.includes(MONTHS[month])) return false;
+      }
+      if (selectedTypes.length > 0) {
+        if (!e.category || !selectedTypes.includes(e.category)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortOption === 'Amount') {
+        return parseFloat(b.amount) - parseFloat(a.amount);
+      }
+      if (sortOption === 'Date') {
+        return new Date(b.spent_on).getTime() - new Date(a.spent_on).getTime();
+      }
+      // Default: newest first
+      return new Date(b.spent_on).getTime() - new Date(a.spent_on).getTime();
     });
 
-  const sortIndicator = (key: SortKey) =>
-    sortKey === key ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : '';
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / ROWS_PER_PAGE));
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * ROWS_PER_PAGE,
+    currentPage * ROWS_PER_PAGE,
+  );
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, selectedMonths, selectedTypes, sortOption]);
+
+  // Modal success handler
+  async function handleExpenseAdded() {
+    setShowNewExpense(false);
+    setLoading(true);
+    setError(null);
+    await fetchExpenditures();
+  }
 
   return (
-    <>
-      <Header />
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <NavBar role="admin" />
+      <main style={{ flex: 1, backgroundColor: '#f9fafb' }}>
+        <Header />
+        <div style={{ margin: '2%', display: 'flex', flexDirection: 'column', minHeight: '85vh' }}>
+          <h1
+            style={{
+              fontWeight: 600,
+              fontFamily: 'var(--font-heading)',
+              fontSize: 'var(--font-size-heading-1)',
+            }}
+          >
+            Expenses
+          </h1>
 
-      <div className="px-8 py-6">
-        <h1 className="mb-4">Expenses</h1>
+          {/* Toolbar */}
+          <HStack width="100%" justify="space-between" paddingTop="3%" paddingBottom="3%">
+            <HStack width="30%">
+              <Input
+                placeholder="Search ..."
+                variant="outline"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </HStack>
+            <HStack>
+              {/* Month Filter */}
+              <div style={{ position: 'relative' }}>
+                <Button
+                  backgroundColor="var(--color-core-white)"
+                  color="var(--color-core-black)"
+                  border="1px solid"
+                  borderColor="var(--color-black-500)"
+                  onClick={() => {
+                    setShowMonthFilter((prev) => !prev);
+                    setShowTypeFilter(false);
+                    setShowSortBy(false);
+                  }}
+                >
+                  <CiFilter />
+                  Month
+                </Button>
+                {showMonthFilter && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
+                    <DropdownSelector
+                      options={MONTHS}
+                      placeholder="Filter by month..."
+                      multiSelect={true}
+                      value={selectedMonths}
+                      onChange={(val) => setSelectedMonths(Array.isArray(val) ? val : [val])}
+                    />
+                  </div>
+                )}
+              </div>
 
-        <Input
-          placeholder="Search by ID, description, or category"
-          onChange={(e) => setQuery(e.target.value)}
-          value={query}
-          className="!mb-4 !max-w-md !rounded !border !border-black-200 !px-3 !py-2 !font-body"
-        />
+              {/* Type Filter */}
+              <div style={{ position: 'relative' }}>
+                <Button
+                  backgroundColor="var(--color-core-white)"
+                  color="var(--color-core-black)"
+                  border="1px solid"
+                  borderColor="var(--color-black-500)"
+                  onClick={() => {
+                    setShowTypeFilter((prev) => !prev);
+                    setShowMonthFilter(false);
+                    setShowSortBy(false);
+                  }}
+                >
+                  <CiFilter />
+                  Type
+                </Button>
+                {showTypeFilter && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
+                    <DropdownSelector
+                      options={uniqueCategories}
+                      placeholder="Filter by type..."
+                      multiSelect={true}
+                      value={selectedTypes}
+                      onChange={(val) => setSelectedTypes(Array.isArray(val) ? val : [val])}
+                    />
+                  </div>
+                )}
+              </div>
 
-        {loading && <p>Loading expenditures...</p>}
-        {error && <p className="text-error-red">{error}</p>}
+              {/* Sort By */}
+              <div style={{ position: 'relative' }}>
+                <Button
+                  backgroundColor="var(--color-core-white)"
+                  color="var(--color-core-black)"
+                  border="1px solid"
+                  borderColor="var(--color-black-500)"
+                  onClick={() => {
+                    setShowSortBy((prev) => !prev);
+                    setShowMonthFilter(false);
+                    setShowTypeFilter(false);
+                  }}
+                >
+                  <LuArrowDownUp />
+                  Sort By
+                </Button>
+                {showSortBy && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
+                    <DropdownSelector
+                      options={SORT_OPTIONS}
+                      placeholder="Sort by..."
+                      multiSelect={false}
+                      value={sortOption}
+                      onChange={(val) => setSortOption(val as string)}
+                    />
+                  </div>
+                )}
+              </div>
 
-        {!loading && !error && (
-          <Table.Root>
-            <Table.Header>
-              <Table.Row>
-                <ColumnHeader onClick={() => handleSort('expenditure_id')}>
-                  Expense ID{sortIndicator('expenditure_id')}
-                </ColumnHeader>
-                <ColumnHeader onClick={() => handleSort('spent_on')}>
-                  Date{sortIndicator('spent_on')}
-                </ColumnHeader>
-                <ColumnHeader onClick={() => handleSort('description')}>
-                  Description{sortIndicator('description')}
-                </ColumnHeader>
-                <ColumnHeader onClick={() => handleSort('category')}>
-                  Category{sortIndicator('category')}
-                </ColumnHeader>
-                <ColumnHeader onClick={() => handleSort('amount')}>
-                  Amount{sortIndicator('amount')}
-                </ColumnHeader>
-              </Table.Row>
-            </Table.Header>
-            <Table.Body>
-              {sortedData.length === 0 ? (
-                <Table.Row>
-                  <Table.Cell colSpan={5} className="!text-center !py-8 !text-black-500">
-                    No expenditures found.
-                  </Table.Cell>
+              {/* + New Expense */}
+              <Button
+                backgroundColor="var(--color-core-green)"
+                color="var(--color-core-white)"
+                onClick={() => setShowNewExpense(true)}
+              >
+                <FaPlus />
+                New Expense
+              </Button>
+            </HStack>
+          </HStack>
+
+          {/* Loading / Error */}
+          {loading && <p>Loading expenditures...</p>}
+          {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+
+          {/* Table */}
+          {!loading && !error && (
+            <Table.Root>
+              <Table.ColumnGroup>
+                <Table.Column width="12%" />
+                <Table.Column width="15%" />
+                <Table.Column width="40%" />
+                <Table.Column width="17%" />
+                <Table.Column width="16%" />
+              </Table.ColumnGroup>
+              <Table.Header>
+                <Table.Row backgroundColor="var(--color-primary-800)">
+                  <Table.ColumnHeader color="var(--color-core-white)">Expense ID</Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)">Date</Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)">Description</Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)">Type of Expense</Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)">Amount</Table.ColumnHeader>
                 </Table.Row>
-              ) : (
-                sortedData.map((e) => (
-                  <Table.Row key={e.expenditure_id}>
-                    <Table.Cell>#{e.expenditure_id}</Table.Cell>
-                    <Table.Cell>
-                      {new Date(e.spent_on).toLocaleDateString()}
-                    </Table.Cell>
-                    <Table.Cell>{e.description ?? '—'}</Table.Cell>
-                    <Table.Cell>{e.category ?? '—'}</Table.Cell>
-                    <Table.Cell>
-                      ${parseFloat(e.amount).toFixed(2)}
+              </Table.Header>
+              <Table.Body>
+                {paginatedData.length === 0 ? (
+                  <Table.Row>
+                    <Table.Cell colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
+                      No expenditures found.
                     </Table.Cell>
                   </Table.Row>
-                ))
-              )}
-            </Table.Body>
-          </Table.Root>
-        )}
-      </div>
-    </>
+                ) : (
+                  paginatedData.map((e) => (
+                    <Table.Row key={e.expenditure_id}>
+                      <Table.Cell>#{String(e.expenditure_id).padStart(6, '0')}</Table.Cell>
+                      <Table.Cell>
+                        {new Date(e.spent_on).toLocaleDateString('en-US', {
+                          month: '2-digit',
+                          day: '2-digit',
+                          year: 'numeric',
+                        })}
+                      </Table.Cell>
+                      <Table.Cell>{e.description ?? '—'}</Table.Cell>
+                      <Table.Cell>{e.category ?? '—'}</Table.Cell>
+                      <Table.Cell>
+                        ${parseFloat(e.amount).toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Table.Cell>
+                    </Table.Row>
+                  ))
+                )}
+              </Table.Body>
+            </Table.Root>
+          )}
+
+          {/* Pagination */}
+          {!loading && !error && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          )}
+        </div>
+
+        {/* Add New Expense Modal */}
+        <AddExpenseModal
+          open={showNewExpense}
+          onClose={() => setShowNewExpense(false)}
+          onSuccess={handleExpenseAdded}
+          token={token}
+          categories={uniqueCategories}
+          projects={projects}
+        />
+      </main>
+    </div>
   );
 }
