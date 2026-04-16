@@ -152,9 +152,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // GET /reports/upload-url
     if (normalizedPath === '/reports/upload-url' && method === 'GET') {
       const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated) {
+      if (!authContext.isAuthenticated || !authContext.user) {
         return json(401, { message: 'Authentication required' });
       }
+
+      const { user } = authContext;
 
       const queryParams = event.queryStringParameters || {};
       const { fileName, projectId: projectIdStr } = queryParams;
@@ -171,14 +173,15 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
       const projectId = parseInt(projectIdStr, 10);
 
-      const project = await db
-        .selectFrom('branch.projects')
+      const projectExists = await db.selectFrom('branch.projects')
         .where('project_id', '=', projectId)
         .select('project_id')
         .executeTakeFirst();
+      if (!projectExists) return json(404, { message: 'Project not found' });
 
-      if (!project) {
-        return json(404, { message: 'Project not found' });
+      const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to upload reports for this project' });
       }
 
       const key = `reports/${projectId}/${Date.now()}-${fileName}`;
@@ -220,6 +223,12 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!objectUrl || typeof objectUrl !== 'string') {
         return json(400, { message: 'objectUrl is required' });
       }
+
+      const projectExists = await db.selectFrom('branch.projects')
+        .where('project_id', '=', projectId as number)
+        .select('project_id')
+        .executeTakeFirst();
+      if (!projectExists) return json(404, { message: 'Project not found' });
 
       const hasAccess = await checkProjectAccess(user.userId!, projectId as number, user.isAdmin);
       if (!hasAccess) {

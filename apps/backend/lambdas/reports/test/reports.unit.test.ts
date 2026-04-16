@@ -234,9 +234,21 @@ describe('GET /reports/upload-url unit tests', () => {
     };
   }
 
+  function setupProjectMock(project: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(project as any),
+        }),
+      }),
+    });
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockCheckProjectAccess.mockReturnValue(true as any);
+    setupProjectMock({ project_id: 1 });
   });
 
   describe('Authentication', () => {
@@ -282,26 +294,20 @@ describe('GET /reports/upload-url unit tests', () => {
 
   describe('Business logic', () => {
     test('404: project not found returns 404', async () => {
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue(undefined as any),
-          }),
-        }),
-      });
+      setupProjectMock(undefined);
       const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '999' }));
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Project not found');
     });
 
+    test('403: user has no project access returns 403', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
+    });
+
     test('200: returns uploadUrl and objectUrl for pdf', async () => {
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({ project_id: 1 } as any),
-          }),
-        }),
-      });
       const res = await handler(uploadUrlEvent({ fileName: 'report.pdf', projectId: '1' }));
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
@@ -311,13 +317,6 @@ describe('GET /reports/upload-url unit tests', () => {
     });
 
     test('200: returns uploadUrl and objectUrl for docx', async () => {
-      mockDb.selectFrom.mockReturnValueOnce({
-        where: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({ project_id: 2 } as any),
-          }),
-        }),
-      });
       const res = await handler(uploadUrlEvent({ fileName: 'doc.docx', projectId: '2' }));
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
@@ -350,10 +349,21 @@ describe('POST /reports unit tests', () => {
     });
   }
 
+  function setupProjectMock(project: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(project as any),
+        }),
+      }),
+    });
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
     mockCheckProjectAccess.mockReturnValue(true as any);
+    setupProjectMock({ project_id: 1 });
   });
 
   describe('Authentication', () => {
@@ -423,10 +433,11 @@ describe('POST /reports unit tests', () => {
       expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
     });
 
-    test('403: nonexistent project returns 403', async () => {
-      mockCheckProjectAccess.mockReturnValue(false as any);
+    test('404: nonexistent project returns 404', async () => {
+      setupProjectMock(undefined);
       const res = await handler(postEvent({ title: 'T', projectId: 999, objectUrl: fakeObjectUrl }));
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Project not found');
     });
 
     test('201: creates report and returns created report', async () => {
