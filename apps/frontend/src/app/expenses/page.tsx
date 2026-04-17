@@ -51,11 +51,13 @@ export default function ExpensePage() {
   const [query, setQuery] = useState('');
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [sortOption, setSortOption] = useState<string>('');
 
   // Dropdown visibility
   const [showMonthFilter, setShowMonthFilter] = useState(false);
   const [showTypeFilter, setShowTypeFilter] = useState(false);
+  const [showProjectFilter, setShowProjectFilter] = useState(false);
   const [showSortBy, setShowSortBy] = useState(false);
 
   // Pagination
@@ -116,6 +118,10 @@ export default function ExpensePage() {
       if (selectedTypes.length > 0) {
         if (!e.category || !selectedTypes.includes(e.category)) return false;
       }
+      if (selectedProjects.length > 0) {
+        const projectName = projects.find((p) => p.project_id === e.project_id)?.name;
+        if (!projectName || !selectedProjects.includes(projectName)) return false;
+      }
       return true;
     })
     .sort((a, b) => {
@@ -139,7 +145,7 @@ export default function ExpensePage() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, selectedMonths, selectedTypes, sortOption]);
+  }, [query, selectedMonths, selectedTypes, selectedProjects, sortOption]);
 
   // Modal success handler
   async function handleExpenseAdded() {
@@ -166,7 +172,7 @@ export default function ExpensePage() {
           </h1>
 
           {/* Toolbar */}
-          <HStack width="100%" justify="space-between" paddingTop="3%" paddingBottom="3%">
+          <HStack width="100%" justify="space-between" paddingTop="32px" paddingBottom="32px">
             <HStack width="30%">
               <Input
                 placeholder="Search ..."
@@ -176,6 +182,36 @@ export default function ExpensePage() {
               />
             </HStack>
             <HStack>
+              {/* Project Filter */}
+              <div style={{ position: 'relative' }}>
+                <Button
+                  backgroundColor="var(--color-core-white)"
+                  color="var(--color-core-black)"
+                  border="1px solid"
+                  borderColor="var(--color-black-500)"
+                  onClick={() => {
+                    setShowProjectFilter((prev) => !prev);
+                    setShowMonthFilter(false);
+                    setShowTypeFilter(false);
+                    setShowSortBy(false);
+                  }}
+                >
+                  <CiFilter />
+                  Project
+                </Button>
+                {showProjectFilter && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
+                    <DropdownSelector
+                      options={projects.map((p) => p.name)}
+                      multiSelect={true}
+                      hideTrigger={true}
+                      value={selectedProjects}
+                      onChange={(val) => setSelectedProjects(Array.isArray(val) ? val : [val])}
+                    />
+                  </div>
+                )}
+              </div>
+
               {/* Month Filter */}
               <div style={{ position: 'relative' }}>
                 <Button
@@ -185,6 +221,7 @@ export default function ExpensePage() {
                   borderColor="var(--color-black-500)"
                   onClick={() => {
                     setShowMonthFilter((prev) => !prev);
+                    setShowProjectFilter(false);
                     setShowTypeFilter(false);
                     setShowSortBy(false);
                   }}
@@ -196,8 +233,8 @@ export default function ExpensePage() {
                   <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                     <DropdownSelector
                       options={MONTHS}
-                      placeholder="Filter by month..."
                       multiSelect={true}
+                      hideTrigger={true}
                       value={selectedMonths}
                       onChange={(val) => setSelectedMonths(Array.isArray(val) ? val : [val])}
                     />
@@ -214,6 +251,7 @@ export default function ExpensePage() {
                   borderColor="var(--color-black-500)"
                   onClick={() => {
                     setShowTypeFilter((prev) => !prev);
+                    setShowProjectFilter(false);
                     setShowMonthFilter(false);
                     setShowSortBy(false);
                   }}
@@ -225,8 +263,8 @@ export default function ExpensePage() {
                   <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                     <DropdownSelector
                       options={uniqueCategories}
-                      placeholder="Filter by type..."
                       multiSelect={true}
+                      hideTrigger={true}
                       value={selectedTypes}
                       onChange={(val) => setSelectedTypes(Array.isArray(val) ? val : [val])}
                     />
@@ -243,6 +281,7 @@ export default function ExpensePage() {
                   borderColor="var(--color-black-500)"
                   onClick={() => {
                     setShowSortBy((prev) => !prev);
+                    setShowProjectFilter(false);
                     setShowMonthFilter(false);
                     setShowTypeFilter(false);
                   }}
@@ -254,8 +293,8 @@ export default function ExpensePage() {
                   <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                     <DropdownSelector
                       options={SORT_OPTIONS}
-                      placeholder="Sort by..."
                       multiSelect={false}
+                      hideTrigger={true}
                       value={sortOption}
                       onChange={(val) => setSortOption(val as string)}
                     />
@@ -291,11 +330,11 @@ export default function ExpensePage() {
               </Table.ColumnGroup>
               <Table.Header>
                 <Table.Row backgroundColor="var(--color-primary-800)">
-                  <Table.ColumnHeader color="var(--color-core-white)">Expense ID</Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)">Date</Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)">Description</Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)">Type of Expense</Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)">Amount</Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Expense ID</h5></Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Date</h5></Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Description</h5></Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Type of Expense</h5></Table.ColumnHeader>
+                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Amount</h5></Table.ColumnHeader>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -340,6 +379,7 @@ export default function ExpensePage() {
             />
           )}
         </div>
+
 
         {/* Add New Expense Modal */}
         <AddExpenseModal
