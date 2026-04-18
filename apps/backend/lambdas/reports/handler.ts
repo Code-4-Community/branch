@@ -197,7 +197,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
 
     // POST /reports
-    if (normalizedPath === '/reports' && method === 'POST') {
+    if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
       const authContext = await authenticateRequest(event);
       if (!authContext.isAuthenticated || !authContext.user) {
         return json(401, { message: 'Authentication required' });
