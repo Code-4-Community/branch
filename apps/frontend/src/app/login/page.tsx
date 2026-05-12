@@ -52,6 +52,7 @@ export default function LoginPage() {
     }
 
     return (
+        <div className="flex min-h-screen items-center justify-center px-4">
         <div className="flex flex-col items-center text-center w-80">
             <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">Login</h1>
             <h5 className="![font-family:var(--font-body)] !text-[16px] !font-bold !mb-6">BRANCH Accounting Platform</h5>
@@ -83,6 +84,7 @@ export default function LoginPage() {
             <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
             </Link>
+        </div>
         </div>
     );
 }

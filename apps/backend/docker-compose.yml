@@ -95,6 +95,8 @@ services:
       DB_USER: ${DB_USER:-branch_dev}
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_NAME: ${DB_NAME:-branch_db}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
     ports:
       - '3004:3000'
     depends_on:

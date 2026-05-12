@@ -40,6 +40,13 @@ const MONTHS = [
 const SORT_OPTIONS = ['Amount', 'Date'];
 const ROWS_PER_PAGE = 10;
 
+export const EXPENSE_CATEGORIES = [
+  'General',
+  'Travel',
+  'Travel Foreign',
+  'Visitor / Honorarium',
+];
+
 export default function ExpensePage() {
   // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
@@ -96,10 +103,7 @@ export default function ExpensePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Derived: unique categories
-  const uniqueCategories = [
-    ...new Set(expenditures.map((e) => e.category).filter(Boolean)),
-  ] as string[];
+  const uniqueCategories = EXPENSE_CATEGORIES;
 
   // Filtered + sorted data
   const filteredData = expenditures
