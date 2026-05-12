@@ -6,39 +6,10 @@
  */
 
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent } from "../utils";
 import NavBar, { UserRole } from "../../src/app/components/Navbar";
 
-// ── Mock next/font/google so PT_Sans doesn't crash in Jest ────────────────────
-jest.mock("next/font/google", () => ({
-  PT_Sans: () => ({ style: { fontFamily: "PT Sans" } }),
-}));
-
-// ── Mock next/navigation so usePathname works outside Next.js ─────────────────
-jest.mock("next/navigation", () => ({
-  usePathname: jest.fn(() => "/dashboard"),
-}));
-
-// ── Mock next/link to a plain <a> for easier assertions ──────────────────────
-jest.mock("next/link", () => {
-  const MockLink = ({
-    href,
-    children,
-    ...rest
-  }: {
-    href: string;
-    children: React.ReactNode;
-    [key: string]: unknown;
-  }) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  );
-  MockLink.displayName = "MockLink";
-  return MockLink;
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
+// next/font/google, next/navigation, next/link: global mocks in jest.setup.ts
 
 describe("NavBar", () => {
   // ── Rendering ──────────────────────────────────────────────────────────────
@@ -167,11 +138,11 @@ describe("NavBar", () => {
       Reports:    "/reports",
       Accounts:   "/accounts",
       Profile:    "/profile",
-      "Log Out":  "/logout",
     };
     Object.entries(expectedHrefs).forEach(([label, href]) => {
       const links = screen.getAllByRole("link", { name: label });
       expect(links[0]).toHaveAttribute("href", href);
     });
+    expect(screen.getByRole("button", { name: "Log Out" })).toBeInTheDocument();
   });
 });
