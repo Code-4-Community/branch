@@ -224,7 +224,7 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(Array.isArray(body.data)).toBe(true);
-      expect(body.data.length).toBe(3);
+      expect(body.data.length).toBe(6);
       expect(body.pagination).toBeUndefined();
     });
 
@@ -233,8 +233,9 @@ describe('Expenditures integration tests', () => {
       const res = await handler(getEvent('/'));
       const body = JSON.parse(res.body);
       const dates = body.data.map((e: any) => new Date(e.spent_on).getTime());
-      expect(dates[0]).toBeGreaterThanOrEqual(dates[1]);
-      expect(dates[1]).toBeGreaterThanOrEqual(dates[2]);
+      for (let i = 0; i < dates.length - 1; i++) {
+        expect(dates[i]).toBeGreaterThanOrEqual(dates[i + 1]);
+      }
     });
 
     test('200: paginated response with page and limit', async () => {
@@ -246,8 +247,8 @@ describe('Expenditures integration tests', () => {
       expect(body.pagination).toBeDefined();
       expect(body.pagination.page).toBe(1);
       expect(body.pagination.limit).toBe(1);
-      expect(body.pagination.totalItems).toBe(3);
-      expect(body.pagination.totalPages).toBe(3);
+      expect(body.pagination.totalItems).toBe(6);
+      expect(body.pagination.totalPages).toBe(6);
     });
 
     test('200: page 2 returns second item', async () => {
@@ -264,8 +265,8 @@ describe('Expenditures integration tests', () => {
       const res = await handler(getEvent('/', { page: '1', limit: '100' }));
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
-      expect(body.data.length).toBe(3);
-      expect(body.pagination.totalItems).toBe(3);
+      expect(body.data.length).toBe(6);
+      expect(body.pagination.totalItems).toBe(6);
       expect(body.pagination.totalPages).toBe(1);
     });
 
@@ -275,7 +276,7 @@ describe('Expenditures integration tests', () => {
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
       expect(body.pagination).toBeUndefined();
-      expect(body.data.length).toBe(3);
+      expect(body.data.length).toBe(6);
     });
 
     test('200: only limit provided returns all without pagination', async () => {
@@ -284,7 +285,7 @@ describe('Expenditures integration tests', () => {
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
       expect(body.pagination).toBeUndefined();
-      expect(body.data.length).toBe(3);
+      expect(body.data.length).toBe(6);
     });
 
     test('200: filter by projectId returns only matching expenditures', async () => {
@@ -300,7 +301,7 @@ describe('Expenditures integration tests', () => {
       const res = await handler(getEvent('/', { projectId: '1', page: '1', limit: '10' }));
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
-      expect(body.pagination.totalItems).toBe(1);
+      expect(body.pagination.totalItems).toBe(2);
       expect(body.data.every((e: any) => e.project_id === 1)).toBe(true);
     });
 
