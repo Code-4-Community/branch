@@ -1,8 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '../utils';
 import Donors from '@/app/donors/page';
 
-describe('Login Page Component', () => {
-    it('renders the login heading', () => {
+describe('Donors Page', () => {
+    it('renders the Donors heading', () => {
         render(<Donors />);
         expect(screen.getByText('Donors', { selector: 'h1' })).toBeInTheDocument();
     });
@@ -25,11 +25,6 @@ describe('Login Page Component', () => {
         expect(screen.getByText('Donor Name')).toBeInTheDocument();
         expect(screen.getByText('# of Projects')).toBeInTheDocument();
         expect(screen.getByText('Last Donation')).toBeInTheDocument();
-    });
-
-    it('renders left and right pagination arrows', () => {
-        render(<Donors />);
-        expect(document.querySelector('svg')).toBeInTheDocument();
     });
 
     it('renders left and right pagination arrows', () => {

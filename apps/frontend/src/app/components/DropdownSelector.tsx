@@ -9,6 +9,7 @@ interface DropdownSelectorProps {
   multiSelect?: boolean;
   value?: string | string[];
   onChange?: (value: string | string[]) => void;
+  hideTrigger?: boolean;
 }
 
 export default function DropdownSelector({
@@ -17,6 +18,7 @@ export default function DropdownSelector({
   multiSelect = false,
   value,
   onChange,
+  hideTrigger = false,
 }: DropdownSelectorProps) {
   const collection = useMemo(
     () => createListCollection({ items: options.map((o) => ({ label: o, value: o })) }),
@@ -32,28 +34,55 @@ export default function DropdownSelector({
   }
 
   return (
-    <div className="w-[235px] font-body text-body">
+    <div className="min-w-[235px] font-body text-body">
       <Select.Root
         collection={collection}
         multiple={multiSelect}
         value={controlledValue}
         onValueChange={handleValueChange}
+        open={hideTrigger ? true : undefined}
+        closeOnSelect={!multiSelect && !hideTrigger}
       >
-        <Select.Trigger className="flex !w-full items-center justify-between !rounded !border !border-black-200 !bg-core-white !px-3 !py-2 !h-10 cursor-pointer !shadow-none !text-black-700 !font-body !text-body">
-          <Select.ValueText placeholder={placeholder} className="truncate" />
-          <Select.Indicator className="ml-2 shrink-0 transition-transform data-[state=open]:rotate-180">
-            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </Select.Indicator>
+        <Select.Trigger
+          style={
+            hideTrigger
+              ? {
+                  height: 0,
+                  minHeight: 0,
+                  width: 0,
+                  padding: 0,
+                  margin: 0,
+                  border: 0,
+                  overflow: 'hidden',
+                  visibility: 'hidden',
+                  position: 'absolute',
+                }
+              : undefined
+          }
+          className={
+            hideTrigger
+              ? ''
+              : 'flex !w-full items-center justify-between !rounded !border !border-black-200 !bg-core-white !px-3 !py-2 !h-10 cursor-pointer !shadow-none !text-black-700 !font-body !text-body'
+          }
+        >
+          {!hideTrigger && (
+            <>
+              <Select.ValueText placeholder={placeholder} className="truncate" />
+              <Select.Indicator className="ml-2 shrink-0 transition-transform data-[state=open]:rotate-180">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </Select.Indicator>
+            </>
+          )}
         </Select.Trigger>
 
         <Portal>
-          <Select.Positioner style={{ width: '235px' }}>
+          <Select.Positioner style={{ width: '235px', left:"3px" }}>
             <Select.Content className="!rounded !border !border-black-200 !bg-core-white !shadow-none !p-0 !mt-0.5 !font-body !text-body">
               {collection.items.map((item) =>
                 multiSelect ? (

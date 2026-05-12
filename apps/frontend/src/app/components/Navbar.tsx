@@ -2,8 +2,9 @@
 import Image from "next/image";
 import React, { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { PT_Sans } from "next/font/google";
+import { useAuth } from "@/context/AuthContext";
 
 const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400", "700"] });
 
@@ -14,14 +15,14 @@ interface NavItem { label: string; href: string; roles?: UserRole[]; }
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
-  { label: "Projects",  href: "/projects" },
-  { label: "Donors",    href: "/donors" },
+  { label: "Projects", href: "/projects" },
+  { label: "Donors", href: "/donors" },
   { label: "Donations", href: "/donations" },
-  { label: "Expenses",  href: "/expenses",  roles: ["admin"] },
-  { label: "Reports",   href: "/reports",   roles: ["admin"] },
-  { label: "Accounts",  href: "/accounts",  roles: ["admin"] },
-  { label: "Profile",   href: "/profile" },
-  { label: "Log Out",   href: "/logout" },
+  { label: "Expenses", href: "/expenses", roles: ["admin"] },
+  { label: "Reports", href: "/reports", roles: ["admin"] },
+  { label: "Accounts", href: "/accounts", roles: ["admin"] },
+  { label: "Profile", href: "/profile" },
+  { label: "Log Out", href: "/logout" },
 ];
 
 const COLORS = {
@@ -37,11 +38,24 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
 }) => {
   const pathname = usePathname?.() ?? "/dashboard";
   const currentPath = activePath ?? pathname;
+  const router = useRouter();
+  const { logout } = useAuth();
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const visibleItems = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(role));
   const isActive = (href: string) => currentPath === href || (href !== "/" && currentPath.startsWith(href));
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      router.push("/login");
+    }
+  };
 
   return (
     <nav
@@ -100,6 +114,25 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
           {visibleItems.map((item, index) => {
             const active = isActive(item.href);
             const isHovered = hoveredIndex === index;
+            const isLogout = item.href === "/logout";
+
+            const sharedStyle: React.CSSProperties = {
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              padding: "12px 24px",
+              fontSize: "15px",
+              textDecoration: "none",
+              transition: "background-color 0.2s ease",
+              backgroundColor: active
+                ? COLORS.white
+                : (isHovered ? COLORS.hoverBg : "transparent"),
+              color: active ? COLORS.brandGreen : COLORS.white,
+              fontWeight: active ? 700 : 400,
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            };
 
             return (
               <li
@@ -107,23 +140,20 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
               >
-                <Link
-                  href={item.href}
-                  style={{
-                    display: "block",
-                    padding: "12px 24px",
-                    fontSize: "15px",
-                    textDecoration: "none",
-                    transition: "background-color 0.2s ease",
-                    backgroundColor: active
-                      ? COLORS.white
-                      : (isHovered ? COLORS.hoverBg : "transparent"),
-                    color: active ? COLORS.brandGreen : COLORS.white,
-                    fontWeight: active ? 700 : 400,
-                  }}
-                >
-                  {item.label}
-                </Link>
+                {isLogout ? (
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    disabled={loggingOut}
+                    style={sharedStyle}
+                  >
+                    {loggingOut ? "Logging out…" : item.label}
+                  </button>
+                ) : (
+                  <Link href={item.href} style={sharedStyle}>
+                    {item.label}
+                  </Link>
+                )}
               </li>
             );
           })}
