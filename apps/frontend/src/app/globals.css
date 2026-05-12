@@ -49,7 +49,6 @@
     --font-size-callout: 14px;
 }
 
-@layer base {
   h1 {
     font-family: var(--font-heading);
     font-size: var(--font-size-heading-1);
@@ -93,4 +92,3 @@
     font-size: var(--font-size-callout);
     font-weight: 400;
   }
-}

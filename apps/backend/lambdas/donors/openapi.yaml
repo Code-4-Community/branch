@@ -25,3 +25,43 @@ paths:
       responses:
         '200':
           description: OK
+
+  /donors:
+    post:
+      summary: POST /donors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                organization:
+                  type: string
+                contact_name:
+                  type: string
+                contact_email:
+                  type: string
+      responses:
+        '201':
+          description: Success
+
+  /donations:
+    post:
+      summary: POST /donations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                donor_id:
+                  type: integer
+                project_id:
+                  type: integer
+                amount:
+                  type: number
+      responses:
+        '201':
+          description: Success

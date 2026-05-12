@@ -3,4 +3,5 @@ module.exports = {
     testEnvironment: 'node',
     testMatch: ['**/*.test.ts'],
     globals: { 'ts-jest': { isolatedModules: true } },
+    maxWorkers: 1,
   };

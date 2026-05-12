@@ -11,6 +11,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      return json(200, {});
+    }
+
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
@@ -18,24 +23,26 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-        // GET /projects/{id}/members
+    // GET /projects/{id}/members
     if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && normalizedPath.endsWith('/members') && method === 'GET') {
       const id = normalizedPath.split('/')[2];
       if (!id) return json(400, { message: 'id is required' });
       const users = await db
-      .selectFrom('branch.project_memberships as pm')
-      .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
-      .select([
-        'u.user_id',
-        'u.name',
-        'u.email',
-        'pm.role'
-      ])
-      .where('pm.project_id', '=', id)
-      .execute();
-      return json(200, { ok: true, route: 'GET /projects/{id}/members', pathParams: { id }, body: {
-        users
-    }});
+        .selectFrom('branch.project_memberships as pm')
+        .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
+        .select([
+          'u.user_id',
+          'u.name',
+          'u.email',
+          'pm.role'
+        ])
+        .where('pm.project_id', '=', id)
+        .execute();
+      return json(200, {
+        ok: true, route: 'GET /projects/{id}/members', pathParams: { id }, body: {
+          users
+        }
+      });
     }
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
@@ -44,11 +51,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
 
     // GET /projects/{id}/donors
-      const parts = normalizedPath.split('/');
-      if (parts.length === 3 && parts[2] === 'donors' && method === 'GET') {
-        const id = parts[1];
+    const parts = normalizedPath.split('/');
+    if (parts.length === 3 && parts[2] === 'donors' && method === 'GET') {
+      const id = parts[1];
 
-        
+
       if (!id) return json(400, { message: 'id is required' });
       if (isNaN(Number(id))) {
         return json(400, { message: 'Project id must be a valid number' });
@@ -64,7 +71,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         .where("p.project_id", "=", Number(id))
         .selectAll()
         .executeTakeFirst();
-      
+
       if (!project) {
         return json(404, { message: 'Project not found' });
       }
@@ -78,9 +85,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         "bd.donor_id",
         "bpd.donor_id"
       ).selectAll().execute();
-        return json(200, { donors });
+      return json(200, { donors });
     }
-    
+
     // GET /projects/{id}
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'GET') {
       const id = rawPath.split('/')[1];
@@ -89,13 +96,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!project) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, project);
     }
-    
-    
+
+
     // PUT /projects/{id}
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
-      const body = event.body ? JSON.parse(event.body) as Record<string, {name:string, total_budget:number}> : {};
+      const body = event.body ? JSON.parse(event.body) as Record<string, { name: string, total_budget: number }> : {};
       const updatedProject = await db
         .updateTable("branch.projects")
         .set(body)
@@ -105,7 +112,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, updatedProject);
     }
-    // <<< ROUTES-END    
+    // <<< ROUTES-END
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
       let body: Record<string, unknown>;
@@ -146,7 +153,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         const inserted = await db
           .insertInto('branch.projects')
           .values(values)
-          .returning(['project_id','name','description','total_budget','currency','start_date','end_date','created_at'])
+          .returning(['project_id', 'name', 'description', 'total_budget', 'currency', 'start_date', 'end_date', 'created_at'])
           .executeTakeFirst();
 
         return json(201, inserted);
@@ -155,7 +162,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to create project' });
       }
     }
-    
+
     // GET /projects/{id}/expenditures
     if (normalizedPath.endsWith('/expenditures') && method === 'GET') {
       const pathParts = normalizedPath.split('/').filter(Boolean);

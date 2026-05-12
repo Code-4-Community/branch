@@ -11,6 +11,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      return json(200, {});
+    }
+
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
@@ -125,6 +130,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         .selectAll()
         .execute();
       return json(200, { data: donations });
+    }
+
+    // POST /donors
+    if (normalizedPath === '/donors' && method === 'POST') {
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      // TODO: Add your business logic here
+      return json(201, { ok: true, route: 'POST /donors', body });
     }
     // <<< ROUTES-END
 
