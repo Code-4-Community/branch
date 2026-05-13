@@ -5,7 +5,7 @@ import { useQueryParams } from '@/hooks/useQueryParams';
 // next/navigation is globally mocked in jest.setup.ts
 const mockReplace = jest.fn();
 const mockSearchParams = (init?: string) =>
-  jest.mocked(useSearchParams).mockReturnValue(new URLSearchParams(init) as any);
+  jest.mocked(useSearchParams).mockReturnValue(new URLSearchParams(init) as ReturnType<typeof useSearchParams>);
 
 beforeEach(() => {
   jest.clearAllMocks();
