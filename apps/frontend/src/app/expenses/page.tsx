@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useQueryParams } from '@/hooks/useQueryParams';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
@@ -49,6 +49,14 @@ export const EXPENSE_CATEGORIES = [
 ];
 
 export default function ExpensePage() {
+  return (
+    <Suspense>
+      <ExpensePageContent />
+    </Suspense>
+  );
+}
+
+function ExpensePageContent() {
   // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
