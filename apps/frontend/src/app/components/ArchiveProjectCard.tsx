@@ -29,7 +29,7 @@ export default function ArchiveProjectCard({ name, total_budget, members, start_
                             <RxPeople />
                             <h5 className="!font-bold">Staff</h5>
                         </div>
-                        <p className="truncate">{members} members</p>
+                        <p className="truncate">{members.toLocaleString()} members</p>
                     </div>
                 </div>
                 <div className="grid grid-cols-[1fr_auto_1fr] w-full items-center !gap-2 !px-2">
