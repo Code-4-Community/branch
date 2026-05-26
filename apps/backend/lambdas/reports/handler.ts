@@ -10,6 +10,9 @@ import {
   saveReportRecord,
 } from './report-service';
 
+const FILE_TYPES = ['pdf', 'docx'] as const;
+type FileType = typeof FILE_TYPES[number];
+
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
     const rawPath = event.rawPath || event.path || '/';
@@ -41,9 +44,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'project_id must be a positive integer' });
       }
 
-      const fileType = body.file_type ?? 'pdf';
-      if (fileType !== 'pdf' && fileType !== 'docx') {
-        return json(400, { message: 'file_type must be "pdf" or "docx"' });
+      const fileType = (body.file_type ?? 'pdf') as FileType;
+      if (!FILE_TYPES.includes(fileType)) {
+        return json(400, { message: `file_type must be one of: ${FILE_TYPES.join(', ')}` });
       }
 
       const reportData = await fetchReportData(projectId);
