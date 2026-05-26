@@ -97,6 +97,17 @@ paths:
                 items:
                   type: object
 
+  /dashboard:
+    get:
+      summary: GET /dashboard
+      responses:
+        '200':
+          description: OK
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+
   /projects/{id}/donors:
     get:
       summary: GET /projects/{id}/donors
