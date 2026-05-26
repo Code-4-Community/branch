@@ -70,7 +70,7 @@ export default function ProjectPage() {
     }
 
     fetchAll();
-  }, [id]);
+  }, [id, token]);
 
   // financial info
   const totalBudget = project?.total_budget ? parseFloat(project.total_budget) : 0;

@@ -8,7 +8,6 @@ import {
   HStack,
   Input,
   Button,
-  Table,
 } from '@chakra-ui/react';
 import DropdownSelector from '../components/DropdownSelector';
 import { apiFetch } from '@/lib/api';

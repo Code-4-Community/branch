@@ -4,7 +4,7 @@ import ProjectPage from '@/app/projects/[id]/page';
 
 const mockApiFetch = jest.fn();
 jest.mock('../../src/lib/api', () => ({
-    apiFetch: (...args: any[]) => mockApiFetch(...args),
+    apiFetch: (...args: Parameters<typeof mockApiFetch>) => mockApiFetch(...args),
 }));
 
 jest.mock('next/navigation', () => ({
