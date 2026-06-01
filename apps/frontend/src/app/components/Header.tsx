@@ -12,7 +12,7 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header
-      className="flex w-full items-center justify-between border-b border-gray-200 bg-white"
+      className="flex w-full h-12 items-center justify-between border-b border-gray-200 bg-white"
       style={{paddingLeft: 32, paddingRight: 32, paddingTop: 20, paddingBottom: 12}}
     >
       {/* Dynamic Text Section */}
