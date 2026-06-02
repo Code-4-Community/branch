@@ -16,8 +16,16 @@ const nextConfig: NextConfig = {
         destination: 'http://localhost:3004/expenditures',
       },
       {
-        source: '/projects/:path*',
-        destination: 'http://localhost:3002/projects/:path*',
+        source: '/projects/:id/members',
+        destination: 'http://localhost:3002/:id/members',
+      },
+      {
+        source: '/projects/:id/expenditures',
+        destination: 'http://localhost:3002/:id/expenditures',
+      },
+      {
+        source: '/projects/:id/donors',
+        destination: 'http://localhost:3002/:id/donors',
       },
       {
         source: '/projects',
