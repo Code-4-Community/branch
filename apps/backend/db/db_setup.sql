@@ -56,7 +56,7 @@ CREATE TABLE expenditures (
     amount NUMERIC(12,2) NOT NULL CHECK (amount >= 0),
     category VARCHAR(50),
     description TEXT,
-    status VARCHAR(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('approved', 'pending', 'denied')),
+    status VARCHAR(15) NOT NULL DEFAULT 'pending' CHECK (status IN ('approved', 'pending', 'denied', 'needs_more_info')),
     receipt_url TEXT,
     spent_on DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

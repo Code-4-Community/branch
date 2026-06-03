@@ -1,4 +1,4 @@
-export const EXPENDITURE_STATUSES = ['approved', 'pending', 'denied'] as const;
+export const EXPENDITURE_STATUSES = ['approved', 'pending', 'denied', 'needs_more_info'] as const;
 export type ExpenditureStatus = typeof EXPENDITURE_STATUSES[number];
 
 export interface ExpenditureInput {
