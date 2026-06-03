@@ -88,6 +88,13 @@ paths:
                   type: string
                 description:
                   type: string
+                status:
+                  type: string
+                  enum: [approved, pending, denied, needs_more_info]
+                  default: pending
+                receipt_url:
+                  type: string
+                  nullable: true
                 spentOn:
                   type: string
                   format: date
