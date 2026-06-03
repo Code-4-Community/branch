@@ -67,6 +67,7 @@ export interface BranchUsers {
   is_admin: Generated<boolean | null>;
   name: string;
   user_id: Generated<number>;
+  profile_image: string | null;
 }
 
 export interface DB {
