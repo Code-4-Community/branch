@@ -64,7 +64,7 @@ const fakeReports = [
 
 function postEvent(body: Record<string, unknown>) {
   return {
-    rawPath: '/',
+    rawPath: '/reports/generate',
     requestContext: { http: { method: 'POST' } },
     headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify(body),
