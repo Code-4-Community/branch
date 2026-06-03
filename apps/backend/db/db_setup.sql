@@ -8,7 +8,8 @@ CREATE TABLE users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     is_admin BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    profile_image TEXT
 );
 
 CREATE TABLE projects (
@@ -56,6 +57,8 @@ CREATE TABLE expenditures (
     amount NUMERIC(12,2) NOT NULL CHECK (amount >= 0),
     category VARCHAR(50),
     description TEXT,
+    status VARCHAR(15) NOT NULL DEFAULT 'pending' CHECK (status IN ('approved', 'pending', 'denied', 'needs_more_info')),
+    receipt_url TEXT,
     spent_on DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -95,9 +98,12 @@ INSERT INTO project_memberships (project_id, user_id, role, start_date, hours) V
 (2, 3, 'Staff', '2025-03-15', 60.00);
 
 INSERT INTO expenditures (project_id, entered_by, amount, category, description, spent_on) VALUES
-(1, 1, 5000, 'Travel', 'Conference attendance', '2025-02-10'),
-(2, 2, 3000, 'Equipment', 'Purchase of recording devices', '2025-04-05'),
-(3, 3, 2500, 'Supplies', 'Educational materials', '2025-07-12');
+(1, 1, 5000, 'Travel', 'Domestic conference attendance', '2025-02-10'),
+(1, 1, 4200, 'Travel Foreign', 'International collaborator meeting in London', '2025-03-22'),
+(2, 2, 3000, 'General', 'Recording device supplies', '2025-04-05'),
+(2, 2, 1500, 'Visitor / Honorarium', 'Guest lecturer honorarium', '2025-05-18'),
+(3, 3, 2500, 'General', 'Educational materials', '2025-07-12'),
+(3, 3, 1800, 'Travel', 'Local outreach travel', '2025-08-03');
 
 INSERT INTO reports (project_id, title, object_url) VALUES
 (1, 'Clinician Communication Study Report', 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),

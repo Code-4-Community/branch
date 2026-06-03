@@ -15,6 +15,7 @@ jest.mock('../report-service', () => ({
   checkProjectAccess: jest.fn(),
   fetchReportData: jest.fn(),
   generatePdf: jest.fn(),
+  generateDocx: jest.fn(),
   uploadToS3: jest.fn(),
   saveReportRecord: jest.fn(),
 }));
@@ -23,12 +24,13 @@ import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest } from '../auth';
 import { checkProjectAccess } from '../report-service';
-
-const mockCheckProjectAccess = checkProjectAccess as jest.MockedFunction<typeof checkProjectAccess>;
+import * as reportService from '../report-service';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-
+const mockReportService = reportService as jest.Mocked<typeof reportService>;
+const mockCheckProjectAccess = mockReportService.checkProjectAccess; 
+                                                                           
 function getEvent(queryStringParameters?: Record<string, string>) {
   return {
     rawPath: '/',
@@ -59,6 +61,86 @@ const fakeReports = [
   { report_id: 2, project_id: 1, object_url: 'https://s3.amazonaws.com/reports/b.pdf', date_created: new Date('2025-04-01') },
   { report_id: 1, project_id: 1, object_url: 'https://s3.amazonaws.com/reports/a.pdf', date_created: new Date('2025-01-01') },
 ];
+
+function postEvent(body: Record<string, unknown>) {
+  return {
+    rawPath: '/',
+    requestContext: { http: { method: 'POST' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    body: JSON.stringify(body),
+  };
+}
+
+describe('POST /reports unit tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockReportService.fetchReportData.mockResolvedValue({
+      project: { project_id: 1, name: 'Test', description: 'Desc', total_budget: null, start_date: null, end_date: null, currency: null },
+      members: [],
+      donations: [],
+      expenditures: [],
+    } as any);
+    mockReportService.checkProjectAccess.mockResolvedValue(true);
+    mockReportService.generatePdf.mockResolvedValue(Buffer.from('pdf') as any);
+    mockReportService.generateDocx.mockResolvedValue(Buffer.from('docx') as any);
+    mockReportService.uploadToS3.mockResolvedValue('https://s3.example.com/reports/1/ts.pdf');
+    mockReportService.saveReportRecord.mockResolvedValue({ report_id: 1, object_url: 'https://s3.example.com/reports/1/ts.pdf' });
+  });
+
+  test('400: missing project_id returns 400', async () => {
+    const res = await handler(postEvent({}));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('project_id');
+  });
+
+  test('400: non-integer project_id returns 400', async () => {
+    const res = await handler(postEvent({ project_id: 'abc' }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('400: invalid file_type returns 400', async () => {
+    const res = await handler(postEvent({ project_id: 1, file_type: 'xlsx' }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('file_type');
+  });
+
+  test('201: defaults to pdf when file_type is omitted', async () => {
+    const res = await handler(postEvent({ project_id: 1 }));
+    expect(res.statusCode).toBe(201);
+    expect(mockReportService.generatePdf).toHaveBeenCalledTimes(1);
+    expect(mockReportService.generateDocx).not.toHaveBeenCalled();
+    expect(mockReportService.uploadToS3).toHaveBeenCalledWith(expect.any(Buffer), 1, 'pdf');
+  });
+
+  test('201: file_type=pdf calls generatePdf', async () => {
+    const res = await handler(postEvent({ project_id: 1, file_type: 'pdf' }));
+    expect(res.statusCode).toBe(201);
+    expect(mockReportService.generatePdf).toHaveBeenCalledTimes(1);
+    expect(mockReportService.generateDocx).not.toHaveBeenCalled();
+    expect(mockReportService.uploadToS3).toHaveBeenCalledWith(expect.any(Buffer), 1, 'pdf');
+  });
+
+  test('201: file_type=docx calls generateDocx', async () => {
+    const res = await handler(postEvent({ project_id: 1, file_type: 'docx' }));
+    expect(res.statusCode).toBe(201);
+    expect(mockReportService.generateDocx).toHaveBeenCalledTimes(1);
+    expect(mockReportService.generatePdf).not.toHaveBeenCalled();
+    expect(mockReportService.uploadToS3).toHaveBeenCalledWith(expect.any(Buffer), 1, 'docx');
+  });
+
+  test('404: project not found returns 404', async () => {
+    mockReportService.fetchReportData.mockResolvedValue(null);
+    const res = await handler(postEvent({ project_id: 999 }));
+    expect(res.statusCode).toBe(404);
+  });
+
+  test('403: no project access returns 403', async () => {
+    mockReportService.checkProjectAccess.mockResolvedValue(false);
+    const res = await handler(postEvent({ project_id: 1 }));
+    expect(res.statusCode).toBe(403);
+  });
+});
 
 describe('GET /reports unit tests', () => {
   beforeEach(() => {

@@ -1,7 +1,38 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  async rewrites() {
+    return [
+      {
+        source: '/auth/:path*',
+        destination: 'http://localhost:3006/auth/:path*',
+      },
+      {
+        source: '/expenditures/:path*',
+        destination: 'http://localhost:3004/expenditures/:path*',
+      },
+      {
+        source: '/expenditures',
+        destination: 'http://localhost:3004/expenditures',
+      },
+      {
+        source: '/projects/:id/members',
+        destination: 'http://localhost:3002/:id/members',
+      },
+      {
+        source: '/projects/:id/expenditures',
+        destination: 'http://localhost:3002/:id/expenditures',
+      },
+      {
+        source: '/projects/:id/donors',
+        destination: 'http://localhost:3002/:id/donors',
+      },
+      {
+        source: '/projects',
+        destination: 'http://localhost:3002/projects',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

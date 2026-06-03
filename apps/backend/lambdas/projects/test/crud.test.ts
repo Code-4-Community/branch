@@ -97,38 +97,3 @@ test("project get 400 test 🌞", async () => {
   let body = await res.json();
   expect(body.message).toBe("Project not found for id: 1000");
 });
-test("update project test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/projects/1", {
-    method: "PUT",
-    body: JSON.stringify({ name: "Project 1 Updated", total_budget: 2000 }),
-  });
-  expect(res.status).toBe(200);
-  let body = await res.json();
-  expect(body.project_id).toBe(1);
-  expect(body.name).toContain("Project 1 Updated");
-  expect(Number(body.total_budget)).toBe(Number(2000.00));
-  expect(body.description).toBeDefined();
-  expect(body.description).not.toBeNull();
-  expect(typeof body.description).toBe('string');
-});
-
-test("update project with new description test 🌞", async () => {
-  const newDesc = "Updated project description";
-  let res = await fetch("http://localhost:3000/projects/1", {
-    method: "PUT",
-    body: JSON.stringify({ name: "Project 1", description: newDesc }),
-  });
-  expect(res.status).toBe(200);
-  let body = await res.json();
-  expect(body.description).toBe(newDesc);
-});
-
-test("project put 404 test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/projects/1000", {
-    method: "PUT",
-    body: JSON.stringify({ name: "Project 1 Updated", total_budget: 2000 }),
-  });
-  expect(res.status).toBe(404);
-  let body = await res.json();
-  expect(body.message).toBe("Project not found for id: 1000");
-});

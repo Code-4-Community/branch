@@ -210,10 +210,71 @@ describe('Expenditures integration tests', () => {
       expect(body.body.category).toBeNull();
     });
 
+    test('201: creates expenditure with status and receipt_url', async () => {
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 300,
+          status: 'approved',
+          receipt_url: 'https://s3.amazonaws.com/branch-receipts/receipt.pdf',
+        })
+      );
+
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.body.status).toBe('approved');
+      expect(body.body.receiptUrl).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "SELECT * FROM branch.expenditures WHERE amount = 300 AND project_id = 1"
+        );
+        expect(result.rows.length).toBe(1);
+        expect(result.rows[0].status).toBe('approved');
+        expect(result.rows[0].receipt_url).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+      } finally {
+        client.release();
+      }
+    });
+
+    test('201: status defaults to pending when omitted', async () => {
+      const res = await handler(postEvent({ projectID: 1, amount: 100 }));
+
+      expect(res.statusCode).toBe(201);
+      expect(JSON.parse(res.body).body.status).toBe('pending');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "SELECT * FROM branch.expenditures WHERE amount = 100 AND project_id = 1"
+        );
+        expect(result.rows.length).toBe(1);
+        expect(result.rows[0].status).toBe('pending');
+        expect(result.rows[0].receipt_url).toBeNull();
+      } finally {
+        client.release();
+      }
+    });
+
     test('404: project not found', async () => {
       const res = await handler(postEvent({ projectID: 999, amount: 1000 }));
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+  });
+
+  describe('Input validation', () => {
+    test('400: invalid status value returns 400', async () => {
+      const res = await handler(postEvent({ projectID: 1, amount: 500, status: 'unknown' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toContain('status must be one of');
+    });
+
+    test('400: empty string receipt_url returns 400', async () => {
+      const res = await handler(postEvent({ projectID: 1, amount: 500, receipt_url: '' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toContain('receipt_url');
     });
   });
 
@@ -224,7 +285,7 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(200);
       const body = JSON.parse(res.body);
       expect(Array.isArray(body.data)).toBe(true);
-      expect(body.data.length).toBe(3);
+      expect(body.data.length).toBe(6);
       expect(body.pagination).toBeUndefined();
     });
 
@@ -233,8 +294,9 @@ describe('Expenditures integration tests', () => {
       const res = await handler(getEvent('/'));
       const body = JSON.parse(res.body);
       const dates = body.data.map((e: any) => new Date(e.spent_on).getTime());
-      expect(dates[0]).toBeGreaterThanOrEqual(dates[1]);
-      expect(dates[1]).toBeGreaterThanOrEqual(dates[2]);
+      for (let i = 0; i < dates.length - 1; i++) {
+        expect(dates[i]).toBeGreaterThanOrEqual(dates[i + 1]);
+      }
     });
 
     test('200: paginated response with page and limit', async () => {
@@ -246,8 +308,8 @@ describe('Expenditures integration tests', () => {
       expect(body.pagination).toBeDefined();
       expect(body.pagination.page).toBe(1);
       expect(body.pagination.limit).toBe(1);
-      expect(body.pagination.totalItems).toBe(3);
-      expect(body.pagination.totalPages).toBe(3);
+      expect(body.pagination.totalItems).toBe(6);
+      expect(body.pagination.totalPages).toBe(6);
     });
 
     test('200: page 2 returns second item', async () => {
@@ -264,8 +326,8 @@ describe('Expenditures integration tests', () => {
       const res = await handler(getEvent('/', { page: '1', limit: '100' }));
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
-      expect(body.data.length).toBe(3);
-      expect(body.pagination.totalItems).toBe(3);
+      expect(body.data.length).toBe(6);
+      expect(body.pagination.totalItems).toBe(6);
       expect(body.pagination.totalPages).toBe(1);
     });
 
@@ -275,7 +337,7 @@ describe('Expenditures integration tests', () => {
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
       expect(body.pagination).toBeUndefined();
-      expect(body.data.length).toBe(3);
+      expect(body.data.length).toBe(6);
     });
 
     test('200: only limit provided returns all without pagination', async () => {
@@ -284,7 +346,7 @@ describe('Expenditures integration tests', () => {
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
       expect(body.pagination).toBeUndefined();
-      expect(body.data.length).toBe(3);
+      expect(body.data.length).toBe(6);
     });
 
     test('200: filter by projectId returns only matching expenditures', async () => {
@@ -300,7 +362,7 @@ describe('Expenditures integration tests', () => {
       const res = await handler(getEvent('/', { projectId: '1', page: '1', limit: '10' }));
       const body = JSON.parse(res.body);
       expect(res.statusCode).toBe(200);
-      expect(body.pagination.totalItems).toBe(1);
+      expect(body.pagination.totalItems).toBe(2);
       expect(body.data.every((e: any) => e.project_id === 1)).toBe(true);
     });
 

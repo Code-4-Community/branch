@@ -12,6 +12,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      return json(200, {});
+    }
+
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
@@ -99,7 +104,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: validationResult.message });
       }
 
-      const { projectID, amount, category, description, spentOn } = validationResult;
+      const { projectID, amount, category, description, status, receiptUrl, spentOn } = validationResult;
 
       // Authorize: must be global admin, or PI/Accountant/Admin on this project
       if (!user.isAdmin) {
@@ -136,6 +141,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             amount,
             category: category ?? null,
             description: description ?? null,
+            status,
+            receipt_url: receiptUrl ?? null,
             spent_on: spentOn ? new Date(spentOn) : new Date(),
           })
           .executeTakeFirst();
@@ -153,6 +160,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           amount,
           category: category ?? null,
           description: description ?? null,
+          status,
+          receiptUrl: receiptUrl ?? null,
           spentOn: spentOn ?? new Date().toISOString().split('T')[0],
         },
       });

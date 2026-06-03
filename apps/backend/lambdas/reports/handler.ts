@@ -7,6 +7,7 @@ import {
   checkProjectAccess,
   fetchReportData,
   generatePdf,
+  generateDocx,
   uploadToS3,
   saveReportRecord,
 } from './report-service';
@@ -20,6 +21,8 @@ const MIME_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
+
+type FileType = typeof ALLOWED_EXTENSIONS[number];
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -52,6 +55,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'project_id must be a positive integer' });
       }
 
+      const fileType = (body.file_type ?? 'pdf') as FileType;
+      if (!ALLOWED_EXTENSIONS.includes(fileType)) {
+        return json(400, { message: `file_type must be one of: ${ALLOWED_EXTENSIONS.join(', ')}` });
+      }
+
       const reportData = await fetchReportData(projectId);
       if (!reportData) {
         return json(404, { message: 'Project not found' });
@@ -62,17 +70,17 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(403, { message: 'You do not have access to generate reports for this project' });
       }
 
-      let pdfBuffer: Buffer;
+      let fileBuffer: Buffer;
       try {
-        pdfBuffer = await generatePdf(reportData);
+        fileBuffer = fileType === 'docx' ? await generateDocx(reportData) : await generatePdf(reportData);
       } catch (err) {
-        console.error('PDF generation error:', err);
-        return json(500, { message: 'Failed to generate report PDF' });
+        console.error('Report generation error:', err);
+        return json(500, { message: 'Failed to generate report' });
       }
 
       let objectUrl: string;
       try {
-        objectUrl = await uploadToS3(pdfBuffer, projectId);
+        objectUrl = await uploadToS3(fileBuffer, projectId, fileType);
       } catch (err) {
         console.error('S3 upload error:', err);
         return json(500, { message: 'Failed to upload report' });

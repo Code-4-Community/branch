@@ -10,9 +10,12 @@ const Header: React.FC<HeaderProps> = ({
   icon 
 }) => {
   return (
-    <header className="flex h-16 w-full items-center justify-between border-b border-gray-200 bg-white px-8">
+    <header
+      className="flex h-16 w-full items-center justify-between border-b border-gray-200 bg-white"
+      style={{ paddingLeft: 40, paddingRight: 40 }}
+    >
       {/* Dynamic Text Section */}
-      <span className="text-sm font-bold text-gray-800">
+      <span className="text-sm font-bold text-gray-800" style={{ marginLeft: 16 }}>
         {text}
       </span>
       

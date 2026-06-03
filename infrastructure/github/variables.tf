@@ -17,21 +17,19 @@ variable "repository_collaborators" {
 variable "review_bot_roster" {
   description = "Ordered list of GitHub usernames for round-robin review assignment"
   type        = list(string)
-  default     = ["denniwang", "bhuvanh66", "Rayna-Yu", "mehanana", "tsudhakar87", "saumyapalk23", "Vaibhav978"]
+  default     = ["Rayna-Yu", "mehanana", "tsudhakar87", "Vaibhav978", "shreeyaadhikari"]
 }
 
 variable "review_bot_github_to_slack" {
   description = "Map of GitHub username → Slack member ID (U0…)"
   type        = map(string)
   default = {
-    "denniwang"     = "U07F8LM2X61"
-    "bhuvanh66"     = "U084JKT1GG2"
-    "Rayna-Yu"      = "U083UGSCU7P"
-    "mehanana"      = "U084AMND8FK"
-    "tsudhakar87"   = "U08NFFSJEG1"
-    "saumyapalk23"  = "U09EYETUEGP"
-    "nourshoreibah" = "U07NGFM1QKE"
-    "Vaibhav978"    = "U0A6HAVCRMJ"
+    "Rayna-Yu"        = "U083UGSCU7P"
+    "mehanana"        = "U084AMND8FK"
+    "tsudhakar87"     = "U08NFFSJEG1"
+    "nourshoreibah"   = "U07NGFM1QKE"
+    "Vaibhav978"      = "U0A6HAVCRMJ"
+    "shreeyaadhikari" = "U0ASA92G3QV"
   }
 }
 
