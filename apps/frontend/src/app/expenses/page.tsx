@@ -1,5 +1,6 @@
 'use client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useQueryParams } from '@/hooks/useQueryParams';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
 import Pagination from '../components/Pagination';
@@ -8,13 +9,13 @@ import {
   HStack,
   Input,
   Button,
-  Table,
 } from '@chakra-ui/react';
 import DropdownSelector from '../components/DropdownSelector';
 import { apiFetch } from '@/lib/api';
 import { CiFilter } from 'react-icons/ci';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
+import ExpensesTable from '../components/ExpensesTable';
 
 type Expenditure = {
   expenditure_id: number;
@@ -48,27 +49,42 @@ export const EXPENSE_CATEGORIES = [
 ];
 
 export default function ExpensePage() {
+  return (
+    <Suspense>
+      <ExpensePageContent />
+    </Suspense>
+  );
+}
+
+function ExpensePageContent() {
   // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Search & Filters
-  const [query, setQuery] = useState('');
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
-  const [sortOption, setSortOption] = useState<string>('');
+  // Search & Filters (synced to URL query params)
+  const [filters, setFilter] = useQueryParams({
+    q: '',
+    months: [] as string[],
+    types: [] as string[],
+    projects: [] as string[],
+    sort: '',
+    page: '',
+  });
+
+  const query = filters.q;
+  const selectedMonths = filters.months;
+  const selectedTypes = filters.types;
+  const selectedProjects = filters.projects;
+  const sortOption = filters.sort;
+  const currentPage = parseInt(filters.page, 10) || 1;
 
   // Dropdown visibility
   const [showMonthFilter, setShowMonthFilter] = useState(false);
   const [showTypeFilter, setShowTypeFilter] = useState(false);
   const [showProjectFilter, setShowProjectFilter] = useState(false);
   const [showSortBy, setShowSortBy] = useState(false);
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
 
   // Modal
   const [showNewExpense, setShowNewExpense] = useState(false);
@@ -146,10 +162,6 @@ export default function ExpensePage() {
     currentPage * ROWS_PER_PAGE,
   );
 
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [query, selectedMonths, selectedTypes, selectedProjects, sortOption]);
 
   // Modal success handler
   async function handleExpenseAdded() {
@@ -182,7 +194,7 @@ export default function ExpensePage() {
                 placeholder="Search ..."
                 variant="outline"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => setFilter({ q: e.target.value, page: '' })}
               />
             </HStack>
             <HStack>
@@ -210,7 +222,7 @@ export default function ExpensePage() {
                       multiSelect={true}
                       hideTrigger={true}
                       value={selectedProjects}
-                      onChange={(val) => setSelectedProjects(Array.isArray(val) ? val : [val])}
+                      onChange={(val) => setFilter({ projects: Array.isArray(val) ? val : [val], page: '' })}
                     />
                   </div>
                 )}
@@ -240,7 +252,7 @@ export default function ExpensePage() {
                       multiSelect={true}
                       hideTrigger={true}
                       value={selectedMonths}
-                      onChange={(val) => setSelectedMonths(Array.isArray(val) ? val : [val])}
+                      onChange={(val) => setFilter({ months: Array.isArray(val) ? val : [val], page: '' })}
                     />
                   </div>
                 )}
@@ -270,7 +282,7 @@ export default function ExpensePage() {
                       multiSelect={true}
                       hideTrigger={true}
                       value={selectedTypes}
-                      onChange={(val) => setSelectedTypes(Array.isArray(val) ? val : [val])}
+                      onChange={(val) => setFilter({ types: Array.isArray(val) ? val : [val], page: '' })}
                     />
                   </div>
                 )}
@@ -300,7 +312,7 @@ export default function ExpensePage() {
                       multiSelect={false}
                       hideTrigger={true}
                       value={sortOption}
-                      onChange={(val) => setSortOption(val as string)}
+                      onChange={(val) => setFilter({ sort: val as string, page: '' })}
                     />
                   </div>
                 )}
@@ -324,54 +336,7 @@ export default function ExpensePage() {
 
           {/* Table */}
           {!loading && !error && (
-            <Table.Root>
-              <Table.ColumnGroup>
-                <Table.Column width="12%" />
-                <Table.Column width="15%" />
-                <Table.Column width="40%" />
-                <Table.Column width="17%" />
-                <Table.Column width="16%" />
-              </Table.ColumnGroup>
-              <Table.Header>
-                <Table.Row backgroundColor="var(--color-primary-800)">
-                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Expense ID</h5></Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Date</h5></Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Description</h5></Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Type of Expense</h5></Table.ColumnHeader>
-                  <Table.ColumnHeader color="var(--color-core-white)"><h5>Amount</h5></Table.ColumnHeader>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {paginatedData.length === 0 ? (
-                  <Table.Row>
-                    <Table.Cell colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
-                      No expenditures found.
-                    </Table.Cell>
-                  </Table.Row>
-                ) : (
-                  paginatedData.map((e) => (
-                    <Table.Row key={e.expenditure_id}>
-                      <Table.Cell>#{String(e.expenditure_id).padStart(6, '0')}</Table.Cell>
-                      <Table.Cell>
-                        {new Date(e.spent_on).toLocaleDateString('en-US', {
-                          month: '2-digit',
-                          day: '2-digit',
-                          year: 'numeric',
-                        })}
-                      </Table.Cell>
-                      <Table.Cell>{e.description ?? '—'}</Table.Cell>
-                      <Table.Cell>{e.category ?? '—'}</Table.Cell>
-                      <Table.Cell>
-                        ${parseFloat(e.amount).toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </Table.Cell>
-                    </Table.Row>
-                  ))
-                )}
-              </Table.Body>
-            </Table.Root>
+            <ExpensesTable expenditures={paginatedData} showDescription={true} />
           )}
 
           {/* Pagination */}
@@ -379,7 +344,7 @@ export default function ExpensePage() {
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
-              onPageChange={setCurrentPage}
+              onPageChange={(p) => setFilter({ page: String(p) })}
             />
           )}
         </div>
