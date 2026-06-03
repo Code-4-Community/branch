@@ -128,8 +128,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
     }
     // GET /projects/{id}/members
-    if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && normalizedPath.endsWith('/members') && method === 'GET') {
-      const id = normalizedPath.split('/')[2];
+    if (normalizedPath.endsWith('/members') && method === 'GET') {
+      const parts = normalizedPath.split('/').filter(Boolean);
+      // handles both /projects/1/members and /1/members
+      const id = parts.length === 3 ? parts[1] : parts[0];
       if (!id) return json(400, { message: 'id is required' });
       const users = await db
         .selectFrom('branch.project_memberships as pm')
