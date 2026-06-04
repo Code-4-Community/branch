@@ -29,7 +29,9 @@ export interface BranchExpenditures {
   entered_by: number | null;
   expenditure_id: Generated<number>;
   project_id: number;
+  receipt_url: string | null;
   spent_on: Generated<Timestamp>;
+  status: Generated<string>;
 }
 
 export interface BranchProjectDonations {

@@ -162,6 +162,27 @@ test("patch user test 🌞", async () => {
   }
 });
 
+test("patch user profile_image test 🌞", async () => {
+  mockAdminAuth();
+
+  const patchEvent = createEvent({
+    method: 'PATCH',
+    path: '/1',
+    body: {
+      name: "Ashley Duggan",
+      email: "ashley@branch.org",
+      isAdmin: true,
+      profileImage: "https://s3.amazonaws.com/branch-avatars/ashley.png"
+    },
+  });
+
+  const res = await handler(patchEvent);
+  expect(res.statusCode).toBe(200);
+
+  const body = JSON.parse(res.body).body;
+  expect(body.profileImage).toBe("https://s3.amazonaws.com/branch-avatars/ashley.png");
+});
+
 
 test("patch user 404 test 🌞", async () => {
   mockAdminAuth();

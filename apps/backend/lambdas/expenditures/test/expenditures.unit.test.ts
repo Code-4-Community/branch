@@ -237,6 +237,34 @@ describe('POST /expenditures unit tests', () => {
       const json = JSON.parse(res.body);
       expect(json.message).toBeDefined();
     });
+
+    test('400: invalid status value', async () => {
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+          status: 'unknown',
+        })
+      );
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toContain('status must be one of');
+    });
+
+    test('400: empty string receipt_url', async () => {
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 1000,
+          receipt_url: '',
+        })
+      );
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toContain('receipt_url');
+    });
   });
 
   describe('Response Format', () => {
@@ -333,6 +361,41 @@ describe('POST /expenditures unit tests', () => {
       expect(json.body).toHaveProperty('projectID');
       expect(json.body).toHaveProperty('amount');
       expect(json.body.enteredBy).toBe(1); // authenticated user's ID
+      expect(json.body.status).toBe('pending'); // default status
+      expect(json.body.receiptUrl).toBeNull();
+    });
+
+    test('201: accepts explicit status and receipt_url', async () => {
+      mockDb.selectFrom.mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          selectAll: jest.fn().mockReturnValue({
+            executeTakeFirst: jest.fn().mockReturnValue({
+              project_id: 1,
+              name: 'Test Project',
+            } as any),
+          }),
+        }),
+      });
+
+      mockDb.insertInto.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(undefined as any),
+        }),
+      });
+
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 800,
+          status: 'approved',
+          receipt_url: 'https://s3.amazonaws.com/branch-receipts/receipt.pdf',
+        })
+      );
+
+      expect(res.statusCode).toBe(201);
+      const json = JSON.parse(res.body);
+      expect(json.body.status).toBe('approved');
+      expect(json.body.receiptUrl).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
     });
 
     test('404: returns 404 when project not found', async () => {
