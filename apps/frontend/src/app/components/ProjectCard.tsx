@@ -25,11 +25,11 @@ type ProjectCardProps = ActiveProps | ArchiveProps;
 export default function ProjectCard(props: ProjectCardProps) {
     return (
         <div className="!border-[1px] border-solid border-black-300 w-full sm:w-[50%] md:w-[35%] lg:w-[25%] rounded-[4px] overflow-hidden">
-            <div className="flex flex-col !gap-3 !p-4">
-                <h4>{props.name}</h4>
-                <div className="flex flex-row min-w-0">
+            <div className="flex flex-col !gap-4 !p-4">
+                <h4 className="!px-2">{props.name}</h4>
+                <div className="flex flex-row !px-2 !gap-4 min-w-0">
                     <div className="flex flex-col !gap-1 !pr-4 !border-r-[2px] border-black-300 min-w-0">
-                        <div className="flex flex-row items-center !gap-1">
+                        <div className="flex flex-row items-center !gap-1 !pr-4">
                             <LuDollarSign />
                             <h5 className="!font-bold">Budget</h5>
                         </div>
@@ -39,7 +39,7 @@ export default function ProjectCard(props: ProjectCardProps) {
                                 : `$${props.total_budget.toLocaleString()}`}
                         </p>
                     </div>
-                    <div className="flex flex-col !gap-1 !pl-4 min-w-0">
+                    <div className="flex flex-col !gap-1 !pl-1 min-w-0">
                         <div className="flex flex-row items-center !gap-1">
                             <RxPeople />
                             <h5 className="!font-bold">Staff</h5>
@@ -58,12 +58,12 @@ export default function ProjectCard(props: ProjectCardProps) {
                         <p>{Math.round((props.budget_used / props.total_budget) * 100)}%</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-[1fr_auto_1fr] w-full items-center !gap-2 !px-2">
+                    <div className="flex flex-row w-full items-center !gap-4 !px-2">
                         <div className="flex flex-col !gap-1">
                             <h5 className="!font-bold">Start Date</h5>
                             <p>{props.start_date}</p>
                         </div>
-                        <FaArrowRight className="justify-self-center" />
+                        <FaArrowRight className="shrink-0" />
                         <div className="flex flex-col !gap-1">
                             <h5 className="!font-bold">End Date</h5>
                             <p>{props.end_date}</p>
