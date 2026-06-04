@@ -105,7 +105,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           userId: user.user_id,
           email: user.email, 
           name: user.name, 
-          isAdmin: user.is_admin 
+          isAdmin: user.is_admin,
+          profile_image: user.profile_image,
         } 
       });
     }
@@ -127,17 +128,18 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       let email = body.email as string;
       let name = body.name as string;
       let isAdmin = body.isAdmin as boolean;
+      let profileImage = body.profileImage as string | undefined;
 
       // update
       await db.updateTable('branch.users')
-               .set({ email, name, is_admin: isAdmin })
+               .set({ email, name, is_admin: isAdmin, profile_image: profileImage })
                .where('user_id', '=', Number(userId))
                .execute();
 
       // get updated user
       let updatedUser = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
 
-      return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin } });
+      return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin, profileImage: updatedUser!.profile_image } });
     }
     
     // DELETE /users/{userId}
@@ -173,6 +175,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!email || !name || typeof isAdmin !== 'boolean') {
         return json(400, { message: 'email, name, and isAdmin are required' });
       }
+      let profile_image = body.profileImage as string;
 
       // Check if user with this email already exists
       const existingUser = await db
@@ -189,7 +192,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       try {
         await db
           .insertInto('branch.users')
-          .values({ email, name, is_admin: isAdmin })
+          .values({ email, name, is_admin: isAdmin, profile_image })
           .execute();
       } catch (err) {
         console.error('Database insert error:', err);

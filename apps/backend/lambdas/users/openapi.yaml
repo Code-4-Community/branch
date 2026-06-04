@@ -49,6 +49,8 @@ paths:
                   type: string
                 isAdmin:
                   type: boolean
+                profileImage:
+                  type: string
       responses:
         '201':
           description: Success
@@ -78,6 +80,8 @@ paths:
                   type: string
                 isAdmin:
                   type: boolean
+                profileImage:
+                  type: string
       responses:
         '200':
           description: OK

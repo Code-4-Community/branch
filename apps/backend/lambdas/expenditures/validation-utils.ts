@@ -1,8 +1,13 @@
+export const EXPENDITURE_STATUSES = ['approved', 'pending', 'denied', 'needs_more_info'] as const;
+export type ExpenditureStatus = typeof EXPENDITURE_STATUSES[number];
+
 export interface ExpenditureInput {
     projectID: number;
     amount: number;
     category?: string;
     description?: string;
+    status: ExpenditureStatus;
+    receiptUrl?: string;
     spentOn?: string;
 }
 
@@ -59,6 +64,30 @@ export class ExpenditureValidationUtils {
         return description;
     }
 
+    static validateStatus(status: unknown): ExpenditureStatus | Error {
+        if (status === undefined || status === null) {
+            return 'pending';
+        }
+
+        if (typeof status !== 'string' || !EXPENDITURE_STATUSES.includes(status as ExpenditureStatus)) {
+            return new Error(`status must be one of: ${EXPENDITURE_STATUSES.join(', ')}`);
+        }
+
+        return status as ExpenditureStatus;
+    }
+
+    static validateReceiptUrl(receiptUrl: unknown): string | undefined | Error {
+        if (receiptUrl === undefined || receiptUrl === null) {
+            return undefined;
+        }
+
+        if (typeof receiptUrl !== 'string' || receiptUrl.trim() === '') {
+            return new Error('receipt_url must be a non-empty string');
+        }
+
+        return receiptUrl;
+    }
+
     static validateSpentOn(spentOn: unknown): string | undefined | Error {
         if (spentOn === undefined || spentOn === null) {
             return undefined;
@@ -94,6 +123,16 @@ export class ExpenditureValidationUtils {
             return description;
         }
 
+        const status = this.validateStatus(body.status);
+        if (status instanceof Error) {
+            return status;
+        }
+
+        const receiptUrl = this.validateReceiptUrl(body.receipt_url);
+        if (receiptUrl instanceof Error) {
+            return receiptUrl;
+        }
+
         const spentOn = this.validateSpentOn(body.spentOn);
         if (spentOn instanceof Error) {
             return spentOn;
@@ -104,6 +143,8 @@ export class ExpenditureValidationUtils {
             amount,
             category,
             description,
+            status,
+            receiptUrl,
             spentOn,
         };
     }
