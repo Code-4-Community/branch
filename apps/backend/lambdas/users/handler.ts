@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db'
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
+import { UserValidationUtils } from './validation-utils';
 
 function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
   const authCheck = checkAuthorization(authContext, level, resourceUserId);
@@ -124,15 +125,31 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       let user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
       if (!user) return json(404, { message: 'User not found' });
 
-      // vars to update
-      let email = body.email as string;
-      let name = body.name as string;
-      let isAdmin = body.isAdmin as boolean;
-      let profileImage = body.profileImage as string | undefined;
+      const updates: { email?: string; name?: string; is_admin?: boolean; profile_image?: string } = {};
+
+      const emailResult = UserValidationUtils.validateEmail(body.email);
+      if (!emailResult.isValid) return json(400, { message: emailResult.error });
+      if (emailResult.value != null) updates.email = emailResult.value;
+
+      const nameResult = UserValidationUtils.validateName(body.name);
+      if (!nameResult.isValid) return json(400, { message: nameResult.error });
+      if (nameResult.value != null) updates.name = nameResult.value;
+
+      const isAdminResult = UserValidationUtils.validateIsAdmin(body.isAdmin);
+      if (!isAdminResult.isValid) return json(400, { message: isAdminResult.error });
+      if (isAdminResult.value != null) updates.is_admin = isAdminResult.value;
+
+      const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
+      if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
+      if (profileImageResult.value != null) updates.profile_image = profileImageResult.value;
+
+      if (Object.keys(updates).length === 0) {
+        return json(400, { message: 'No valid fields provided to update' });
+      }
 
       // update
       await db.updateTable('branch.users')
-               .set({ email, name, is_admin: isAdmin, profile_image: profileImage })
+               .set(updates)
                .where('user_id', '=', Number(userId))
                .execute();
 
@@ -168,14 +185,22 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ? (JSON.parse(event.body) as Record<string, unknown>)
         : {};
 
-      // extract fields to create user
-      let email = body.email as string;
-      let name = body.name as string;
-      let isAdmin = body.isAdmin as boolean;
-      if (!email || !name || typeof isAdmin !== 'boolean') {
+      // email, name, and isAdmin are required on create
+      if (!body.email || !body.name || typeof body.isAdmin !== 'boolean') {
         return json(400, { message: 'email, name, and isAdmin are required' });
       }
-      let profile_image = body.profileImage as string;
+
+      // validate the type/format of each field
+      const emailResult = UserValidationUtils.validateEmail(body.email);
+      if (!emailResult.isValid) return json(400, { message: emailResult.error });
+
+      const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
+      if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
+
+      const email = emailResult.value as string;
+      const name = body.name as string;
+      const isAdmin = body.isAdmin;
+      const profile_image = profileImageResult.value ?? undefined;
 
       // Check if user with this email already exists
       const existingUser = await db
