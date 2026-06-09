@@ -149,14 +149,14 @@ jobs:
                 cp "$SOURCE_FILE" "$dir/db-types.d.ts"
                 
                 if [ $? -eq 0 ]; then
-                  ((SUCCESS_COUNT++))
+                  SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
                 else
                   echo "Failed to copy to $dir"
-                  ((FAIL_COUNT++))
+                  FAIL_COUNT=$((FAIL_COUNT + 1))
                 fi
               else
                 echo "Warning: Directory $dir does not exist"
-                ((FAIL_COUNT++))
+                FAIL_COUNT=$((FAIL_COUNT + 1))
               fi
             done
 
