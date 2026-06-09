@@ -54,7 +54,7 @@ jobs:
             npm ci --legacy-peer-deps
             
             echo "Installing kysely-codegen and typescript globally"
-            npm install -g kysely-codegen typescript
+            npm install -g kysely-codegen typescript pg
 
             echo "Verifying installations"
             which kysely-codegen || { echo "Error: kysely-codegen not found"; exit 1; }
