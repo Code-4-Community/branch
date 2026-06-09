@@ -29,7 +29,9 @@ export interface BranchExpenditures {
   entered_by: number | null;
   expenditure_id: Generated<number>;
   project_id: number;
+  receipt_url: string | null;
   spent_on: Generated<Timestamp>;
+  status: Generated<string>;
 }
 
 export interface BranchProjectDonations {
@@ -52,8 +54,8 @@ export interface BranchProjectMemberships {
 export interface BranchProjects {
   created_at: Generated<Timestamp | null>;
   currency: Generated<string | null>;
-  end_date: Timestamp | null;
   description: string;
+  end_date: Timestamp | null;
   name: string;
   project_id: Generated<number>;
   start_date: Timestamp | null;
@@ -73,6 +75,7 @@ export interface BranchUsers {
   email: string;
   is_admin: Generated<boolean | null>;
   name: string;
+  profile_image: string | null;
   user_id: Generated<number>;
 }
 
