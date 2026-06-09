@@ -217,14 +217,14 @@ jobs:
           if: steps.git-check.outputs.changes == 'true'
           id: pr-author
           run: |
-            # username
             PR_AUTHOR_NAME="${{ github.event.pull_request.user.login }}"
-            PR_AUTHOR_EMAIL="${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+            PR_AUTHOR_EMAIL="${PR_AUTHOR_NAME}@users.noreply.github.com"
 
-            REAL_EMAIL=$(gh api /users/${{ github.event.pull_request.user.login }} --jq '.email' 2>/dev/null || echo "")
-
-            if [ -n "$REAL_EMAIL" ] && [ "$REAL_EMAIL" != "null" ]; then
-              PR_AUTHOR_EMAIL="$REAL_EMAIL"
+            if [ -n "$PR_AUTHOR_NAME" ]; then
+              REAL_EMAIL=$(gh api /users/${PR_AUTHOR_NAME} --jq '.email' 2>/dev/null || echo "")
+              if [ -n "$REAL_EMAIL" ] && [ "$REAL_EMAIL" != "null" ]; then
+                PR_AUTHOR_EMAIL="$REAL_EMAIL"
+              fi
             fi
 
             echo "name=$PR_AUTHOR_NAME" >> $GITHUB_OUTPUT
