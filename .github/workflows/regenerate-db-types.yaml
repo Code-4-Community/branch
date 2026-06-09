@@ -53,14 +53,12 @@ jobs:
             echo "Installing project dependencies"
             npm ci --legacy-peer-deps
             
-            echo "Installing kysely-codegen globally"
-            npm install -g kysely-codegen
-            
-            echo "Verifying kysely-codegen installation"
-            kysely-codegen --version || {
-              echo "Error: kysely-codegen installation failed"
-              exit 1
-            }
+            echo "Installing kysely-codegen and typescript globally"
+            npm install -g kysely-codegen typescript
+
+            echo "Verifying installations"
+            which kysely-codegen || { echo "Error: kysely-codegen not found"; exit 1; }
+            tsc --version || { echo "Error: typescript not found"; exit 1; }
         
         - name: Setup PostgreSQL
           uses: ikalnytskyi/action-setup-postgres@v6
