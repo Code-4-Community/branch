@@ -70,6 +70,32 @@ test("update project with new description test 🌞", async () => {
   expect(body.description).toBe(newDesc);
 });
 
+test("update project ignores protected fields 🌞", async () => {
+  const beforeRes = await fetch("http://localhost:3000/projects/1");
+  expect(beforeRes.status).toBe(200);
+  const before = await beforeRes.json();
+
+  const res = await fetch("http://localhost:3000/projects/1", {
+    method: "PUT",
+    body: JSON.stringify({
+      name: "Project 1 Sanitized",
+      project_id: 9999,
+      created_at: "2000-01-01T00:00:00.000Z",
+    }),
+  });
+
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.project_id).toBe(1);
+  expect(body.name).toBe("Project 1 Sanitized");
+
+  const afterRes = await fetch("http://localhost:3000/projects/1");
+  expect(afterRes.status).toBe(200);
+  const after = await afterRes.json();
+  expect(after.project_id).toBe(1);
+  expect(after.created_at).toBe(before.created_at);
+});
+
 test("project put 404 test 🌞", async () => {
   let res = await fetch("http://localhost:3000/projects/1000", {
     method: "PUT",

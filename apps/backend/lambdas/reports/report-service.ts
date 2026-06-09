@@ -155,19 +155,19 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
       end_date: project.end_date ? new Date(project.end_date as unknown as string) : null,
       currency: project.currency,
     },
-    members: members.map((m) => ({
+    members: members.map((m: { name: string; email: string; role: string; hours: string | null }) => ({
       name: m.name,
       email: m.email,
       role: m.role,
       hours: m.hours,
     })),
-    donations: donations.map((d) => ({
+    donations: donations.map((d: { organization: string; contact_name: string | null; amount: string; donated_at: Date | null }) => ({
       organization: d.organization,
       contact_name: d.contact_name,
       amount: d.amount,
       donated_at: d.donated_at ? new Date(d.donated_at as unknown as string) : null,
     })),
-    expenditures: expenditures.map((e) => ({
+    expenditures: expenditures.map((e: { category: string | null; description: string | null; amount: string; spent_on: Date; entered_by_name: string | null }) => ({
       category: e.category,
       description: e.description,
       amount: e.amount,
