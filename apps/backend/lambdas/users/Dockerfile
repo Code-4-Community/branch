@@ -1,6 +1,5 @@
 FROM node:20-alpine
 
-# Build shared auth package (file:../../../../shared/lambda-auth from /app resolves to /shared/lambda-auth)
 WORKDIR /shared/lambda-auth
 COPY shared/lambda-auth/package.json shared/lambda-auth/tsconfig.json ./
 COPY shared/lambda-auth/src ./src/
