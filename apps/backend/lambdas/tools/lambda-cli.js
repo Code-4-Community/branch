@@ -56,6 +56,7 @@ function templatePackageJson() {
     "start-server-and-test": "^2.1.1"
   },
   "dependencies": {
+    "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
     "dotenv": "^16.4.7",
     "jest":"^30.2.0"
   }
@@ -196,6 +197,20 @@ node tools/lambda-cli.js add-route ${handlerName} POST /${handlerName} --body na
 | \`npm test\` | Run tests |
 | \`npm run package\` | Build and zip for deployment |
 ${customSections}`;
+}
+
+function templateAuthTs() {
+  return `import { authenticateRequest as _authenticateRequest } from '@branch/lambda-auth';
+import db from './db';
+
+export * from '@branch/lambda-auth';
+
+export async function authenticateRequest(
+  event: any,
+): Promise<import('@branch/lambda-auth').AuthContext> {
+  return _authenticateRequest(db, event);
+}
+`;
 }
 
 function templateJestSetup(handlerName) {
@@ -962,6 +977,7 @@ function cmdInitHandler(nameArg) {
   const tsconfigPath = path.join(baseDir, 'tsconfig.json');
   const openapiPath = path.join(baseDir, 'openapi.yaml');
   const handlerPath = path.join(baseDir, 'handler.ts');
+  const authPath = path.join(baseDir, 'auth.ts');
   const swaggerUtilsPath = path.join(baseDir, 'swagger-utils.ts');
   const devServerPath = path.join(baseDir, 'dev-server.ts');
   const readmePath = path.join(baseDir, 'README.md');
@@ -974,6 +990,7 @@ function cmdInitHandler(nameArg) {
   writeFileIfAbsent(swaggerUtilsPath, templateSwaggerUtils());
   writeFileIfAbsent(devServerPath, templateDevServer(nameArg));
   writeFileIfAbsent(handlerPath, templateHandlerTsClean());
+  writeFileIfAbsent(authPath, templateAuthTs());
   writeFileIfAbsent(testPath, templateJestSetup(nameArg));
   writeFileIfAbsent(readmePath, templateReadme(nameArg));
 
