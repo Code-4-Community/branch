@@ -12,6 +12,7 @@ import { authenticateRequest } from '../auth';
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
 const adminAuthResult = {
+  isAuthenticated: true,
   user: {
     cognitoSub: 'admin-sub',
     userId: 1,
@@ -21,6 +22,7 @@ const adminAuthResult = {
 };
 
 const nonAdminAuthResult = {
+  isAuthenticated: true,
   user: {
     cognitoSub: 'staff-sub',
     userId: 3,
@@ -197,7 +199,7 @@ describe('GET /dashboard (e2e)', () => {
   });
 
   test('401: unauthenticated request rejected 🌞', async () => {
-    mockAuthenticateRequest.mockResolvedValue({ user: null as any, error: 'Missing or invalid Authorization header' });
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(401);
   });
