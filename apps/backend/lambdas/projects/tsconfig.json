@@ -9,9 +9,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "sourceMap": true,
-    "types": ["jest"]
+    "sourceMap": true
   },
-  "include": ["*.ts", "test/**/*.ts"],
+  "include": ["*.ts"],
   "exclude": ["node_modules", "dist", "dev-server.ts", "swagger-utils.ts"]
 }
