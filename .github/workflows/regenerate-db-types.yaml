@@ -252,7 +252,7 @@ jobs:
 
             git commit -m "$COMMIT_MESSAGE"
             
-            git push origin HEAD:${{ github.head_ref }}
+            git push origin HEAD:${{ github.head_ref || github.ref_name }}
 
             echo "Changes committed + pushed successfully"
 
