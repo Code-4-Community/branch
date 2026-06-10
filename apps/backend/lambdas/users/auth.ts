@@ -5,7 +5,7 @@ import type {
   AuthContext,
   AccessLevel,
   AuthorizationCheck,
-} from '@branch/dtos';
+} from '@branch/types';
 import db from './db';
 
 export type { AuthenticatedUser, AuthContext, AccessLevel, AuthorizationCheck };

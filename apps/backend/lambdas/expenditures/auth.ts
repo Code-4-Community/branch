@@ -1,5 +1,5 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
-import type { AuthenticatedUser, AuthContext } from '@branch/dtos';
+import type { AuthenticatedUser, AuthContext } from '@branch/types';
 import db from './db';
 
 export type { AuthenticatedUser, AuthContext };

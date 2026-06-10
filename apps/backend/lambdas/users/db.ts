@@ -1,7 +1,7 @@
 
 import { Kysely, PostgresDialect } from 'kysely'
 import { Pool } from 'pg'
-import type { DB } from '@branch/dtos'
+import type { DB } from '@branch/types'
 
 const db = new Kysely<DB>({
   dialect: new PostgresDialect({

@@ -112,10 +112,10 @@ jobs:
         
         - name: Copy generated types to shared DTOs package
           run: |
-            echo "Copying generated types to shared/dtos"
+            echo "Copying generated types to shared/types"
 
             SOURCE_FILE="apps/backend/db/db-types.d.ts"
-            TARGET_FILE="shared/dtos/db-types.d.ts"
+            TARGET_FILE="shared/types/db-types.d.ts"
 
             # verify the source file exists and is not empty
             if [ ! -s "$SOURCE_FILE" ]; then
@@ -162,8 +162,8 @@ jobs:
               echo "Performing basic syntax check on generated types..."
               
               # Ensure the file is valid TypeScript
-              npx tsc --noEmit --skipLibCheck shared/dtos/db-types.d.ts || {
-                echo "Error: shared/dtos/db-types.d.ts contains TypeScript errors"
+              npx tsc --noEmit --skipLibCheck shared/types/db-types.d.ts || {
+                echo "Error: shared/types/db-types.d.ts contains TypeScript errors"
                 exit 1
               }
             else
@@ -179,9 +179,9 @@ jobs:
         - name: Check for changes
           id: git-check
           run: |
-            git add -N shared/dtos/db-types.d.ts
+            git add -N shared/types/db-types.d.ts
             
-            if git diff --exit-code shared/dtos/db-types.d.ts; then
+            if git diff --exit-code shared/types/db-types.d.ts; then
               echo "changes=false" >> $GITHUB_OUTPUT
               echo "No changes detected in generated types"
             else
@@ -189,7 +189,7 @@ jobs:
               echo "Changes detected in generated types"
           
               echo "Changed files:"
-              git diff --name-only shared/dtos/db-types.d.ts
+              git diff --name-only shared/types/db-types.d.ts
             fi
 
         - name: Get PR author information
@@ -219,7 +219,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
 
-            git add shared/dtos/db-types.d.ts
+            git add shared/types/db-types.d.ts
 
             COMMIT_MESSAGE="chore: auto-regenerate database types from schema changes"
 
@@ -244,9 +244,9 @@ jobs:
               
               The database schema has changed and the shared TypeScript definitions were regenerated:
             
-              - \`shared/dtos/db-types.d.ts\`
+              - \`shared/types/db-types.d.ts\`
               
-              All lambdas consume these types through the \`@branch/dtos\` package, so they are now in sync with the schema changes.`;
+              All lambdas consume these types through the \`@branch/types\` package, so they are now in sync with the schema changes.`;
 
               github.rest.issues.createComment({
                 issue_number: context.issue.number,
@@ -284,7 +284,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "The following files were updated and committed:" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "- \`shared/dtos/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
+              echo "- \`shared/types/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
 
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**Next Steps:** The changes have been automatically committed to this PR. Review the updated types and merge when ready." >> $GITHUB_STEP_SUMMARY

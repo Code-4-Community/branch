@@ -1,6 +1,6 @@
-# @branch/dtos
+# @branch/types
 
-Shared DTO type definitions for the Branch lambdas. This replaces the per-lambda copies of `db-types.d.ts` and the duplicated auth interfaces (`AuthenticatedUser`, `AuthContext`, etc.).
+Shared type definitions for the Branch lambdas. This replaces the per-lambda copies of `db-types.d.ts` and the duplicated auth interfaces (`AuthenticatedUser`, `AuthContext`, etc.).
 
 ## What's in here
 
@@ -15,7 +15,7 @@ The package is **types-only** — it contains no runtime code and has no depende
 
 ```json
 "devDependencies": {
-  "@branch/dtos": "file:../../../../shared/dtos"
+  "@branch/types": "file:../../../../shared/types"
 }
 ```
 
@@ -24,8 +24,8 @@ Because the package only ships `.d.ts` files, all imports are erased at compile 
 ## Usage
 
 ```ts
-import type { DB } from '@branch/dtos';
-import type { AuthContext, AuthenticatedUser } from '@branch/dtos';
+import type { DB } from '@branch/types';
+import type { AuthContext, AuthenticatedUser } from '@branch/types';
 ```
 
 Note: `db-types.d.ts` defines a local `ColumnType` that is structurally identical to kysely's, so the package itself does not depend on kysely.
