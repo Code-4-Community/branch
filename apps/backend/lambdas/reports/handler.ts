@@ -54,7 +54,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Project not found' });
       }
 
-      const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
+      const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin ?? false);
       if (!hasAccess) {
         return json(403, { message: 'You do not have access to generate reports for this project' });
       }

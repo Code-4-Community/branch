@@ -48,6 +48,7 @@ function templatePackageJson() {
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {
+    "@branch/dtos": "file:../../../../shared/dtos",
     "@types/aws-lambda": "^8.10.131",
     "@types/node": "^20.11.30",
     "ts-node": "^10.9.2",

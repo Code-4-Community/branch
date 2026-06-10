@@ -1,6 +1,14 @@
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import type {
+  AuthenticatedUser,
+  AuthContext,
+  AccessLevel,
+  AuthorizationCheck,
+} from '@branch/dtos';
 import db from './db';
+
+export type { AuthenticatedUser, AuthContext, AccessLevel, AuthorizationCheck };
 
 // Load from environment variables
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
@@ -22,19 +30,6 @@ function getVerifier() {
     });
   }
   return verifier;
-}
-
-export interface AuthenticatedUser {
-  cognitoSub: string;
-  userId?: number;
-  email?: string;
-  isAdmin: boolean;
-  cognitoGroups?: string[];
-}
-
-export interface AuthContext {
-  user?: AuthenticatedUser;
-  isAuthenticated: boolean;
 }
 
 /**
@@ -99,16 +94,6 @@ export async function authenticateRequest(event: any): Promise<AuthContext> {
     console.error('Token verification failed:', error);
     return { isAuthenticated: false };
   }
-}
-
-/**
- * Authorization helpers for different access levels
- */
-export type AccessLevel = 'PUBLIC' | 'AUTHENTICATED' | 'ADMIN' | 'SELF' | 'ADMIN_OR_SELF';
-
-export interface AuthorizationCheck {
-  allowed: boolean;
-  reason?: string;
 }
 
 /**

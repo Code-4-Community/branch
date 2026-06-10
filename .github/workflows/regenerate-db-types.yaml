@@ -110,65 +110,46 @@ jobs:
 
             echo "Type generation successful"
         
-        - name: Copy generated types to lambda functions
+        - name: Copy generated types to shared DTOs package
           run: |
-            echo "Copying generated types to lambda functions"
+            echo "Copying generated types to shared/dtos"
 
             SOURCE_FILE="apps/backend/db/db-types.d.ts"
+            TARGET_FILE="shared/dtos/db-types.d.ts"
 
-            # verify the source file exists
-            if [ ! -f "$SOURCE_FILE" ]; then
-              echo "Error: Generated types file not found at $SOURCE_FILE"
-              exit 1
-            fi
-
+            # verify the source file exists and is not empty
             if [ ! -s "$SOURCE_FILE" ]; then
-              echo "Error: Generated types file is empty"
+              echo "Error: Generated types file not found or empty at $SOURCE_FILE"
               exit 1
             fi
 
-            # Define target lambda directories
-            LAMBDA_DIRS=()
-            for dir in apps/backend/lambdas/*; do
-              if [ -d "$dir" ]; then
-                LAMBDA_DIRS+=("$dir")
-                echo "  Found: $dir"
-              fi
-            done
+            # Replace the kysely import with a local, structurally identical
+            # ColumnType so the shared package stays dependency-free and the
+            # lambdas stay fully self contained.
+            node -e '
+              const fs = require("fs");
+              const [src, target] = process.argv.slice(1);
+              const kyselyImport = `import type { ColumnType } from "kysely";`;
+              const localColumnType = [
+                "/**",
+                " * Structurally identical to kysely'"'"'s ColumnType, defined locally so this",
+                " * package has no dependencies and lambdas stay fully self contained.",
+                " */",
+                "type ColumnType<SelectType, InsertType = SelectType, UpdateType = SelectType> = {",
+                "  readonly __select__: SelectType;",
+                "  readonly __insert__: InsertType;",
+                "  readonly __update__: UpdateType;",
+                "};",
+              ].join("\n");
+              const contents = fs.readFileSync(src, "utf8");
+              if (!contents.includes(kyselyImport)) {
+                console.error("Error: expected kysely ColumnType import not found in " + src);
+                process.exit(1);
+              }
+              fs.writeFileSync(target, contents.replace(kyselyImport, localColumnType));
+            ' "$SOURCE_FILE" "$TARGET_FILE"
 
-            if [ ${#LAMBDA_DIRS[@]} -eq 0 ]; then
-              echo "Error: No lambda directories found in apps/backend/lambdas/"
-              exit 1
-            fi
-
-            # Track success and failures
-            SUCCESS_COUNT=0
-            FAIL_COUNT=0
-
-            for dir in "${LAMBDA_DIRS[@]}"; do 
-              if [ -d "$dir" ]; then
-                echo "Copying to $dir/db-types.d.ts"
-                cp "$SOURCE_FILE" "$dir/db-types.d.ts"
-                
-                if [ $? -eq 0 ]; then
-                  ((SUCCESS_COUNT++))
-                else
-                  echo "Failed to copy to $dir"
-                  ((FAIL_COUNT++))
-                fi
-              else
-                echo "Warning: Directory $dir does not exist"
-                ((FAIL_COUNT++))
-              fi
-            done
-
-            echo ""
-            echo "Copy summary: $SUCCESS_COUNT succeeded, $FAIL_COUNT failed"
-            
-            if [ $SUCCESS_COUNT -eq 0 ]; then
-              echo "Error: Failed to copy types to any lambda function"
-              exit 1
-            fi
+            echo "Wrote $TARGET_FILE"
 
         - name: Verify TypeScript compilation
           run: |
@@ -181,14 +162,10 @@ jobs:
               echo "Performing basic syntax check on generated types..."
               
               # Ensure the file is valid TypeScript
-              for file in apps/backend/lambdas/*/db-types.d.ts; do
-                if [ -f "$file" ]; then
-                  npx tsc --noEmit --skipLibCheck "$file" || {
-                    echo "Error: $file contains TypeScript errors"
-                    exit 1
-                  }
-                fi
-              done
+              npx tsc --noEmit --skipLibCheck shared/dtos/db-types.d.ts || {
+                echo "Error: shared/dtos/db-types.d.ts contains TypeScript errors"
+                exit 1
+              }
             else
               npx tsc --noEmit --skipLibCheck || {
                 echo "Error: TypeScript compilation failed"
@@ -202,9 +179,9 @@ jobs:
         - name: Check for changes
           id: git-check
           run: |
-            git add -N apps/backend/lambdas/*/db-types.d.ts
+            git add -N shared/dtos/db-types.d.ts
             
-            if git diff --exit-code apps/backend/lambdas/*/db-types.d.ts; then
+            if git diff --exit-code shared/dtos/db-types.d.ts; then
               echo "changes=false" >> $GITHUB_OUTPUT
               echo "No changes detected in generated types"
             else
@@ -212,7 +189,7 @@ jobs:
               echo "Changes detected in generated types"
           
               echo "Changed files:"
-              git diff --name-only apps/backend/lambdas/*/db-types.d.ts
+              git diff --name-only shared/dtos/db-types.d.ts
             fi
 
         - name: Get PR author information
@@ -242,7 +219,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
 
-            git add apps/backend/lambdas/*/db-types.d.ts
+            git add shared/dtos/db-types.d.ts
 
             COMMIT_MESSAGE="chore: auto-regenerate database types from schema changes"
 
@@ -263,22 +240,13 @@ jobs:
           uses: actions/github-script@v7
           with:
             script: |
-              const { execSync } = require('child_process');
-              const files = execSync('git diff --name-only apps/backend/lambdas/*/db-types.d.ts')
-                .toString()
-                .trim()
-                .split('\n')
-                .filter(f => f)
-                .map(f => `- \`${f}\``)
-                .join('\n');
-
               const comment = `**Database Types Auto-Regenerated**
               
-              The database schema has changed and the Typescript definitions for these lambda functions were regenerated:
+              The database schema has changed and the shared TypeScript definitions were regenerated:
             
-              ${files}
+              - \`shared/dtos/db-types.d.ts\`
               
-              The updated types are now in sync with schema changes.`;
+              All lambdas consume these types through the \`@branch/dtos\` package, so they are now in sync with the schema changes.`;
 
               github.rest.issues.createComment({
                 issue_number: context.issue.number,
@@ -316,12 +284,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "The following files were updated and committed:" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              
-              for file in apps/backend/lambdas/*/db-types.d.ts; do
-                if [ -f "$file" ]; then
-                  echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
-                fi
-              done
+              echo "- \`shared/dtos/db-types.d.ts\`" >> $GITHUB_STEP_SUMMARY
 
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "**Next Steps:** The changes have been automatically committed to this PR. Review the updated types and merge when ready." >> $GITHUB_STEP_SUMMARY

@@ -26,7 +26,7 @@ node tools/lambda-cli.js init-handler users
 
 This creates a new handler directory with:
 - `handler.ts` - Main Lambda function
-- `package.json` - Dependencies and scripts
+- `package.json` - Dependencies and scripts (includes the shared `@branch/dtos` types package from `shared/dtos`)
 - `tsconfig.json` - TypeScript configuration
 - `openapi.yaml` - Swagger/OpenAPI specification
 - `swagger-utils.ts` - Swagger utilities (dev only)
