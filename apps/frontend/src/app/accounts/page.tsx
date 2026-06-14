@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import StaffCard from './StaffCard';
+import StaffCard from '../components/StaffCard';
 
 interface User {
     user_id: number;
@@ -41,13 +41,13 @@ export default function AccountsPage() {
             <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">Core BRANCH Facilitation Team</h3>
             <div className="grid grid-cols-3 md:grid-cols-7 gap-3 !pt-3 !pb-7">
                 {facilitationTeam.map(user => (
-                    <StaffCard key={user.user_id} name={user.name} />
+                    <StaffCard key={user.user_id} name={user.name} email={user.email} />
                 ))}
             </div>
             <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">BRANCH Team Members</h3>
             <div className="grid grid-cols-3 md:grid-cols-7 gap-3 !pt-3 !pb-7">
                 {teamMembers.map(user => (
-                    <StaffCard key={user.user_id} name={user.name} />
+                    <StaffCard key={user.user_id} name={user.name} email={user.email} />
                 ))}
             </div>
         </div>
