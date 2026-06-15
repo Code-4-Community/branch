@@ -186,7 +186,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         : {};
 
       // email, name, and isAdmin are required on create
-      if (!body.email || !body.name || typeof body.isAdmin !== 'boolean') {
+      if (!body.email || !body.name || body.isAdmin === undefined || body.isAdmin === null) {
         return json(400, { message: 'email, name, and isAdmin are required' });
       }
 
@@ -194,12 +194,18 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const emailResult = UserValidationUtils.validateEmail(body.email);
       if (!emailResult.isValid) return json(400, { message: emailResult.error });
 
+      const nameResult = UserValidationUtils.validateName(body.name);
+      if (!nameResult.isValid) return json(400, { message: nameResult.error });
+
+      const isAdminResult = UserValidationUtils.validateIsAdmin(body.isAdmin);
+      if (!isAdminResult.isValid) return json(400, { message: isAdminResult.error });
+
       const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
       if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
 
       const email = emailResult.value as string;
-      const name = body.name as string;
-      const isAdmin = body.isAdmin;
+      const name = nameResult.value as string;
+      const isAdmin = isAdminResult.value as boolean;
       const profile_image = profileImageResult.value ?? undefined;
 
       // Check if user with this email already exists

@@ -271,7 +271,7 @@ describe('POST /users unit tests', () => {
       expect(res.statusCode).toBe(400);
       const json = JSON.parse(res.body);
       expect(json.message).toBeDefined();
-      expect(json.message).toContain('required');
+      expect(json.message).toContain('isAdmin');
     });
 
     test('400: empty email field', async () => {
@@ -300,6 +300,21 @@ describe('POST /users unit tests', () => {
       expect(res.statusCode).toBe(400);
       const json = JSON.parse(res.body);
       expect(json.message).toContain('required');
+    });
+
+    test('400: name is not a string', async () => {
+      const res = await handler(
+        postEvent({
+          name: 42,
+          email: 'john@example.com',
+          isAdmin: false,
+        })
+      );
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('name');
     });
   });
 
