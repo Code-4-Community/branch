@@ -10,6 +10,7 @@
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {
+    "@branch/types": "file:../../../../shared/types",
     "@types/aws-lambda": "^8.10.131",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.11.30",
