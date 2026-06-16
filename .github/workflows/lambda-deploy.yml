@@ -65,6 +65,8 @@ jobs:
         with:
           node-version: '20'
       
+      - name: Build shared lambda-auth package
+        run: npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
