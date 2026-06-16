@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'apps/backend/lambdas/**'
+      - 'shared/types/**'
 
 jobs:
   detect-changes:

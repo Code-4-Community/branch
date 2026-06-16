@@ -1,5 +1,8 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import type { AuthenticatedUser, AuthContext } from '@branch/types';
 import db from './db';
+
+export type { AuthenticatedUser, AuthContext };
 
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
 const COGNITO_CLIENT_ID = process.env.COGNITO_APP_CLIENT_ID!;
@@ -19,19 +22,6 @@ function getVerifier() {
     });
   }
   return verifier;
-}
-
-export interface AuthenticatedUser {
-  cognitoSub: string;
-  userId?: number;
-  email: string;
-  isAdmin?: boolean;
-  cognitoGroups?: string[];
-}
-
-export interface AuthContext {
-  user?: AuthenticatedUser;
-  isAuthenticated: boolean;
 }
 
 /**
