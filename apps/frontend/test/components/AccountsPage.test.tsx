@@ -1,5 +1,5 @@
 import { render, screen } from '../utils';
-import AccountsPage, { facilitationTeam, teamMembers } from '@/app/components/AccountsPage';
+import AccountsPage, { facilitationTeam, teamMembers } from '@/app/accounts/page';
 
 describe('AccountsPage', () => {
     it('renders the headings', () => {

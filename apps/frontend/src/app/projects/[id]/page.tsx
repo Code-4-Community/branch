@@ -176,7 +176,7 @@ export default function ProjectPage() {
             ) : (
               <div className="!grid !grid-cols-2 !gap-3">
                 {members.slice(0, PREVIEW_STAFF).map((member) => (
-                  <StaffCard key={member.user_id} name={member.name} />
+                  <StaffCard key={member.user_id} name={member.name} email={member.email} />
                 ))}
               </div>
             )}

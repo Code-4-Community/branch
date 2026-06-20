@@ -23,14 +23,15 @@ mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resource
   }
   
   if (requiredAccess === 'ADMIN') {
+    const isAdmin = authContext.user.isAdmin ?? false;
     return { 
-      allowed: authContext.user.isAdmin, 
-      reason: authContext.user.isAdmin ? undefined : 'Admin access required' 
+      allowed: isAdmin, 
+      reason: isAdmin ? undefined : 'Admin access required' 
     };
   }
   
   if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = authContext.user.isAdmin || authContext.user.userId === Number(resourceUserId);
+    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
     return { 
       allowed, 
       reason: allowed ? undefined : 'Admin access or resource ownership required' 

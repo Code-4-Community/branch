@@ -49,6 +49,8 @@ jobs:
           node-version: '20'
       - name: Setup database schema
         run: psql postgres://branch_dev:password@localhost:5432/branch_db -f apps/backend/db/db_setup.sql
+      - name: Build shared lambda-auth package
+        run: npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
