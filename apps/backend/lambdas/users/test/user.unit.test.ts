@@ -55,6 +55,45 @@ function postEvent(body: Record<string, unknown>) {
   };
 }
 
+// Helper to create a PATCH event for /{userId}
+function patchEvent(userId: string | number, body: unknown) {
+  return {
+    rawPath: `/${userId}`,
+    requestContext: {
+      http: {
+        method: 'PATCH',
+      },
+    },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  };
+}
+
+function mockExistingUserForPatch(updated?: Record<string, unknown>) {
+  const existing = {
+    user_id: 1,
+    name: 'Existing User',
+    email: 'existing@example.com',
+    is_admin: false,
+    profile_image: null,
+  };
+
+  mockDb.selectFrom.mockReturnValue({
+    where: jest.fn().mockReturnValue({
+      selectAll: jest.fn().mockReturnValue({
+        executeTakeFirst: (jest.fn() as any).mockResolvedValue(updated ?? existing),
+      }),
+    }),
+  });
+
+  mockDb.updateTable.mockReturnValue({
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        execute: (jest.fn() as any).mockResolvedValue(undefined),
+      }),
+    }),
+  });
+}
+
 function mockAdminAuth() {
   mockAuthenticateRequest.mockResolvedValue({
     isAuthenticated: true,
@@ -233,7 +272,7 @@ describe('POST /users unit tests', () => {
       expect(res.statusCode).toBe(400);
       const json = JSON.parse(res.body);
       expect(json.message).toBeDefined();
-      expect(json.message).toContain('required');
+      expect(json.message).toContain('isAdmin');
     });
 
     test('400: empty email field', async () => {
@@ -262,6 +301,21 @@ describe('POST /users unit tests', () => {
       expect(res.statusCode).toBe(400);
       const json = JSON.parse(res.body);
       expect(json.message).toContain('required');
+    });
+
+    test('400: name is not a string', async () => {
+      const res = await handler(
+        postEvent({
+          name: 42,
+          email: 'john@example.com',
+          isAdmin: false,
+        })
+      );
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('name');
     });
   });
 
@@ -308,7 +362,7 @@ describe('POST /users unit tests', () => {
       expect(json).toHaveProperty('body');
     });
 
-    test('409: returns 409 when user already exists', async () => {
+    test('409: POST returns 409 when user already exists', async () => {
       // Mock: user already exists
       const whereChain = {
         selectAll: jest.fn().mockReturnValue({
@@ -336,6 +390,150 @@ describe('POST /users unit tests', () => {
       expect(res.statusCode).toBe(409);
       const json = JSON.parse(res.body);
       expect(json).toHaveProperty('message');
+    });
+  });
+});
+
+describe('PATCH /users/{userId} unit tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAdminAuth();
+  });
+
+  describe('Input Validation', () => {
+    test('400: invalid email format', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, { email: 'not-an-email' }));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('email');
+    });
+
+    test('400: email is not a string', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, { email: 123 }));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('email');
+    });
+
+    test('400: name is not a string', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, { name: 42 }));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('name');
+    });
+
+    test('400: empty name field', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, { name: '   ' }));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('name');
+    });
+
+    test('400: isAdmin is not a boolean', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, { isAdmin: 'yes' }));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('isAdmin');
+    });
+
+    test('400: profileImage is not a string', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, { profileImage: 5 }));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('profileImage');
+    });
+
+    test('400: no valid fields provided', async () => {
+      mockExistingUserForPatch();
+
+      const res = await handler(patchEvent(1, {}));
+
+      expect(res.statusCode).toBe(400);
+      const json = JSON.parse(res.body);
+      expect(json.message).toBeDefined();
+      expect(json.message).toContain('No valid fields');
+    });
+
+  });
+
+  describe('Success Cases', () => {
+    test('404: returns 404 when user does not exist', async () => {
+      mockDb.selectFrom.mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          selectAll: jest.fn().mockReturnValue({
+            executeTakeFirst: (jest.fn() as any).mockResolvedValue(null),
+          }),
+        }),
+      });
+
+      const res = await handler(patchEvent(999, { name: 'Whoever' }));
+
+      expect(res.statusCode).toBe(404);
+      const json = JSON.parse(res.body);
+      expect(json).toHaveProperty('message');
+    });
+
+    test('200: valid partial update returns updated fields', async () => {
+      mockExistingUserForPatch({
+        user_id: 1,
+        name: 'Existing User',
+        email: 'new@example.com',
+        is_admin: true,
+        profile_image: null,
+      });
+
+      const res = await handler(patchEvent(1, { email: 'new@example.com', isAdmin: true }));
+
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json).toHaveProperty('ok');
+      expect(json).toHaveProperty('route');
+      expect(json).toHaveProperty('body');
+      expect(json.body.email).toBe('new@example.com');
+      expect(json.body.isAdmin).toBe(true);
+    });
+
+    test('200: only the provided field is written to the database', async () => {
+      mockExistingUserForPatch({
+        user_id: 1,
+        name: 'New Name',
+        email: 'existing@example.com',
+        is_admin: false,
+        profile_image: null,
+      });
+
+      const res = await handler(patchEvent(1, { name: 'New Name' }));
+
+      expect(res.statusCode).toBe(200);
+      // Only the provided field should be passed to .set(). toStrictEqual (unlike
+      // toEqual) does NOT ignore undefined keys, so this fails if the handler ever
+      // regresses to setting every column and leaving omitted ones undefined.
+      const setCall = (mockDb.updateTable.mock.results[0].value.set as jest.Mock).mock.calls[0][0];
+      expect(setCall).toStrictEqual({ name: 'New Name' });
     });
   });
 });
