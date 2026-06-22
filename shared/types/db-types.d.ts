@@ -3,7 +3,15 @@
  * Please do not edit it manually.
  */
 
-import type { ColumnType } from "kysely";
+/**
+ * Structurally identical to kysely's ColumnType, defined locally so this
+ * package has no dependencies and lambdas stay fully self contained.
+ */
+type ColumnType<SelectType, InsertType = SelectType, UpdateType = SelectType> = {
+  readonly __select__: SelectType;
+  readonly __insert__: InsertType;
+  readonly __update__: UpdateType;
+};
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>

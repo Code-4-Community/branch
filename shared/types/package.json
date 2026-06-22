@@ -1,0 +1,10 @@
+{
+  "name": "@branch/types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared type definitions (DB row types and DTOs) for Branch lambdas",
+  "types": "index.d.ts",
+  "files": [
+    "*.d.ts"
+  ]
+}

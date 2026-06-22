@@ -26,11 +26,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // CLI-generated routes will be inserted here
     // GET /dashboard
     if ((normalizedPath === '/dashboard' || normalizedPath.endsWith('/dashboard')) && method === 'GET') {
-      const authHeader = event.headers?.Authorization || event.headers?.authorization;
-      const { user, error } = await authenticateRequest(authHeader);
-      if (!user) {
-        return json(401, { message: error || 'Authentication required' });
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
       }
+      const { user } = authContext;
       if (!user.isAdmin) {
         return json(403, { message: 'Admin access required' });
       }

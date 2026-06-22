@@ -14,9 +14,12 @@ const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof 
 mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
   if (requiredAccess === 'PUBLIC') return { allowed: true };
   if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
-  if (requiredAccess === 'ADMIN') return { allowed: authContext.user.isAdmin, reason: authContext.user.isAdmin ? undefined : 'Admin access required' };
+  if (requiredAccess === 'ADMIN') {
+    const isAdmin = authContext.user.isAdmin ?? false;
+    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
+  }
   if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = authContext.user.isAdmin || authContext.user.userId === Number(resourceUserId);
+    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
     return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
   }
   return { allowed: false, reason: 'Unknown access level' };

@@ -20,6 +20,7 @@ function getEvent() {
 }
 
 const adminAuthResult = {
+  isAuthenticated: true,
   user: {
     cognitoSub: 'admin-sub',
     userId: 1,
@@ -29,6 +30,7 @@ const adminAuthResult = {
 };
 
 const nonAdminAuthResult = {
+  isAuthenticated: true,
   user: {
     cognitoSub: 'staff-sub',
     userId: 3,
@@ -62,10 +64,10 @@ describe('GET /dashboard unit tests', () => {
 
   describe('Authentication', () => {
     test('401: unauthenticated request is rejected', async () => {
-      mockAuthenticateRequest.mockResolvedValue({ user: null as any, error: 'Missing or invalid Authorization header' });
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
       const res = await handler(getEvent());
       expect(res.statusCode).toBe(401);
-      expect(JSON.parse(res.body).message).toContain('Authorization');
+      expect(JSON.parse(res.body).message).toBe('Authentication required');
     });
 
     test('403: authenticated non-admin is forbidden', async () => {
