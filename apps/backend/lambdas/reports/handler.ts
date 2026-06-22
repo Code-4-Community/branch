@@ -38,7 +38,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // CLI-generated routes will be inserted here
 
     // POST /reports/generate
-    if (normalizedPath === '/reports/generate' && method === 'POST') {
+    if ((normalizedPath === '/reports/generate' || normalizedPath === '/generate') && method === 'POST') {
       const authContext = await authenticateRequest(event);
       if (!authContext.isAuthenticated || !authContext.user) {
         return json(401, { message: 'Authentication required' });
@@ -158,7 +158,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
     
     // GET /reports/upload-url
-    if (normalizedPath === '/reports/upload-url' && method === 'GET') {
+    if ((normalizedPath === '/reports/upload-url' || normalizedPath === '/upload-url') && method === 'GET') {
       const authContext = await authenticateRequest(event);
       if (!authContext.isAuthenticated || !authContext.user) {
         return json(401, { message: 'Authentication required' });

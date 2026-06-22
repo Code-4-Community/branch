@@ -181,7 +181,7 @@ paths:
                   type: string
                   enum: [pdf, docx]
                   default: pdf
-                  description: Output format: "pdf" (default) or "docx"
+                  description: 'Output format: pdf (default) or docx'
                   example: docx
       responses:
         '201':
