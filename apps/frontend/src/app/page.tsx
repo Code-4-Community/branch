@@ -1,4 +1,5 @@
 "use client";
+import ProjectCard from "./components/ProjectCard";
 import NavBar from "./components/Navbar";
 
 export default function Home() {

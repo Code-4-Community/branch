@@ -23,7 +23,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     const authContext = await authenticateRequest(event);
     if (!authContext.isAuthenticated) {
-      return json(401, { message: 'Unauthorized' });
+      return json(401, { message: 'Authentication required' });
     }
 
     // >>> ROUTES-START (do not remove this marker)

@@ -26,8 +26,8 @@ services:
   # Users Service
   users:
     build:
-      context: ./lambdas/users
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/lambdas/users/Dockerfile
     container_name: branch-users
     restart: unless-stopped
     environment:
@@ -36,6 +36,8 @@ services:
       DB_USER: ${DB_USER:-branch_dev}
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_NAME: ${DB_NAME:-branch_db}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
     ports:
       - '3001:3000'
     depends_on:
@@ -45,8 +47,8 @@ services:
   # Projects Service
   projects:
     build:
-      context: ./lambdas/projects
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/lambdas/projects/Dockerfile
     container_name: branch-projects
     restart: unless-stopped
     environment:
@@ -55,6 +57,8 @@ services:
       DB_USER: ${DB_USER:-branch_dev}
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_NAME: ${DB_NAME:-branch_db}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
     ports:
       - '3002:3000'
     depends_on:
@@ -64,8 +68,8 @@ services:
   # Donors Service
   donors:
     build:
-      context: ./lambdas/donors
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/lambdas/donors/Dockerfile
     container_name: branch-donors
     restart: unless-stopped
     environment:
@@ -85,8 +89,8 @@ services:
   # Expenditures Service
   expenditures:
     build:
-      context: ./lambdas/expenditures
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/lambdas/expenditures/Dockerfile
     container_name: branch-expenditures
     restart: unless-stopped
     environment:
@@ -106,8 +110,8 @@ services:
   # Reports Service
   reports:
     build:
-      context: ./lambdas/reports
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/lambdas/reports/Dockerfile
     container_name: branch-reports
     restart: unless-stopped
     environment:
