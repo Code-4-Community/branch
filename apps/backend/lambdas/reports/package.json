@@ -11,6 +11,7 @@
     "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
   },
   "devDependencies": {
+    "@branch/types": "file:../../../../shared/types",
     "@jest/globals": "^30.2.0",
     "@types/aws-lambda": "^8.10.131",
     "@types/jest": "^30.0.0",
@@ -24,12 +25,14 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
     "@aws-sdk/client-s3": "^3.995.0",
     "aws-jwt-verify": "^5.1.1",
     "aws-lambda": "^1.0.7",
     "dotenv": "^16.4.7",
     "jest": "^30.2.0",
     "kysely": "^0.28.11",
+    "docx": "^9.5.0",
     "pdfmake": "^0.3.4",
     "pg": "^8.18.0"
   }

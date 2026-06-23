@@ -210,10 +210,71 @@ describe('Expenditures integration tests', () => {
       expect(body.body.category).toBeNull();
     });
 
+    test('201: creates expenditure with status and receipt_url', async () => {
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 300,
+          status: 'approved',
+          receipt_url: 'https://s3.amazonaws.com/branch-receipts/receipt.pdf',
+        })
+      );
+
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.body.status).toBe('approved');
+      expect(body.body.receiptUrl).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "SELECT * FROM branch.expenditures WHERE amount = 300 AND project_id = 1"
+        );
+        expect(result.rows.length).toBe(1);
+        expect(result.rows[0].status).toBe('approved');
+        expect(result.rows[0].receipt_url).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+      } finally {
+        client.release();
+      }
+    });
+
+    test('201: status defaults to pending when omitted', async () => {
+      const res = await handler(postEvent({ projectID: 1, amount: 100 }));
+
+      expect(res.statusCode).toBe(201);
+      expect(JSON.parse(res.body).body.status).toBe('pending');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "SELECT * FROM branch.expenditures WHERE amount = 100 AND project_id = 1"
+        );
+        expect(result.rows.length).toBe(1);
+        expect(result.rows[0].status).toBe('pending');
+        expect(result.rows[0].receipt_url).toBeNull();
+      } finally {
+        client.release();
+      }
+    });
+
     test('404: project not found', async () => {
       const res = await handler(postEvent({ projectID: 999, amount: 1000 }));
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+  });
+
+  describe('Input validation', () => {
+    test('400: invalid status value returns 400', async () => {
+      const res = await handler(postEvent({ projectID: 1, amount: 500, status: 'unknown' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toContain('status must be one of');
+    });
+
+    test('400: empty string receipt_url returns 400', async () => {
+      const res = await handler(postEvent({ projectID: 1, amount: 500, receipt_url: '' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toContain('receipt_url');
     });
   });
 

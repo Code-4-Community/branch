@@ -8,7 +8,8 @@ CREATE TABLE users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(150) UNIQUE NOT NULL,
     is_admin BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    profile_image TEXT
 );
 
 CREATE TABLE projects (
@@ -56,6 +57,8 @@ CREATE TABLE expenditures (
     amount NUMERIC(12,2) NOT NULL CHECK (amount >= 0),
     category VARCHAR(50),
     description TEXT,
+    status VARCHAR(15) NOT NULL DEFAULT 'pending' CHECK (status IN ('approved', 'pending', 'denied', 'needs_more_info')),
+    receipt_url TEXT,
     spent_on DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

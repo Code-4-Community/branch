@@ -3,7 +3,15 @@
  * Please do not edit it manually.
  */
 
-import type { ColumnType } from "kysely";
+/**
+ * Structurally identical to kysely's ColumnType, defined locally so this
+ * package has no dependencies and lambdas stay fully self contained.
+ */
+type ColumnType<SelectType, InsertType = SelectType, UpdateType = SelectType> = {
+  readonly __select__: SelectType;
+  readonly __insert__: InsertType;
+  readonly __update__: UpdateType;
+};
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
@@ -29,7 +37,9 @@ export interface BranchExpenditures {
   entered_by: number | null;
   expenditure_id: Generated<number>;
   project_id: number;
+  receipt_url: string | null;
   spent_on: Generated<Timestamp>;
+  status: Generated<string>;
 }
 
 export interface BranchProjectDonations {
@@ -60,12 +70,21 @@ export interface BranchProjects {
   total_budget: Numeric | null;
 }
 
+export interface BranchReports {
+  date_created: Generated<Timestamp>;
+  object_url: string;
+  project_id: number;
+  report_id: Generated<number>;
+  report_type: string;
+}
+
 export interface BranchUsers {
   cognito_sub: string | null;
   created_at: Generated<Timestamp | null>;
   email: string;
   is_admin: Generated<boolean | null>;
   name: string;
+  profile_image: string | null;
   user_id: Generated<number>;
 }
 
@@ -75,5 +94,6 @@ export interface DB {
   "branch.project_donations": BranchProjectDonations;
   "branch.project_memberships": BranchProjectMemberships;
   "branch.projects": BranchProjects;
+  "branch.reports": BranchReports;
   "branch.users": BranchUsers;
 }

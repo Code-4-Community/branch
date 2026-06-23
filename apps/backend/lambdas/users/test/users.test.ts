@@ -14,9 +14,12 @@ const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof 
 mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
   if (requiredAccess === 'PUBLIC') return { allowed: true };
   if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
-  if (requiredAccess === 'ADMIN') return { allowed: authContext.user.isAdmin, reason: authContext.user.isAdmin ? undefined : 'Admin access required' };
+  if (requiredAccess === 'ADMIN') {
+    const isAdmin = authContext.user.isAdmin ?? false;
+    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
+  }
   if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = authContext.user.isAdmin || authContext.user.userId === Number(resourceUserId);
+    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
     return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
   }
   return { allowed: false, reason: 'Unknown access level' };
@@ -160,6 +163,27 @@ test("patch user test 🌞", async () => {
     });
     await handler(restoreEvent);
   }
+});
+
+test("patch user profile_image test 🌞", async () => {
+  mockAdminAuth();
+
+  const patchEvent = createEvent({
+    method: 'PATCH',
+    path: '/1',
+    body: {
+      name: "Ashley Duggan",
+      email: "ashley@branch.org",
+      isAdmin: true,
+      profileImage: "https://s3.amazonaws.com/branch-avatars/ashley.png"
+    },
+  });
+
+  const res = await handler(patchEvent);
+  expect(res.statusCode).toBe(200);
+
+  const body = JSON.parse(res.body).body;
+  expect(body.profileImage).toBe("https://s3.amazonaws.com/branch-avatars/ashley.png");
 });
 
 

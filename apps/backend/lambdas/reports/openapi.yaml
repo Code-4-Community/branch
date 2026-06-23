@@ -86,12 +86,13 @@ paths:
         '401':
           description: Unauthorized
     post:
-      summary: Generate a project report PDF
+      summary: Generate a project report (PDF or DOCX)
       description: >
-        Generates a PDF report for the given project containing project info,
-        participants and roles, donations, and expenditures. Uploads the PDF to
-        S3 and records it in the database. Requires the caller to be a member
-        of the project or a global admin.
+        Generates a report for the given project containing project info,
+        participants and roles, donations, and expenditures. Supports PDF and
+        DOCX output via the `file_type` field (defaults to `pdf`). Uploads the
+        file to S3 and records it in the database. Requires the caller to be a
+        member of the project or a global admin.
       requestBody:
         required: true
         content:
@@ -105,9 +106,15 @@ paths:
                   type: integer
                   description: The ID of the project to generate a report for
                   example: 1
+                file_type:
+                  type: string
+                  enum: [pdf, docx]
+                  default: pdf
+                  description: Output format: "pdf" (default) or "docx"
+                  example: docx
       responses:
         '201':
-          description: Report generated successfully
+          description: Report generated and uploaded successfully
           content:
             application/json:
               schema:

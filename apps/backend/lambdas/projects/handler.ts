@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
+import { authenticateRequest } from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -23,9 +24,114 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
+    // GET /dashboard
+    if ((normalizedPath === '/dashboard' || normalizedPath.endsWith('/dashboard')) && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+      const { user } = authContext;
+      if (!user.isAdmin) {
+        return json(403, { message: 'Admin access required' });
+      }
+
+      try {
+        const [
+          totalSpentRow,
+          totalProjectsRow,
+          topCategoryRow,
+          projectRows,
+          spentByProject,
+          staffByProject,
+          monthRows,
+        ] = await Promise.all([
+          db.selectFrom('branch.expenditures')
+            .select(db.fn.sum('amount').as('total'))
+            .executeTakeFirst(),
+          db.selectFrom('branch.projects')
+            .select(db.fn.count('project_id').as('count'))
+            .executeTakeFirst(),
+          db.selectFrom('branch.expenditures')
+            .select(['category', db.fn.sum('amount').as('total')])
+            .where('category', 'is not', null)
+            .groupBy('category')
+            .orderBy(db.fn.sum('amount'), 'desc')
+            .limit(1)
+            .executeTakeFirst(),
+          db.selectFrom('branch.projects')
+            .selectAll()
+            .orderBy('project_id', 'asc')
+            .execute(),
+          db.selectFrom('branch.expenditures')
+            .select(['project_id', db.fn.sum('amount').as('total')])
+            .groupBy('project_id')
+            .execute(),
+          db.selectFrom('branch.project_memberships')
+            .select(['project_id', db.fn.count('user_id').as('count')])
+            .groupBy('project_id')
+            .execute(),
+          db.selectFrom('branch.expenditures')
+            .select(['spent_on', 'category', 'amount'])
+            .where('category', 'is not', null)
+            .execute(),
+        ]);
+
+        const totalSpent = Number(totalSpentRow?.total ?? 0);
+        const totalProjects = Number(totalProjectsRow?.count ?? 0);
+        const averageSpendPerProject = totalProjects > 0 ? totalSpent / totalProjects : 0;
+
+        const spentMap = new Map(spentByProject.map((r) => [r.project_id, Number(r.total)]));
+        const staffMap = new Map(staffByProject.map((r) => [r.project_id, Number(r.count)]));
+
+        const projects = projectRows.map((p) => {
+          const budget = p.total_budget !== null ? Number(p.total_budget) : null;
+          const spent = spentMap.get(p.project_id) ?? 0;
+          const spentPercentage = budget && budget > 0 ? (spent / budget) * 100 : 0;
+          return {
+            project_id: p.project_id,
+            name: p.name,
+            total_budget: budget,
+            currency: p.currency,
+            spent,
+            staff_count: staffMap.get(p.project_id) ?? 0,
+            spent_percentage: Number(spentPercentage.toFixed(2)),
+          };
+        });
+
+        const monthMap = new Map<string, { month: string; category: string; amount: number }>();
+        for (const row of monthRows) {
+          const d = new Date(row.spent_on as any);
+          const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          const category = row.category as string;
+          const key = `${month}|${category}`;
+          const prev = monthMap.get(key);
+          if (prev) prev.amount += Number(row.amount);
+          else monthMap.set(key, { month, category, amount: Number(row.amount) });
+        }
+        const expensesByMonth = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
+
+        return json(200, {
+          summary: {
+            topExpenseCategory: topCategoryRow
+              ? { category: topCategoryRow.category, amount: Number(topCategoryRow.total ?? 0) }
+              : null,
+            totalSpent,
+            totalProjects,
+            averageSpendPerProject: Number(averageSpendPerProject.toFixed(2)),
+          },
+          projects,
+          expensesByMonth,
+        });
+      } catch (err) {
+        console.error('Dashboard query failed:', err);
+        return json(500, { message: 'Failed to load dashboard' });
+      }
+    }
     // GET /projects/{id}/members
-    if (normalizedPath.startsWith('/projects/') && normalizedPath.split('/').length === 4 && normalizedPath.endsWith('/members') && method === 'GET') {
-      const id = normalizedPath.split('/')[2];
+    if (normalizedPath.endsWith('/members') && method === 'GET') {
+      const parts = normalizedPath.split('/').filter(Boolean);
+      // handles both /projects/1/members and /1/members
+      const id = parts.length === 3 ? parts[1] : parts[0];
       if (!id) return json(400, { message: 'id is required' });
       const users = await db
         .selectFrom('branch.project_memberships as pm')

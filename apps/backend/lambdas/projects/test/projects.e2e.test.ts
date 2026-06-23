@@ -1,5 +1,35 @@
+import { jest } from '@jest/globals';
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
+
+jest.mock('../auth');
+
 import { handler } from '../handler';
 import db from '../db';
+import { authenticateRequest } from '../auth';
+
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+
+const adminAuthResult = {
+  isAuthenticated: true,
+  user: {
+    cognitoSub: 'admin-sub',
+    userId: 1,
+    email: 'ashley@branch.org',
+    isAdmin: true,
+  },
+};
+
+const nonAdminAuthResult = {
+  isAuthenticated: true,
+  user: {
+    cognitoSub: 'staff-sub',
+    userId: 3,
+    email: 'nour@branch.org',
+    isAdmin: false,
+  },
+};
 
 beforeAll(() => {
   process.env.DB_HOST = process.env.DB_HOST ?? 'localhost';
@@ -127,6 +157,114 @@ describe('GET /projects/{id}/expenditures (e2e)', () => {
         expect(current >= next).toBe(true);
       }
     }
+  });
+});
+
+describe('GET /dashboard (e2e)', () => {
+  const pool = new Pool({
+    host: 'localhost',
+    port: Number(5432),
+    user: 'branch_dev',
+    password: 'password',
+    database: 'branch_db',
+    ssl: false,
+  });
+
+  const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+  const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
+  function dashboardEvent() {
+    return {
+      rawPath: '/dashboard',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters: {},
+    } as any;
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult as any);
+
+    const client = await pool.connect();
+    try {
+      await client.query(seedSql);
+    } finally {
+      client.release();
+    }
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  test('401: unauthenticated request rejected 🌞', async () => {
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
+    const res = await handler(dashboardEvent());
+    expect(res.statusCode).toBe(401);
+  });
+
+  test('403: non-admin is forbidden 🌞', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult as any);
+    const res = await handler(dashboardEvent());
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('Admin access required');
+  });
+
+  test('summary aggregates seed totals 🌞', async () => {
+    const res = await handler(dashboardEvent());
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+
+    expect(body.summary.totalProjects).toBe(4);
+    expect(body.summary.totalSpent).toBe(18000);
+    expect(body.summary.averageSpendPerProject).toBe(4500);
+  });
+
+  test('topExpenseCategory is highest-summed category 🌞', async () => {
+    const res = await handler(dashboardEvent());
+    const body = JSON.parse(res.body);
+    expect(body.summary.topExpenseCategory).not.toBeNull();
+    expect(body.summary.topExpenseCategory.category).toBe('Travel');
+    expect(body.summary.topExpenseCategory.amount).toBe(6800);
+  });
+
+  test('projects breakdown returns budget, spent and staff_count per project 🌞', async () => {
+    const res = await handler(dashboardEvent());
+    const body = JSON.parse(res.body);
+    expect(body.projects.length).toBe(4);
+
+    const p1 = body.projects.find((p: any) => p.project_id === 1);
+    expect(p1.name).toContain('Clinician Communication Study');
+    expect(p1.total_budget).toBe(500000);
+    expect(p1.spent).toBe(9200);
+    expect(p1.staff_count).toBe(2);
+    expect(p1.spent_percentage).toBeCloseTo(1.84, 2);
+  });
+
+  test('projects with no expenditures or members report zeros 🌞', async () => {
+    const res = await handler(dashboardEvent());
+    const body = JSON.parse(res.body);
+    const projB = body.projects.find((p: any) => p.name === 'Proj B');
+    expect(projB).toBeDefined();
+    expect(projB.spent).toBe(0);
+    expect(projB.staff_count).toBe(0);
+  });
+
+  test('expensesByMonth rows are chronological with numeric amounts 🌞', async () => {
+    const res = await handler(dashboardEvent());
+    const body = JSON.parse(res.body);
+    expect(Array.isArray(body.expensesByMonth)).toBe(true);
+    expect(body.expensesByMonth.length).toBeGreaterThan(0);
+
+    for (let i = 0; i < body.expensesByMonth.length - 1; i++) {
+      expect(body.expensesByMonth[i].month <= body.expensesByMonth[i + 1].month).toBe(true);
+    }
+
+    body.expensesByMonth.forEach((row: any) => {
+      expect(typeof row.month).toBe('string');
+      expect(typeof row.amount).toBe('number');
+    });
   });
 });
 

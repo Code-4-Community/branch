@@ -1,6 +1,18 @@
 import db from './db';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import type { TDocumentDefinitions, Content, TableCell } from 'pdfmake/interfaces';
+import {
+  Document,
+  Packer,
+  Paragraph,
+  Table,
+  TableRow,
+  TableCell as DocxTableCell,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  WidthType,
+} from 'docx';
 import path from 'path';
 
 // pdfmake's server-side Printer has no TS declarations; use require
@@ -316,18 +328,174 @@ export async function generatePdf(data: ReportData): Promise<Buffer> {
   });
 }
 
-export async function uploadToS3(pdfBuffer: Buffer, projectId: number): Promise<string> {
+export async function generateDocx(data: ReportData): Promise<Buffer> {
+  const makeHeaderRow = (headers: string[]) =>
+    new TableRow({
+      tableHeader: true,
+      children: headers.map(
+        (h) =>
+          new DocxTableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
+          }),
+      ),
+    });
+
+  const makeDataRow = (cells: string[]) =>
+    new TableRow({
+      children: cells.map(
+        (v) => new DocxTableCell({ children: [new Paragraph({ text: v })] }),
+      ),
+    });
+
+  const makeTotalRow = (colSpan: number, totalCols: number, formattedTotal: string) => {
+    const cells: DocxTableCell[] = [
+      new DocxTableCell({
+        columnSpan: colSpan,
+        children: [new Paragraph({ children: [new TextRun({ text: 'Total', bold: true })] })],
+      }),
+      new DocxTableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: formattedTotal, bold: true })] })],
+      }),
+    ];
+    for (let i = colSpan + 1; i < totalCols; i++) {
+      cells.push(new DocxTableCell({ children: [new Paragraph({})] }));
+    }
+    return new TableRow({ children: cells });
+  };
+
+  const sectionHeading = (text: string) =>
+    new Paragraph({ text, heading: HeadingLevel.HEADING_1 });
+
+  const docChildren: (Paragraph | Table)[] = [];
+
+  // Title
+  docChildren.push(new Paragraph({ text: data.project.name, heading: HeadingLevel.TITLE }));
+
+  // Subtitle
+  const subtitleParts: string[] = [];
+  if (data.project.start_date) {
+    subtitleParts.push(`${formatDate(data.project.start_date)} – ${formatDate(data.project.end_date)}`);
+  }
+  if (data.project.total_budget) {
+    subtitleParts.push(`Budget: ${formatCurrency(data.project.total_budget, data.project.currency)}`);
+  }
+  if (subtitleParts.length > 0) {
+    docChildren.push(
+      new Paragraph({
+        children: [new TextRun({ text: subtitleParts.join('    |    '), color: '666666', size: 22 })],
+      }),
+    );
+  }
+
+  // Description
+  docChildren.push(new Paragraph({}));
+  docChildren.push(sectionHeading('Description'));
+  docChildren.push(new Paragraph({ text: data.project.description }));
+
+  // Members
+  docChildren.push(new Paragraph({}));
+  docChildren.push(sectionHeading('Project Participants'));
+  if (data.members.length === 0) {
+    docChildren.push(new Paragraph({ text: 'No participants assigned.' }));
+  } else {
+    docChildren.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          makeHeaderRow(['Name', 'Email', 'Role', 'Hours']),
+          ...data.members.map((m) => makeDataRow([m.name, m.email, m.role, m.hours ?? '—'])),
+        ],
+      }),
+    );
+  }
+
+  // Donations
+  docChildren.push(new Paragraph({}));
+  docChildren.push(sectionHeading('Donations'));
+  if (data.donations.length === 0) {
+    docChildren.push(new Paragraph({ text: 'No donations recorded.' }));
+  } else {
+    const totalDonations = data.donations.reduce((sum, d) => sum + parseFloat(d.amount), 0);
+    docChildren.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          makeHeaderRow(['Donor Organization', 'Contact', 'Amount', 'Date']),
+          ...data.donations.map((d) =>
+            makeDataRow([
+              d.organization,
+              d.contact_name ?? '—',
+              formatCurrency(d.amount, data.project.currency),
+              formatDate(d.donated_at),
+            ]),
+          ),
+          makeTotalRow(2, 4, formatCurrency(totalDonations.toString(), data.project.currency)),
+        ],
+      }),
+    );
+  }
+
+  // Expenditures
+  docChildren.push(new Paragraph({}));
+  docChildren.push(sectionHeading('Expenditures'));
+  if (data.expenditures.length === 0) {
+    docChildren.push(new Paragraph({ text: 'No expenditures recorded.' }));
+  } else {
+    const totalExpenses = data.expenditures.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    docChildren.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          makeHeaderRow(['Category', 'Description', 'Amount', 'Date', 'Entered By']),
+          ...data.expenditures.map((e) =>
+            makeDataRow([
+              e.category ?? '—',
+              e.description ?? '—',
+              formatCurrency(e.amount, data.project.currency),
+              formatDate(e.spent_on),
+              e.entered_by_name ?? '—',
+            ]),
+          ),
+          makeTotalRow(2, 5, formatCurrency(totalExpenses.toString(), data.project.currency)),
+        ],
+      }),
+    );
+  }
+
+  // Footer
+  docChildren.push(new Paragraph({}));
+  docChildren.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `Generated on ${new Date().toLocaleDateString('en-US')}`,
+          color: '999999',
+          size: 16,
+        }),
+      ],
+      alignment: AlignmentType.CENTER,
+    }),
+  );
+
+  const doc = new Document({ sections: [{ children: docChildren }] });
+  return Packer.toBuffer(doc);
+}
+
+export async function uploadToS3(fileBuffer: Buffer, projectId: number, fileType: 'pdf' | 'docx'): Promise<string> {
   const bucketName = getBucketName();
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const key = `reports/${projectId}/${timestamp}.pdf`;
+  const key = `reports/${projectId}/${timestamp}.${fileType}`;
+  const contentType = fileType === 'docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    : 'application/pdf';
 
   await s3.send(
     new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
-      Body: pdfBuffer,
-      ContentType: 'application/pdf',
+      Body: fileBuffer,
+      ContentType: contentType,
     }),
   );
 
