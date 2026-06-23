@@ -1,12 +1,13 @@
+import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
 import { authenticateRequest } from './auth';
 
-type APIGatewayProxyResult = {
-  statusCode: number;
-  headers?: Record<string, string>;
-  body: string;
-};
+// type APIGatewayProxyResult = {
+//   statusCode: number;
+//   headers?: Record<string, string>;
+//   body: string;
+// };
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -89,15 +90,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         const staffRows = staffByProject as Array<{ project_id: number; count: string | number | null }>;
         const projectRowsTyped = projectRows as Array<{ project_id: number; total_budget: string | null; name: string; currency: string | null }>;
 
-        const spentMap = new Map<number, number>();
-        for (const row of spentRows) {
-          spentMap.set(row.project_id, Number(row.total));
-        }
-
-        const staffMap = new Map<number, number>();
-        for (const row of staffRows) {
-          staffMap.set(row.project_id, Number(row.count));
-        }
+        const spentMap = new Map(spentByProject.map((r) => [r.project_id, Number(r.total)]));
+        const staffMap = new Map(staffByProject.map((r) => [r.project_id, Number(r.count)]));
 
         const projects = projectRowsTyped.map((p) => {
           const budget = p.total_budget !== null ? Number(p.total_budget) : null;
