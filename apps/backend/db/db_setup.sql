@@ -67,6 +67,7 @@ CREATE TABLE reports (
     report_id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
     object_url TEXT NOT NULL,
+    report_type TEXT NOT NULL DEFAULT 'technical' CHECK (report_type IN ('technical', 'narrative')),
     date_created DATE NOT NULL DEFAULT CURRENT_DATE
 );
 

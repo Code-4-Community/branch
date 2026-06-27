@@ -75,6 +75,7 @@ export interface BranchReports {
   object_url: string;
   project_id: number;
   report_id: Generated<number>;
+  report_type: string;
 }
 
 export interface BranchUsers {
