@@ -74,7 +74,7 @@ describe('POST /reports unit tests', () => {
     mockReportService.generatePdf.mockResolvedValue(Buffer.from('pdf') as any);
     mockReportService.generateDocx.mockResolvedValue(Buffer.from('docx') as any);
     mockReportService.uploadToS3.mockResolvedValue('https://s3.example.com/reports/1/ts.pdf');
-    mockReportService.saveReportRecord.mockResolvedValue({ report_id: 1, object_url: 'https://s3.example.com/reports/1/ts.pdf' });
+    mockReportService.saveReportRecord.mockResolvedValue({ report_id: 1, report_type: 'technical',object_url: 'https://s3.example.com/reports/1/ts.pdf' });
   });
 
   test('400: missing project_id returns 400', async () => {
