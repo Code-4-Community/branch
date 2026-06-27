@@ -208,12 +208,75 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
-      const body = event.body ? JSON.parse(event.body) as Record<string, { name: string, total_budget: number }> : {};
+      let body: Record<string, unknown>;
+      try {
+        body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      } catch (e) {
+        return json(400, { message: 'Invalid JSON in request body' });
+      }
+
+      const updateValues: Record<string, unknown> = {};
+
+      if ('name' in body) {
+        const nameResult = ProjectValidationUtils.validateName(body.name);
+        if (!nameResult.isValid) return json(400, { message: nameResult.error });
+        updateValues.name = nameResult.value;
+      }
+      if ('description' in body) {
+        if (body.description === undefined || body.description === null) {
+          updateValues.description = '';
+        } else if (typeof body.description !== 'string') {
+          return json(400, { message: "'description' must be a string" });
+        } else {
+          const description = body.description.trim();
+          if (description.length > 1000) return json(400, { message: "'description' must be <= 1000 chars" });
+          updateValues.description = description;
+        }
+      }
+      if ('total_budget' in body) {
+        const parsedBudget = ProjectValidationUtils.parseNumericToFixed(body.total_budget);
+        if (parsedBudget === 'INVALID') return json(400, { message: "'total_budget' must be a number" });
+        updateValues.total_budget = parsedBudget;
+      }
+      if ('currency' in body) {
+        if (body.currency === undefined || body.currency === null) {
+          updateValues.currency = null;
+        } else if (typeof body.currency !== 'string') {
+          return json(400, { message: "'currency' must be 1-10 chars" });
+        } else {
+          const currencyResult = ProjectValidationUtils.validateCurrency(body.currency);
+          if (!currencyResult.isValid) return json(400, { message: currencyResult.error });
+          updateValues.currency = currencyResult.value;
+        }
+      }
+      if ('start_date' in body) {
+        if (body.start_date === undefined || body.start_date === null || body.start_date === '') {
+          updateValues.start_date = null;
+        } else if (typeof body.start_date !== 'string' || !ProjectValidationUtils.isValidDate(body.start_date)) {
+          return json(400, { message: "'start_date' must be YYYY-MM-DD" });
+        } else {
+          updateValues.start_date = body.start_date;
+        }
+      }
+      if ('end_date' in body) {
+        if (body.end_date === undefined || body.end_date === null || body.end_date === '') {
+          updateValues.end_date = null;
+        } else if (typeof body.end_date !== 'string' || !ProjectValidationUtils.isValidDate(body.end_date)) {
+          return json(400, { message: "'end_date' must be YYYY-MM-DD" });
+        } else {
+          updateValues.end_date = body.end_date;
+        }
+      }
+
+      if (Object.keys(updateValues).length === 0) {
+        return json(400, { message: 'No valid fields provided' });
+      }
+
       const updatedProject = await db
         .updateTable("branch.projects")
-        .set(body)
+        .set(updateValues)
         .where("project_id", "=", Number(id))
-        .returning(["project_id", "name", "description", "total_budget"]) // control returned fields
+        .returning(["project_id", "name", "description", "total_budget"])
         .executeTakeFirst();
       if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, updatedProject);
