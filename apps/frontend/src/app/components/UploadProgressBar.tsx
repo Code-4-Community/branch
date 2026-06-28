@@ -10,7 +10,7 @@ export default function UploadProgressBar ({
   transferredBytes,
   totalBytes,
   fileName,
-}: UploadProgressBarProps): JSX.Element {
+}: UploadProgressBarProps) {
   const progress =
     totalBytes !== 0 ? Math.round((transferredBytes / totalBytes) * 100) : 0;
 
