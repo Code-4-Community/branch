@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useRef, useState } from 'react';
 import { FileRejection, useDropzone } from 'react-dropzone';
-import UploadProgress from './UploadProgressBar';
+import UploadProgressBar from './UploadProgressBar';
 import FilePreview from './FilePreview';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -79,7 +79,7 @@ export default function FileUpload({ value, onChange, onUploadFail, onReject }: 
 
     if (isUploading && pendingFile) {
         return (
-            <UploadProgress
+            <UploadProgressBar
                 transferredBytes={transferredBytes}
                 totalBytes={pendingFile.size}
                 fileName={pendingFile.name}

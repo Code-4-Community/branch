@@ -1,16 +1,16 @@
 import React from 'react';
 
-interface UploadProgressProps {
+interface UploadProgressBarProps {
   transferredBytes: number;
   totalBytes: number;
   fileName: string;
 }
 
-export default function UploadProgress({
+export default function UploadProgressBar ({
   transferredBytes,
   totalBytes,
   fileName,
-}: UploadProgressProps): JSX.Element {
+}: UploadProgressBarProps): JSX.Element {
   const progress =
     totalBytes !== 0 ? Math.round((transferredBytes / totalBytes) * 100) : 0;
 
