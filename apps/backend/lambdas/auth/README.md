@@ -9,13 +9,13 @@ Lambda for auth handler.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
-| POST | /register |  |
-| POST | /login |  |
-| POST | /verify-email |  |
-| POST | /resend-code |  |
-| POST | /logout |  |
-| POST | /forgot-password |  |
-| POST | /reset-password |  |
+| POST | /auth/register |  |
+| POST | /auth/login |  |
+| POST | /auth/verify-email |  |
+| POST | /auth/resend-code |  |
+| POST | /auth/logout |  |
+| POST | /auth/forgot-password |  |
+| POST | /auth/reset-password |  |
 
 ## Setup
 

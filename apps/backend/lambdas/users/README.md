@@ -10,10 +10,10 @@ Lambda for managing users.
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /users |  |
-| GET | /{userId} |  |
-| PATCH | /{userId} |  |
-| DELETE | /users/{userId} |  |
 | POST | /users |  |
+| GET | /users/{userId} |  |
+| PATCH | /users/{userId} |  |
+| DELETE | /users/{userId} |  |
 
 ## Setup
 
