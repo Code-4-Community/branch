@@ -14,7 +14,7 @@ locals {
   lambda_methods = {
     auth         = ["GET", "POST"]
     donors       = ["GET"]
-    expenditures = ["GET", "POST"]
+    expenditures = ["GET", "POST", "PATCH"]
     projects     = ["GET", "POST"]
     reports      = ["GET"]
     users        = ["GET", "POST", "DELETE", "PATCH"]

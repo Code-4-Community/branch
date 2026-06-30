@@ -1,7 +1,16 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
-import { authenticateRequest } from './auth';
+import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
+
+function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
+  const authCheck = checkAuthorization(authContext, level, resourceUserId);
+  if (!authCheck.allowed) {
+    return authContext.isAuthenticated
+      ? json(403, { message: authCheck.reason || 'Forbidden' })
+      : json(401, { message: 'Authentication required' });
+  }
+}
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -166,7 +175,61 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         },
       });
     }
-    // <<< ROUTES-END
+    
+    // PATCH /expenditures/{id}/status — approve/decline (admin only)
+    // (dev server strips the /expenditures prefix, so match the trailing /{id}/status)
+    const statusSegments = normalizedPath.split('/').filter(Boolean);
+    if ((statusSegments.length >= 2 && statusSegments[statusSegments.length - 1] === 'status') && method === 'PATCH') {
+      const authContext = await authenticateRequest(event);
+      const authError = requireAuth(authContext, 'ADMIN');
+      if (authError) return authError;
+
+      const id = statusSegments[statusSegments.length - 2];
+      if (!/^\d+$/.test(id) || parseInt(id, 10) < 1) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+
+      // Only 'approved' or 'denied' may be set through this endpoint
+      const statusResult = ExpenditureValidationUtils.validateApprovalStatus(body.status);
+      if (statusResult instanceof Error) {
+        return json(400, { message: statusResult.message });
+      }
+
+      // make sure expenditure exists
+      const expenditure = await db
+        .selectFrom('branch.expenditures')
+        .where('expenditure_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+      if (!expenditure) {
+        return json(404, { message: 'Expenditure not found' });
+      }
+
+      // update
+      await db
+        .updateTable('branch.expenditures')
+        .set({ status: statusResult })
+        .where('expenditure_id', '=', Number(id))
+        .execute();
+
+      // get updated expenditure
+      const updated = await db
+        .selectFrom('branch.expenditures')
+        .where('expenditure_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+      return json(200, {
+        ok: true,
+        route: 'PATCH /expenditures/{id}/status',
+        pathParams: { id },
+        body: { expenditureId: updated!.expenditure_id, status: updated!.status },
+      });
+    }
+    // <<< ROUTES-END 
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
@@ -182,7 +245,7 @@ function json(statusCode: number, body: unknown): APIGatewayProxyResult {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
     },
     body: JSON.stringify(body)
   };

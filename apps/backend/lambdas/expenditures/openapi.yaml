@@ -101,3 +101,37 @@ paths:
       responses:
         '201':
           description: Success
+
+  /expenditures/{id}/status:
+    patch:
+      summary: PATCH /expenditures/{id}/status
+      description: Approve or decline an expenditure. Admin only.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [approved, denied]
+      responses:
+        '200':
+          description: Expenditure status updated
+        '400':
+          description: Invalid id or status
+        '401':
+          description: Authentication required
+        '403':
+          description: Admin access required
+        '404':
+          description: Expenditure not found

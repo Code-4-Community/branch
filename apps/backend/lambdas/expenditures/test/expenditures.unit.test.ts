@@ -6,10 +6,25 @@ jest.mock('../auth');
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest } from '../auth';
+import { authenticateRequest, checkAuthorization } from '../auth';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
+
+mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
+  if (requiredAccess === 'PUBLIC') return { allowed: true };
+  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
+  if (requiredAccess === 'ADMIN') {
+    const isAdmin = authContext.user.isAdmin ?? false;
+    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
+  }
+  if (requiredAccess === 'ADMIN_OR_SELF') {
+    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
+    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
+  }
+  return { allowed: false, reason: 'Unknown access level' };
+});
 
 // Helper function to create a POST event
 function postEvent(body: Record<string, unknown>) {
@@ -588,5 +603,116 @@ describe('POST /expenditures unit tests', () => {
       const res = await handler(getEvent({ projectId: '-5' }));
       expect(res.statusCode).toBe(400);
     });
+  });
+});
+
+describe('PATCH /expenditures/{id}/status unit tests', () => {
+  function patchStatusEvent(id: string | number, body: unknown) {
+    return {
+      rawPath: `/expenditures/${id}/status`,
+      requestContext: { http: { method: 'PATCH' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    };
+  }
+
+  // Sets up selectFrom (existing + updated lookups) and updateTable chains.
+  function mockExpenditureForPatch(existing: Record<string, unknown> | null, updated?: Record<string, unknown>) {
+    mockDb.selectFrom.mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: (jest.fn() as any)
+            .mockResolvedValueOnce(existing)
+            .mockResolvedValueOnce(updated ?? existing),
+        }),
+      }),
+    });
+
+    mockDb.updateTable.mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          execute: (jest.fn() as any).mockResolvedValue(undefined),
+        }),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  test('200: admin approves an expenditure', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending' },
+      { expenditure_id: 5, status: 'approved' },
+    );
+
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.ok).toBe(true);
+    expect(json.pathParams).toEqual({ id: '5' });
+    expect(json.body.status).toBe('approved');
+  });
+
+  test('200: admin declines an expenditure', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending' },
+      { expenditure_id: 5, status: 'denied' },
+    );
+
+    const res = await handler(patchStatusEvent(5, { status: 'denied' }));
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).body.status).toBe('denied');
+  });
+
+  test('401: unauthenticated request', async () => {
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  test('403: authenticated non-admin is rejected', async () => {
+    mockAuthenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      user: { cognitoSub: 'staff-sub', userId: 2, email: 'staff@example.com', isAdmin: false },
+    });
+
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toContain('Admin');
+  });
+
+  test('400: invalid id', async () => {
+    const res = await handler(patchStatusEvent('abc', { status: 'approved' }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('id');
+  });
+
+  test('400: missing status', async () => {
+    const res = await handler(patchStatusEvent(5, {}));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('status is required');
+  });
+
+  test('400: status not approved/denied (e.g. pending)', async () => {
+    const res = await handler(patchStatusEvent(5, { status: 'pending' }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('status must be one of');
+  });
+
+  test('404: expenditure not found', async () => {
+    mockExpenditureForPatch(null);
+
+    const res = await handler(patchStatusEvent(999, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).message).toContain('not found');
   });
 });
