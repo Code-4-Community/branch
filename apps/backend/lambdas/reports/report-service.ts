@@ -505,6 +505,7 @@ export async function uploadToS3(fileBuffer: Buffer, projectId: number, fileType
 export async function saveReportRecord(
   projectId: number,
   objectUrl: string,
+  title: string,
   reportType: 'technical' | 'narrative' = 'technical',
 ): Promise<{ report_id: number; object_url: string; report_type: string }> {
   const row = await db
@@ -512,6 +513,7 @@ export async function saveReportRecord(
     .values({
       project_id: projectId,
       object_url: objectUrl,
+      title,
       report_type: reportType,
     })
     .returning(['report_id', 'object_url', 'report_type'])

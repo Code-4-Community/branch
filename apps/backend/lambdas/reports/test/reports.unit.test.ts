@@ -2,6 +2,15 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 jest.mock('../db');
 jest.mock('../auth');
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockReturnValue({} as any),
+  })),
+  PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+}));
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
+}));
 jest.mock('../report-service', () => ({
   checkProjectAccess: jest.fn(),
   fetchReportData: jest.fn(),
@@ -14,12 +23,14 @@ jest.mock('../report-service', () => ({
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest } from '../auth';
+import { checkProjectAccess } from '../report-service';
 import * as reportService from '../report-service';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockReportService = reportService as jest.Mocked<typeof reportService>;
-
+const mockCheckProjectAccess = mockReportService.checkProjectAccess; 
+                                                                           
 function getEvent(queryStringParameters?: Record<string, string>) {
   return {
     rawPath: '/',
@@ -53,7 +64,7 @@ const fakeReports = [
 
 function postEvent(body: Record<string, unknown>) {
   return {
-    rawPath: '/',
+    rawPath: '/reports/generate',
     requestContext: { http: { method: 'POST' } },
     headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify(body),
@@ -291,6 +302,254 @@ describe('GET /reports unit tests', () => {
     test('400: projectId=0 returns 400', async () => {
       const res = await handler(getEvent({ projectId: '0' }));
       expect(res.statusCode).toBe(400);
+    });
+  });
+});
+
+describe('GET /reports/upload-url unit tests', () => {
+  function uploadUrlEvent(queryStringParameters?: Record<string, string>) {
+    return {
+      rawPath: '/reports/upload-url',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters: queryStringParameters ?? {},
+    };
+  }
+
+  function setupProjectMock(project: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(project as any),
+        }),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockCheckProjectAccess.mockReturnValue(true as any);
+    setupProjectMock({ project_id: 1 });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toBe('Authentication required');
+    });
+  });
+
+  describe('Validation', () => {
+    test('400: missing fileName returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('fileName is required');
+    });
+
+    test('400: unsupported file extension returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.txt', projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Only PDF and DOCX files are supported');
+    });
+
+    test('400: missing projectId returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+
+    test('400: projectId=0 returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '0' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+
+    test('400: non-integer projectId returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: 'abc' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+  });
+
+  describe('Business logic', () => {
+    test('404: project not found returns 404', async () => {
+      setupProjectMock(undefined);
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '999' }));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+
+    test('403: user has no project access returns 403', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
+    });
+
+    test('200: returns uploadUrl and objectUrl for pdf', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'report.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.uploadUrl).toBe('https://presigned.example.com/upload');
+      expect(body.objectUrl).toContain('report.pdf');
+      expect(body.objectUrl).toContain('reports/1/');
+    });
+
+    test('200: returns uploadUrl and objectUrl for docx', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'doc.docx', projectId: '2' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.uploadUrl).toBeDefined();
+      expect(body.objectUrl).toContain('doc.docx');
+    });
+  });
+});
+
+describe('POST /reports unit tests', () => {
+  const fakeObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/123-report.pdf';
+
+  function postEvent(body: unknown) {
+    return {
+      rawPath: '/reports',
+      requestContext: { http: { method: 'POST' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters: {},
+      body: JSON.stringify(body),
+    };
+  }
+
+  function setupInsertMock(report: Record<string, unknown>) {
+    mockDb.insertInto = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returningAll: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(report as any),
+        }),
+      }),
+    });
+  }
+
+  function setupProjectMock(project: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(project as any),
+        }),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockCheckProjectAccess.mockReturnValue(true as any);
+    setupProjectMock({ project_id: 1 });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toBe('Authentication required');
+    });
+  });
+
+  describe('Validation', () => {
+    test('400: invalid JSON body returns 400', async () => {
+      const res = await handler({
+        rawPath: '/reports',
+        requestContext: { http: { method: 'POST' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: {},
+        body: 'not json',
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Invalid JSON in request body');
+    });
+
+    test('400: missing title returns 400', async () => {
+      const res = await handler(postEvent({ projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('title is required');
+    });
+
+    test('400: empty title returns 400', async () => {
+      const res = await handler(postEvent({ title: '   ', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('title is required');
+    });
+
+    test('400: missing projectId returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+
+    test('400: string projectId returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', projectId: 'abc', objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+
+    test('400: projectId=0 returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', projectId: 0, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+
+    test('400: missing objectUrl returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', projectId: 1 }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('objectUrl is required');
+    });
+  });
+
+  describe('Business logic', () => {
+    test('403: user has no project access returns 403', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
+    });
+
+    test('404: nonexistent project returns 404', async () => {
+      setupProjectMock(undefined);
+      const res = await handler(postEvent({ title: 'T', projectId: 999, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+
+    test('201: creates report and returns created report', async () => {
+      const fakeReport = { report_id: 10, project_id: 1, title: 'My Report', object_url: fakeObjectUrl, report_type: 'technical', date_created: new Date('2025-01-01') };
+      setupInsertMock(fakeReport);
+
+      const res = await handler(postEvent({ title: 'My Report', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.report_id).toBe(10);
+      expect(body.title).toBe('My Report');
+      expect(body.project_id).toBe(1);
+      expect(body.object_url).toBe(fakeObjectUrl);
+    });
+
+    test('201: title is trimmed before inserting', async () => {
+      let capturedValues: Record<string, unknown> = {};
+      mockDb.insertInto = jest.fn().mockReturnValue({
+        values: jest.fn().mockImplementation((vals: any) => {
+          capturedValues = vals;
+          return {
+            returningAll: jest.fn().mockReturnValue({
+              executeTakeFirst: jest.fn().mockReturnValue({ report_id: 1, project_id: 1, title: vals.title, object_url: fakeObjectUrl, report_type: 'technical', date_created: new Date() } as any),
+            }),
+          };
+        }),
+      });
+
+      await handler(postEvent({ title: '  My Report  ', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(capturedValues.title).toBe('My Report');
     });
   });
 });

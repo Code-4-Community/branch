@@ -86,7 +86,81 @@ paths:
         '401':
           description: Unauthorized
     post:
-      summary: Generate a project report (PDF or DOCX)
+      summary: POST /reports — save a manually uploaded report
+      description: >
+        Creates a report record using the S3 object URL obtained from
+        GET /reports/upload-url after the client has uploaded the file directly
+        to S3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - projectId
+                - objectUrl
+              properties:
+                title:
+                  type: string
+                projectId:
+                  type: integer
+                  minimum: 1
+                objectUrl:
+                  type: string
+                  description: S3 object URL returned by GET /reports/upload-url
+      responses:
+        '201':
+          description: Report created
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '404':
+          description: Project not found
+
+  /reports/upload-url:
+    get:
+      summary: Get a pre-signed S3 URL for uploading a report file
+      parameters:
+        - in: query
+          name: fileName
+          required: true
+          schema:
+            type: string
+          description: File name with extension (pdf or docx)
+        - in: query
+          name: projectId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: Project the report belongs to
+      responses:
+        '200':
+          description: Pre-signed upload URL and final object URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: Pre-signed S3 PUT URL (expires in 1 hour)
+                  objectUrl:
+                    type: string
+                    description: Permanent S3 URL to pass to POST /reports
+        '400':
+          description: Invalid fileName or projectId
+        '401':
+          description: Unauthorized
+        '404':
+          description: Project not found
+
+  /reports/generate:
+    post:
+      summary: Auto-generate a PDF report from project data
       description: >
         Generates a report for the given project containing project info,
         participants and roles, donations, and expenditures. Supports PDF and
@@ -110,7 +184,7 @@ paths:
                   type: string
                   enum: [pdf, docx]
                   default: pdf
-                  description: Output format: "pdf" (default) or "docx"
+                  description: 'Output format: pdf (default) or docx'
                   example: docx
       responses:
         '201':
@@ -139,6 +213,7 @@ paths:
           description: Project not found
         '500':
           description: Internal server error
+
 components:
   securitySchemes:
     BearerAuth:
