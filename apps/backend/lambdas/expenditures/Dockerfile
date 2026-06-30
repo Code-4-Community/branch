@@ -5,6 +5,11 @@ COPY shared/lambda-auth/package.json shared/lambda-auth/tsconfig.json ./
 COPY shared/lambda-auth/src ./src/
 RUN npm install && npm run build
 
+WORKDIR /shared/lambda-http
+COPY shared/lambda-http/package.json shared/lambda-http/tsconfig.json ./
+COPY shared/lambda-http/src ./src/
+RUN npm install && npm run build
+
 WORKDIR /app
 COPY apps/backend/lambdas/expenditures/package*.json ./
 RUN npm install --no-package-lock
