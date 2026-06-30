@@ -14,6 +14,7 @@ Lambda for managing users.
 | PATCH | /{userId} |  |
 | DELETE | /users/{userId} |  |
 | POST | /users |  |
+| DELETE | /{userId} |  |
 
 ## Setup
 
