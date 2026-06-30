@@ -10,11 +10,9 @@ interface FileUploadProps {
   value: File | null;
   onChange: (file: File | null) => void;
   onReject?: () => void;
-  onUploadFail?: () => void;
 }
 
-export default function FileUpload({ value, onChange, onUploadFail, onReject }: FileUploadProps) {
-    const [rejected, setRejected] = useState(false);
+export default function FileUpload({ value, onChange, onReject }: FileUploadProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [transferredBytes, setTransferredBytes] = useState(0);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -53,11 +51,9 @@ export default function FileUpload({ value, onChange, onUploadFail, onReject }: 
     const onDrop = useCallback(
         (accepted: File[], rejections: FileRejection[]) => {
         if (rejections.length > 0) {
-            setRejected(true);
             onReject?.();
             return;
         }
-        setRejected(false);
         if (accepted[0]) simulateUpload(accepted[0]);
         },
         [simulateUpload, onReject],

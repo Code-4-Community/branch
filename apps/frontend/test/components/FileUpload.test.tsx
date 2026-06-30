@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '../utils';
+import { render, screen, act } from '../utils';
 import FileUpload from '@/app/components/FileUpload';
 
 beforeAll(() => {

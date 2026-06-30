@@ -313,7 +313,6 @@ export default function AddExpenseModal({
                       setFileError(null);
                     }}
                     onReject={() => setFileError('File type not supported')}
-                    onUploadFail={() => setFileError('File failed to upload')}
                   />
                   {fileError && (
                     <span style={{ color: 'var(--color-error-red)', fontSize: '12px', fontStyle: 'italic', fontWeight: 600 }}>
