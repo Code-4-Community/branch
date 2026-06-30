@@ -4,6 +4,15 @@ import path from 'path';
 import { Pool } from 'pg';
 
 jest.mock('../auth');
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockReturnValue({} as any),
+  })),
+  PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+}));
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
+}));
 
 import { handler } from '../handler';
 import { authenticateRequest } from '../auth';
@@ -185,6 +194,143 @@ describe('Reports e2e tests', () => {
     test('400: invalid projectId returns 400', async () => {
       const res = await handler(getEvent({ projectId: 'abc' }));
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('GET /reports/upload-url', () => {
+    function uploadUrlEvent(queryStringParameters?: Record<string, string>) {
+      return {
+        rawPath: '/reports/upload-url',
+        requestContext: { http: { method: 'GET' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: queryStringParameters ?? {},
+      };
+    }
+
+    test('200: returns uploadUrl and objectUrl for pdf', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'report.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.uploadUrl).toBe('https://presigned.example.com/upload');
+      expect(body.objectUrl).toContain('report.pdf');
+      expect(body.objectUrl).toContain('reports/1/');
+    });
+
+    test('200: returns uploadUrl and objectUrl for docx', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'doc.docx', projectId: '2' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.uploadUrl).toBeDefined();
+      expect(body.objectUrl).toContain('doc.docx');
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('404: non-existent projectId returns 404', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '99999' }));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+
+    test('400: missing fileName returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('fileName is required');
+    });
+
+    test('400: unsupported file extension returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.jpg', projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Only PDF and DOCX files are supported');
+    });
+
+    test('400: missing projectId returns 400', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: 'f.pdf' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+  });
+
+  describe('POST /reports', () => {
+    const fakeObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/123-report.pdf';
+
+    function postEvent(body: unknown) {
+      return {
+        rawPath: '/reports',
+        requestContext: { http: { method: 'POST' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: {},
+        body: JSON.stringify(body),
+      };
+    }
+
+    test('201: creates a new report and persists to db', async () => {
+      const res = await handler(postEvent({ title: 'New Report', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.report_id).toBeDefined();
+      expect(body.title).toBe('New Report');
+      expect(body.project_id).toBe(1);
+      expect(body.object_url).toBe(fakeObjectUrl);
+    });
+
+    test('201: created report appears in subsequent GET /reports', async () => {
+      await handler(postEvent({ title: 'Verify Report', projectId: 2, objectUrl: fakeObjectUrl }));
+      const getRes = await handler(getEvent());
+      const getBody = JSON.parse(getRes.body);
+      expect(getBody.data.some((r: any) => r.title === 'Verify Report')).toBe(true);
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('404: non-existent projectId returns 404', async () => {
+      const res = await handler(postEvent({ title: 'T', projectId: 99999, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Project not found');
+    });
+
+    test('400: missing title returns 400', async () => {
+      const res = await handler(postEvent({ projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('title is required');
+    });
+
+    test('400: empty title returns 400', async () => {
+      const res = await handler(postEvent({ title: '   ', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('title is required');
+    });
+
+    test('400: missing projectId returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
+    });
+
+    test('400: missing objectUrl returns 400', async () => {
+      const res = await handler(postEvent({ title: 'T', projectId: 1 }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('objectUrl is required');
+    });
+
+    test('400: invalid JSON body returns 400', async () => {
+      const res = await handler({
+        rawPath: '/reports',
+        requestContext: { http: { method: 'POST' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: {},
+        body: 'not json',
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Invalid JSON in request body');
     });
   });
 });
