@@ -59,6 +59,21 @@ paths:
         '500':
           description: Internal Server Error
   /{userId}:
+    get:
+      summary: GET /users/{userId}
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request
+        '404':
+          description: User not found
     patch:
       summary: PATCH /{userId}
       parameters:

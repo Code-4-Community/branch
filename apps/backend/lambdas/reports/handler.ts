@@ -93,6 +93,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ok: true,
         report_id: record.report_id,
         object_url: record.object_url,
+        report_type: record.report_type,
       });
     }
 

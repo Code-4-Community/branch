@@ -506,16 +506,18 @@ export async function saveReportRecord(
   projectId: number,
   objectUrl: string,
   title: string,
-): Promise<{ report_id: number; object_url: string }> {
+  reportType: 'technical' | 'narrative' = 'technical',
+): Promise<{ report_id: number; object_url: string; report_type: string }> {
   const row = await db
     .insertInto('branch.reports')
     .values({
       project_id: projectId,
       object_url: objectUrl,
       title,
+      report_type: reportType,
     })
-    .returning(['report_id', 'object_url'])
+    .returning(['report_id', 'object_url', 'report_type'])
     .executeTakeFirstOrThrow();
 
-  return { report_id: row.report_id, object_url: row.object_url };
+  return { report_id: row.report_id, object_url: row.object_url, report_type: row.report_type };
 }
