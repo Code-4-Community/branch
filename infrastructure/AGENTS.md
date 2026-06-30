@@ -11,7 +11,7 @@ Application infra. Providers: AWS 6.14.1, Infisical.
 - `main.tf` — RDS PostgreSQL 17.6 (db.t3.micro), `branch_rds` db; creds from Infisical `/aws/rds`.
 - `lambda.tf` — 6 Lambda functions (auth/donors/expenditures/projects/reports/users, Node 20.x, 256MB, 30s), IAM role (CloudWatch Logs), deployment S3 bucket. **`lifecycle` ignores `s3_key`** — code is deployed by CI (`lambda-deploy`), not Terraform. Env: `NODE_ENV`, `DB_*`.
 - `cognito.tf` — user pool (email sign-in, auto-verify, 8-char password policy, advanced security, deletion protection) + public client (1h access/ID tokens, 30d refresh, no secret). **Manual step:** copy output pool/client IDs into Infisical `/aws/cognito/`.
-- `api_gateway.tf` — REST API, one resource per lambda, method routing, `AWS_PROXY` integration, `prod` stage.
+- `api_gateway.tf` — REST API, one resource per lambda plus a greedy `/<lambda>/{proxy+}`, each with an `ANY` method + `AWS_PROXY` integration, `prod` stage. The full path is forwarded to the lambda (which self-routes via `@branch/lambda-http`); `ANY` also routes OPTIONS preflight to the lambda's CORS handler. The deployment has a `triggers` hash so route changes redeploy the stage.
 - `s3.tf` — public-read reports bucket + versioned/encrypted lambda-deployments bucket.
 - `amplify.tf` — frontend (Next.js SSR), monorepo root `apps/frontend`, auto-deploys `main` (GitHub token from Infisical).
 - `secrets.tf`, `variables.tf` — Infisical data sources.

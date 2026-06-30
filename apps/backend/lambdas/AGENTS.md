@@ -6,7 +6,7 @@ Each `<service>/` here is one Lambda. They share a near-identical shape. **Use t
 
 ```
 <service>/
-  handler.ts        # entry: export const handler = async (event) => ...
+  handler.ts        # entry: route table dispatched via @branch/lambda-http
   dev-server.ts     # local shared-server registration (port 3000)
   db.ts             # Kysely<DB> + pg.Pool
   auth.ts           # thin wrapper over @branch/lambda-auth + domain authz helpers
@@ -20,35 +20,40 @@ Each `<service>/` here is one Lambda. They share a near-identical shape. **Use t
 
 ## Handler pattern
 
+Each handler is a **route table** dispatched by `@branch/lambda-http`. Business
+logic lives in per-route functions; `dispatch` owns path/method parsing, OPTIONS
+preflight, `/<prefix>/health`, 404 and 500.
+
 ```ts
-export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
-  try {
-    const rawPath = event.rawPath || event.path || '/';
-    const normalizedPath = rawPath.replace(/\/$/, '');
-    const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
+import { dispatch, json, RouteCtx } from '@branch/lambda-http';
 
-    if (method === 'OPTIONS') return json(200, {});                  // CORS preflight
-    if (normalizedPath.endsWith('/health') && method === 'GET')      // health (no auth)
-      return json(200, { ok: true });
+async function listDonors({ event }: RouteCtx): Promise<APIGatewayProxyResult> {
+  const authContext = await authenticateRequest(event);            // every service except `auth`
+  if (!authContext.isAuthenticated) return json(401, { message: 'Unauthorized' });
+  // ...
+  return json(200, { data: [] });
+}
 
-    const authContext = await authenticateRequest(event);            // every service except `auth`
-    if (!authContext.isAuthenticated) return json(401, { message: 'Unauthorized' });
-
-    // >>> ROUTES-START (do not remove this marker)
-    if (normalizedPath === '/donors' && method === 'GET') { /* ... */ }
-    // <<< ROUTES-END
-
-    return json(404, { message: 'Not Found' });
-  } catch (err) {
-    console.error('Lambda error:', err);
-    return json(500, { message: 'Internal Server Error' });
-  }
-};
+export const handler = (event: any): Promise<APIGatewayProxyResult> =>
+  dispatch(event, {
+    prefix: 'donors',
+    routes: [
+      { method: 'GET', pattern: '/donors', handler: listDonors },
+      { method: 'GET', pattern: '/donors/:id', handler: getDonor },  // ctx.params.id
+    ],
+  });
 ```
 
-- **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI injects routes between them.
-- Handles both API Gateway and Lambda Function URL event shapes (`rawPath`/`path`, `requestContext.http.method`/`httpMethod`).
-- Responses go through a local `json(status, body)` helper that sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`).
+- **Patterns are full prefixed paths** (`/donors`, `/projects/:id/members`), with
+  `:param` segments surfaced as `ctx.params`. Routes are tried in order — list
+  more specific patterns first (e.g. `/projects/dashboard` before `/projects/:id`).
+- `dispatch` **canonicalizes** the path: API Gateway delivers the full path, the
+  shared dev-server strips the service prefix — both resolve to the same pattern.
+- CORS is centralized: `json()` sets the headers and OPTIONS returns 200. Auth is
+  still per-route (call `authenticateRequest` inside each handler that needs it).
+- The old per-handler `if`-chain + `ROUTES-START/END` markers + local `json()` are
+  gone. Scaffolds created by `lambda-cli` wrap the routes array in the markers so
+  `add-route` can inject entries; hand-converted handlers omit them.
 
 ## Auth & authorization
 
@@ -92,10 +97,17 @@ Convention: optional `page` + `limit` query params → `offset = (page-1)*limit`
 
 ```
 dev      ts-node --transpile-only dev-server.ts
-build    tsc
-package  npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'
+build    tsc                                   # typecheck only
+package  esbuild handler.ts --bundle --platform=node --target=node20 --format=cjs \
+           --outfile=dist/handler.js --external:@aws-sdk/* && zip the single dist/handler.js
 test     jest (or start-server-and-test wrapping jest)
 ```
+
+`package` **bundles** the handler + all `file:`-linked shared packages
+(`@branch/lambda-http`, `@branch/lambda-auth`) and node deps into one
+`dist/handler.js` via esbuild (`@aws-sdk/*` left external — provided by the
+node20 runtime). The zip ships only that file. The CI `lambda-deploy` /
+`lambda-tests` workflows build `shared/lambda-http` before installing each lambda.
 
 ---
 
@@ -106,14 +118,17 @@ When adding new API endpoints or scaffolding new Lambda handlers, use the CLI at
 ## Commands
 
 ### `init-handler <name>`
-Creates a new Lambda handler with boilerplate (handler.ts, dev-server.ts, openapi.yaml, swagger-utils.ts, package.json, tsconfig.json, README.md, test/). Wires in `@branch/types` and `@branch/lambda-auth` automatically.
+Creates a new Lambda handler with boilerplate (handler.ts, dev-server.ts, openapi.yaml, swagger-utils.ts, package.json, tsconfig.json, README.md, test/). Wires in `@branch/types`, `@branch/lambda-auth`, and `@branch/lambda-http` automatically. The scaffolded `handler.ts` is a `dispatch(...)` route table with an empty `routes` array between the `ROUTES-START/END` markers.
 
 ```bash
 node tools/lambda-cli.js init-handler orders
 ```
 
 ### `add-route <handler> <METHOD> <path> [options]`
-Adds a route stub to both `handler.ts` (between the ROUTES-START/ROUTES-END markers) and `openapi.yaml`.
+Injects a route-table entry (a `{ method, pattern, handler }` object with a stub
+handler) into `handler.ts` between the ROUTES-START/ROUTES-END markers, and the
+path into `openapi.yaml`. **Pass the full prefixed path** — `{id}` is converted to
+the dispatcher's `:id` pattern.
 
 Options:
 - `--body field:type,field:type` — request body fields
@@ -122,8 +137,8 @@ Options:
 - `--status <code>` — response status code (default: 200)
 
 ```bash
-node tools/lambda-cli.js add-route auth POST /reset-password --body email:string,code:string,newPassword:string
-node tools/lambda-cli.js add-route users GET /users/{id}
+node tools/lambda-cli.js add-route auth POST /auth/reset-password --body email:string,code:string,newPassword:string
+node tools/lambda-cli.js add-route users GET /users/{userId}
 node tools/lambda-cli.js add-route users GET /users --query page:number,limit:number
 node tools/lambda-cli.js add-route users POST /users --body name:string --headers authorization:string --status 201
 ```

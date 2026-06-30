@@ -16,6 +16,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 | `apps/backend/lambdas/` | The lambda services + `lambda-cli.js` tooling | `apps/backend/lambdas/AGENTS.md` |
 | `shared/types/` | `@branch/types` — types-only pkg (DB rows + auth DTOs) | see backend doc |
 | `shared/lambda-auth/` | `@branch/lambda-auth` — runtime Cognito auth/authz pkg | see backend doc |
+| `shared/lambda-http/` | `@branch/lambda-http` — runtime HTTP router/dispatcher for lambdas | see backend doc |
 | `infrastructure/` | Terraform: `aws/`, `github/`, `test/` | `infrastructure/AGENTS.md` |
 | `.github/workflows/` | CI/CD + PR review bot | `.github/AGENTS.md` |
 
@@ -28,10 +29,11 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 ## Shared packages (critical)
 
-Two `file:`-linked packages dedupe code across lambdas:
+Three `file:`-linked packages dedupe code across lambdas:
 
 - **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). `db-types.d.ts` is **generated** from `apps/backend/db/db_setup.sql` by the `regenerate-db-types` workflow — never hand-edit it.
 - **`@branch/lambda-auth`** (`shared/lambda-auth/`) — runtime auth: `authenticateRequest(db, event)`, `extractToken(event)`, `checkAuthorization(ctx, level, resourceUserId?)`. Lambdas wrap it in their local `auth.ts`.
+- **`@branch/lambda-http`** (`shared/lambda-http/`) — runtime HTTP router: `dispatch(event, { prefix, routes })`, `json(status, body)`, `matchPattern`. Each lambda is a `routes` table of `{ method, pattern, handler }` with full prefixed `:param` patterns; `dispatch` canonicalizes the path (so the same table works behind API Gateway's full path and the dev-server's stripped path) and centralizes OPTIONS/CORS, `/health`, 404 and 500. Runtime deps are `file:`-linked but **bundled into each lambda's zip by esbuild** at `npm run package` — they are not on `node_modules` at runtime.
 
 ## Root commands
 

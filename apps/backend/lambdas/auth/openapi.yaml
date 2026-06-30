@@ -3,9 +3,9 @@ info:
   title: auth (Local)
   version: 1.0.0
 servers:
-  - url: /auth
+  - url: /
 paths:
-  /health:
+  /auth/health:
     get:
       summary: Health check
       responses:
@@ -19,7 +19,7 @@ paths:
                   ok:
                     type: boolean
 
-  /register:
+  /auth/register:
     post:
       summary: Register a new user
       description: Creates a new user account in Cognito and the database
@@ -108,7 +108,7 @@ paths:
                     type: string
                     example: Failed to create user account
 
-  /login:
+  /auth/login:
     post:
       summary: Log in a user
       description: Authenticates a user with email and password via Cognito SRP
@@ -165,7 +165,7 @@ paths:
                     type: string
                     example: Email not verified
 
-  /verify-email:
+  /auth/verify-email:
     post:
       summary: POST /verify-email
       requestBody:
@@ -183,7 +183,7 @@ paths:
         '200':
           description: OK
 
-  /resend-code:
+  /auth/resend-code:
     post:
       summary: POST /resend-code
       requestBody:
@@ -199,14 +199,14 @@ paths:
         '200':
           description: OK
 
-  /logout:
+  /auth/logout:
     post:
       summary: POST /logout
       responses:
         '200':
           description: OK
 
-  /forgot-password:
+  /auth/forgot-password:
     post:
       summary: Request a password reset code
       description: Sends a verification code to the user's email for password reset
@@ -260,7 +260,7 @@ paths:
                     type: string
                     example: Too many requests, please try again later
 
-  /reset-password:
+  /auth/reset-password:
     post:
       summary: Reset password with verification code
       description: Confirms the password reset using the code sent to the user's email

@@ -38,7 +38,7 @@ test/                       # jest + RTL mirror of src/ (custom render in test/u
 
 No React Query / SWR / Redux. Pattern: `useState` + `useEffect` + `apiFetch`, local component state.
 
-`src/lib/api.ts` — `apiFetch<T>(path, { token?, ... })`. Routes by first path segment to a service port (auth→3006, projects→3002, donors→3003, expenditures→3004, reports→3005, users→3001), or to `NEXT_PUBLIC_API_BASE_URL` if set. Injects `Authorization: Bearer <token>`. Throws on non-2xx. `next.config.ts` rewrites mirror this routing for the dev server. New backend calls go through `apiFetch` — don't hand-roll `fetch`.
+`src/lib/api.ts` — `apiFetch<T>(path, { token?, ... })`. In production set `NEXT_PUBLIC_API_BASE_URL` (the API Gateway stage URL) — all calls go there with their **full prefixed path** (`/auth/login`, `/projects/:id/members`). With it unset (local dev), it routes by first path segment to a service port (auth→3006, projects→3002, donors→3003, expenditures→3004, reports→3005, users→3001). Injects `Authorization: Bearer <token>`. Throws on non-2xx. `next.config.ts` has dev-only pass-through rewrites per service (full prefixed paths, no stripping) as a fallback for same-origin requests. New backend calls go through `apiFetch` — don't hand-roll `fetch`.
 
 ## Auth
 

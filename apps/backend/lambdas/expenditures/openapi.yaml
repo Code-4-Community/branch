@@ -3,9 +3,9 @@ info:
   title: expenditures (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000/expenditures
+  - url: /
 paths:
-  /health:
+  /expenditures/health:
     get:
       summary: Health check
       responses:

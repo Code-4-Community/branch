@@ -3,9 +3,9 @@ info:
   title: Projects (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000
+  - url: /
 paths:
-  /health:
+  /projects/health:
     get:
       summary: Health check
       responses:
@@ -97,7 +97,7 @@ paths:
                 items:
                   type: object
 
-  /dashboard:
+  /projects/dashboard:
     get:
       summary: GET /dashboard
       responses:

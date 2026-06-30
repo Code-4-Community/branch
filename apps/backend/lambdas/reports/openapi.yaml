@@ -3,12 +3,11 @@ info:
   title: reports (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3005/reports
-  - url: http://localhost:3000/reports
+  - url: /
 security:
   - BearerAuth: []
 paths:
-  /health:
+  /reports/health:
     get:
       summary: Health check
       security: []
@@ -110,7 +109,7 @@ paths:
                   type: string
                   enum: [pdf, docx]
                   default: pdf
-                  description: Output format: "pdf" (default) or "docx"
+                  description: 'Output format: "pdf" (default) or "docx"'
                   example: docx
       responses:
         '201':

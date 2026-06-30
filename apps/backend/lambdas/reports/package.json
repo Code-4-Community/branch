@@ -8,7 +8,7 @@
     "build": "tsc",
     "test": "jest --forceExit",
     "test:e2e": "start-server-and-test dev http-get://localhost:3000/reports/health 'jest --testMatch=\"**/*.e2e.test.ts\" --forceExit'",
-    "package": "npm run build && cd dist && zip -r ../lambda.zip . -x '*.map' 'dev-server.*' 'swagger-utils.*'"
+    "package": "esbuild handler.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/handler.js --external:@aws-sdk/* && cd dist && zip -q -r ../lambda.zip handler.js"
   },
   "devDependencies": {
     "@branch/types": "file:../../../../shared/types",
@@ -22,7 +22,8 @@
     "start-server-and-test": "^2.1.1",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "esbuild": "^0.25.0"
   },
   "dependencies": {
     "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
@@ -34,6 +35,7 @@
     "kysely": "^0.28.11",
     "docx": "^9.5.0",
     "pdfmake": "^0.3.4",
-    "pg": "^8.18.0"
+    "pg": "^8.18.0",
+    "@branch/lambda-http": "file:../../../../shared/lambda-http"
   }
 }

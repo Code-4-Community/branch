@@ -68,10 +68,12 @@ jobs:
       
       - name: Build shared lambda-auth package
         run: npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
+      - name: Build shared lambda-http package
+        run: npm ci --prefix shared/lambda-http && npm run build --prefix shared/lambda-http
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
-      
+
       - name: Package lambda
         working-directory: ${{ matrix.lambda }}
         run: npm run package

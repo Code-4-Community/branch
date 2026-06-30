@@ -8,20 +8,7 @@ resource "aws_api_gateway_rest_api" "branch_api" {
   }
 }
 
-# Define supported HTTP methods per Lambda function based on handlers
-# NOTE: Must be kept in sync with actual Lambda handlers in apps/backend/lambdas/*/openapi.yaml
-locals {
-  lambda_methods = {
-    auth         = ["GET", "POST"]
-    donors       = ["GET"]
-    expenditures = ["GET", "POST"]
-    projects     = ["GET", "POST"]
-    reports      = ["GET"]
-    users        = ["GET", "POST", "DELETE", "PATCH"]
-  }
-}
-
-# Create a resource for each Lambda function
+# One resource per lambda at the API root: /auth, /donors, /projects, ...
 resource "aws_api_gateway_resource" "lambda_resources" {
   for_each = local.lambda_functions
 
@@ -30,43 +17,61 @@ resource "aws_api_gateway_resource" "lambda_resources" {
   path_part   = each.key
 }
 
-# Create methods for each resource based on supported methods
-resource "aws_api_gateway_method" "lambda_methods" {
-  for_each = merge([
-    for lambda, methods in local.lambda_methods : {
-      for method in methods :
-      "${lambda}-${method}" => {
-        lambda = lambda
-        method = method
-      }
-    }
-  ]...)
+# Greedy child per lambda: /<lambda>/{proxy+} captures all sub-paths.
+# Each lambda owns its own routing (see @branch/lambda-http dispatcher); API
+# Gateway just forwards the full path to the matching service.
+resource "aws_api_gateway_resource" "lambda_proxy" {
+  for_each = local.lambda_functions
+
+  rest_api_id = aws_api_gateway_rest_api.branch_api.id
+  parent_id   = aws_api_gateway_resource.lambda_resources[each.key].id
+  path_part   = "{proxy+}"
+}
+
+# ANY on the bare resource (/<lambda>) — {proxy+} requires >=1 trailing segment,
+# so the prefix itself needs its own method. ANY also routes OPTIONS preflight
+# to the lambda's CORS handler and removes the need to enumerate methods.
+resource "aws_api_gateway_method" "lambda_root_any" {
+  for_each = local.lambda_functions
 
   rest_api_id   = aws_api_gateway_rest_api.branch_api.id
-  resource_id   = aws_api_gateway_resource.lambda_resources[each.value.lambda].id
-  http_method   = each.value.method
+  resource_id   = aws_api_gateway_resource.lambda_resources[each.key].id
+  http_method   = "ANY"
   authorization = "NONE"
 }
 
-# Create Lambda integrations
-resource "aws_api_gateway_integration" "lambda_integrations" {
-  for_each = merge([
-    for lambda, methods in local.lambda_methods : {
-      for method in methods :
-      "${lambda}-${method}" => {
-        lambda = lambda
-        method = method
-      }
-    }
-  ]...)
+resource "aws_api_gateway_integration" "lambda_root_any" {
+  for_each = local.lambda_functions
 
   rest_api_id = aws_api_gateway_rest_api.branch_api.id
-  resource_id = aws_api_gateway_resource.lambda_resources[each.value.lambda].id
-  http_method = aws_api_gateway_method.lambda_methods[each.key].http_method
+  resource_id = aws_api_gateway_resource.lambda_resources[each.key].id
+  http_method = aws_api_gateway_method.lambda_root_any[each.key].http_method
 
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.functions[each.value.lambda].invoke_arn
+  uri                     = aws_lambda_function.functions[each.key].invoke_arn
+}
+
+# ANY on the greedy proxy (/<lambda>/{proxy+}).
+resource "aws_api_gateway_method" "lambda_proxy_any" {
+  for_each = local.lambda_functions
+
+  rest_api_id   = aws_api_gateway_rest_api.branch_api.id
+  resource_id   = aws_api_gateway_resource.lambda_proxy[each.key].id
+  http_method   = "ANY"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "lambda_proxy_any" {
+  for_each = local.lambda_functions
+
+  rest_api_id = aws_api_gateway_rest_api.branch_api.id
+  resource_id = aws_api_gateway_resource.lambda_proxy[each.key].id
+  http_method = aws_api_gateway_method.lambda_proxy_any[each.key].http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.functions[each.key].invoke_arn
 }
 
 # Allow API Gateway to invoke Lambda functions
@@ -85,10 +90,23 @@ resource "aws_lambda_permission" "api_gateway_permissions" {
 # Create deployment
 resource "aws_api_gateway_deployment" "branch_deployment" {
   depends_on = [
-    aws_api_gateway_integration.lambda_integrations
+    aws_api_gateway_integration.lambda_root_any,
+    aws_api_gateway_integration.lambda_proxy_any,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.branch_api.id
+
+  # Redeploy the stage whenever the routing surface changes.
+  triggers = {
+    redeploy = sha1(jsonencode([
+      [for k, r in aws_api_gateway_resource.lambda_resources : r.id],
+      [for k, r in aws_api_gateway_resource.lambda_proxy : r.id],
+      [for k, m in aws_api_gateway_method.lambda_root_any : m.id],
+      [for k, m in aws_api_gateway_method.lambda_proxy_any : m.id],
+      [for k, i in aws_api_gateway_integration.lambda_root_any : i.uri],
+      [for k, i in aws_api_gateway_integration.lambda_proxy_any : i.uri],
+    ]))
+  }
 
   lifecycle {
     create_before_destroy = true

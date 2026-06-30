@@ -32,13 +32,14 @@ make logs-service SERVICE=users
 ```
 Defaults work without `.env` (DB: branch_dev/password@postgres:5432/branch_db). See `apps/backend/README.md` for the full Make target table.
 
-**Shared dev-server (single service iteration)** — from a lambda dir (`npm run dev`). All lambdas register on **port 3000**; first one started owns the server, others register via `POST /_register`. Routes dispatch by first path segment:
+**Shared dev-server (single service iteration)** — from a lambda dir (`npm run dev`). All lambdas register on **port 3000**; first one started owns the server, others register via `POST /_register`. It routes by first path segment to a service, then **strips that prefix** before invoking the handler:
 ```
-http://localhost:3000/auth/register
-http://localhost:3000/donors            # GET /
+http://localhost:3000/auth/register     # handler receives /register
+http://localhost:3000/donors            # handler receives /
 http://localhost:3000/<service>/swagger # Swagger UI from openapi.yaml
 http://localhost:3000/<service>/health
 ```
+The `@branch/lambda-http` dispatcher **re-canonicalizes** the stripped path back to the full prefixed form (`/register` → `/auth/register`), so the same route table matches here and behind API Gateway (which forwards the full path).
 
 ## Database
 
@@ -49,9 +50,12 @@ http://localhost:3000/<service>/health
 
 ## Shared packages
 
-Both linked via `file:` deps in each lambda's `package.json`:
+All linked via `file:` deps in each lambda's `package.json`:
 - `@branch/types` (`../../../../shared/types`) — devDependency, types only.
-- `@branch/lambda-auth` (`../../../../shared/lambda-auth`) — dependency, runtime auth. Build it (`npm run build` in `shared/lambda-auth`) when its source changes; lambdas consume `dist/`.
+- `@branch/lambda-auth` (`../../../../shared/lambda-auth`) — dependency, runtime auth. Build it (`npm run build` in `shared/lambda-auth`) when its source changes.
+- `@branch/lambda-http` (`../../../../shared/lambda-http`) — dependency, runtime HTTP router (`dispatch`/`json`/`matchPattern`). Build it when its source changes.
+
+Runtime shared deps are **bundled into each lambda's zip by esbuild** (see Deploy), so they don't need to be present in `node_modules` at runtime — but they must be built (`dist/`) before bundling.
 
 ## Deploy
 
@@ -60,7 +64,7 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 2. Build per-lambda: `npm ci --legacy-peer-deps` + `npm run package` → `lambda.zip`.
 3. `aws lambda update-function-code --function-name branch-<name>` (region `us-east-2`).
 
-`npm run package` = `tsc` then zip `dist/` excluding maps, `dev-server.*`, `swagger-utils.*`. Function names **must** match `branch-<service>`. Infra (function definitions, IAM, API Gateway routes) is in `infrastructure/aws/lambda.tf` + `api_gateway.tf`; the deploy workflow only swaps code (TF `lifecycle` ignores `s3_key`).
+The workflow builds `shared/lambda-auth` and `shared/lambda-http` first. `npm run package` = **esbuild bundle** of `handler.ts` (deps + shared packages inlined, `@aws-sdk/*` external) → single `dist/handler.js`, zipped to `lambda.zip`. Function names **must** match `branch-<service>`. Infra (function definitions, IAM, API Gateway routes) is in `infrastructure/aws/lambda.tf` + `api_gateway.tf`; the deploy workflow only swaps code (TF `lifecycle` ignores `s3_key`). API Gateway forwards the **full path** to each lambda via a greedy `{proxy+}` per service (see `infrastructure/AGENTS.md`).
 
 ## Env vars (lambdas)
 
