@@ -17,7 +17,7 @@ jobs:
       - name: Find all lambdas
         id: find
         run: |
-          lambdas=$(ls -d apps/backend/lambdas/*/ | grep -Ev "(tools)" | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          lambdas=$(for d in apps/backend/lambdas/*/; do [ -f "${d}package.json" ] && echo "$d"; done | grep -Ev "(tools)" | jq -R -s -c 'split("\n") | map(select(. != ""))')
           echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
   
   test:
