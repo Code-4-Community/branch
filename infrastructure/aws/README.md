@@ -26,8 +26,11 @@ No modules.
 | [aws_amplify_app.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/amplify_app) | resource |
 | [aws_amplify_branch.main](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/amplify_branch) | resource |
 | [aws_api_gateway_deployment.branch_deployment](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_deployment) | resource |
-| [aws_api_gateway_integration.lambda_integrations](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
-| [aws_api_gateway_method.lambda_methods](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
+| [aws_api_gateway_integration.lambda_proxy_any](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
+| [aws_api_gateway_integration.lambda_root_any](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
+| [aws_api_gateway_method.lambda_proxy_any](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
+| [aws_api_gateway_method.lambda_root_any](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
+| [aws_api_gateway_resource.lambda_proxy](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_resource) | resource |
 | [aws_api_gateway_resource.lambda_resources](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_resource) | resource |
 | [aws_api_gateway_rest_api.branch_api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_rest_api) | resource |
 | [aws_api_gateway_stage.branch_stage](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_stage) | resource |
