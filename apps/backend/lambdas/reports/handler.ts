@@ -221,7 +221,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: 'Invalid JSON in request body' });
       }
 
-      const { title, projectId, objectUrl } = body;
+      const { title, projectId, objectUrl, reportType } = body;
 
       if (!title || typeof title !== 'string' || title.trim().length === 0) {
         return json(400, { message: 'title is required' });
@@ -232,6 +232,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!objectUrl || typeof objectUrl !== 'string') {
         return json(400, { message: 'objectUrl is required' });
       }
+      const REPORT_TYPES = ['technical', 'narrative'] as const;
+      type ReportType = typeof REPORT_TYPES[number];
+      const resolvedReportType: ReportType = (reportType && REPORT_TYPES.includes(reportType as ReportType)) ? reportType as ReportType : 'technical';
 
       const projectExists = await db.selectFrom('branch.projects')
         .where('project_id', '=', projectId as number)
@@ -246,7 +249,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const report = await db
         .insertInto('branch.reports')
-        .values({ project_id: projectId, title: title.trim(), object_url: objectUrl as string })
+        .values({ project_id: projectId, title: (title as string).trim(), object_url: objectUrl as string, report_type: resolvedReportType })
         .returningAll()
         .executeTakeFirst();
 

@@ -523,7 +523,7 @@ describe('POST /reports unit tests', () => {
     });
 
     test('201: creates report and returns created report', async () => {
-      const fakeReport = { report_id: 10, project_id: 1, title: 'My Report', object_url: fakeObjectUrl, date_created: new Date('2025-01-01') };
+      const fakeReport = { report_id: 10, project_id: 1, title: 'My Report', object_url: fakeObjectUrl, report_type: 'technical', date_created: new Date('2025-01-01') };
       setupInsertMock(fakeReport);
 
       const res = await handler(postEvent({ title: 'My Report', projectId: 1, objectUrl: fakeObjectUrl }));
@@ -542,7 +542,7 @@ describe('POST /reports unit tests', () => {
           capturedValues = vals;
           return {
             returningAll: jest.fn().mockReturnValue({
-              executeTakeFirst: jest.fn().mockReturnValue({ report_id: 1, project_id: 1, title: vals.title, object_url: fakeObjectUrl, date_created: new Date() } as any),
+              executeTakeFirst: jest.fn().mockReturnValue({ report_id: 1, project_id: 1, title: vals.title, object_url: fakeObjectUrl, report_type: 'technical', date_created: new Date() } as any),
             }),
           };
         }),
