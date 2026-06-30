@@ -4,6 +4,8 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 > **Ignore two README.md files when learning the repo.** The root `README.md` is upstream `terraform-docs` boilerplate (not about BRANCH). `apps/frontend/README.md` is `create-next-app` boilerplate. Neither describes this project. AGENTS.md files are the source of truth.
 
+> **Keep these docs current.** If a change alters architecture or an established convention — new/removed service or shared package, changed auth/data-access/routing pattern, new build/deploy/CI flow, renamed or moved key paths — update the relevant `AGENTS.md` in the **same PR**. These files are the source of truth for both humans and AI agents; stale docs are worse than none. Pure feature work that follows existing patterns does not need a doc change.
+
 ## Repo map
 
 | Path | What | AGENTS.md |
