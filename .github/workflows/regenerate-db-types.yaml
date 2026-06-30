@@ -229,10 +229,24 @@ jobs:
             fi
 
             git commit -m "$COMMIT_MESSAGE"
-            
-            git push origin HEAD:${{ github.head_ref || github.ref_name }}
+
+            TARGET_BRANCH="${{ github.head_ref }}"
+
+            if [ -z "$TARGET_BRANCH" ]; then
+              TARGET_BRANCH="chore/auto-regenerate-db-types-$(date +%Y%m%d%H%M%S)"
+              git push origin HEAD:$TARGET_BRANCH
+              gh pr create \
+                --title "chore: auto-regenerate database types from schema changes" \
+                --body "Automated PR to update \`shared/types/db-types.d.ts\` after schema changes merged to main." \
+                --base main \
+                --head $TARGET_BRANCH
+            else
+              git push origin HEAD:$TARGET_BRANCH
+            fi
 
             echo "Changes committed + pushed successfully"
+          env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         - name: Comment on PR
           if: steps.git-check.outputs.changes == 'true' && github.event_name == 'pull_request'
