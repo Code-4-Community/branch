@@ -64,6 +64,9 @@ paths:
                           type: integer
                         object_url:
                           type: string
+                        report_type:
+                          type: string
+                          enum: [technical, narrative]
                         date_created:
                           type: string
                           format: date
@@ -123,6 +126,9 @@ paths:
                     type: integer
                   object_url:
                     type: string
+                  report_type:
+                    type: string
+                    enum: [technical, narrative]
         '400':
           description: Invalid input
         '401':

@@ -50,3 +50,6 @@ Thumbs.db
 terraform.tfstate*
 terraform.tfvars*
 *.out
+
+# stray local sqlite db
+db.sqlite

@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/backend/lambdas/**'
       - 'shared/types/**'
+  workflow_dispatch:
 
 jobs:
   detect-changes:
@@ -74,11 +75,15 @@ jobs:
       - name: Package lambda
         working-directory: ${{ matrix.lambda }}
         run: npm run package
-      
+
+      - name: Compute artifact name
+        id: artifact
+        run: echo "name=lambda-$(basename ${{ matrix.lambda }})" >> $GITHUB_OUTPUT
+
       - name: Upload lambda artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.lambda }}
+          name: ${{ steps.artifact.outputs.name }}
           path: ${{ matrix.lambda }}/lambda.zip
           if-no-files-found: error
 
@@ -95,12 +100,16 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-2
     steps:
+      - name: Compute artifact name
+        id: artifact
+        run: echo "name=lambda-$(basename ${{ matrix.lambda }})" >> $GITHUB_OUTPUT
+
       - name: Download lambda artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.lambda }}
+          name: ${{ steps.artifact.outputs.name }}
           path: ${{ matrix.lambda }}
-      
+
       - name: Deploy lambda
         run: |
           LAMBDA_NAME=$(basename ${{ matrix.lambda }})

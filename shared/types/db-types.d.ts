@@ -62,8 +62,8 @@ export interface BranchProjectMemberships {
 export interface BranchProjects {
   created_at: Generated<Timestamp | null>;
   currency: Generated<string | null>;
-  end_date: Timestamp | null;
   description: string;
+  end_date: Timestamp | null;
   name: string;
   project_id: Generated<number>;
   start_date: Timestamp | null;
@@ -75,6 +75,7 @@ export interface BranchReports {
   object_url: string;
   project_id: number;
   report_id: Generated<number>;
+  report_type: string;
 }
 
 export interface BranchUsers {
