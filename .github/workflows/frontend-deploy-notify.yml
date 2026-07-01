@@ -1,0 +1,73 @@
+name: Frontend Deploy Notify
+
+# The frontend is deployed by AWS Amplify auto-build on push to main (see
+# infrastructure/aws/amplify.tf). Amplify runs outside GitHub Actions, so an
+# EventBridge rule (infrastructure/aws/amplify_notifications.tf) fires a
+# repository_dispatch when a build reaches a terminal state. This workflow
+# reacts to that event and reports the outcome to the PR + #branch-deployments.
+on:
+  repository_dispatch:
+    types: [amplify-deploy]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      - name: Resolve Amplify job details
+        id: amplify
+        env:
+          APP_ID: ${{ github.event.client_payload.appId }}
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+          JOB_STATUS: ${{ github.event.client_payload.status }}
+        run: |
+          set -euo pipefail
+
+          COMMIT=$(aws amplify get-job --app-id "$APP_ID" --branch-name main --job-id "$JOB_ID" \
+            --query "job.summary.commitId" --output text)
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+          # Collect step logs on non-success.
+          echo "details<<__EOF__" >> "$GITHUB_OUTPUT"
+          if [ "$JOB_STATUS" != "SUCCEED" ]; then
+            LOG_URLS=$(aws amplify get-job --app-id "$APP_ID" --branch-name main --job-id "$JOB_ID" \
+              --query "job.steps[].logUrl" --output text || true)
+            for url in $LOG_URLS; do
+              [ "$url" = "None" ] && continue
+              echo "----- step log -----" >> "$GITHUB_OUTPUT"
+              curl -fsSL "$url" 2>/dev/null | tail -n 40 >> "$GITHUB_OUTPUT" || echo "(could not fetch log)" >> "$GITHUB_OUTPUT"
+            done
+          fi
+          echo "__EOF__" >> "$GITHUB_OUTPUT"
+
+          if [ "$JOB_STATUS" = "SUCCEED" ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
+            echo "summary=Amplify build $JOB_ID succeeded" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=Amplify build $JOB_ID finished with status $JOB_STATUS" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Notify
+        uses: ./.github/actions/deploy-notify
+        with:
+          status: ${{ steps.amplify.outputs.result }}
+          title: Frontend Deploy
+          summary: ${{ steps.amplify.outputs.summary }}
+          details: ${{ steps.amplify.outputs.details }}
+          commit-sha: ${{ steps.amplify.outputs.commit }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

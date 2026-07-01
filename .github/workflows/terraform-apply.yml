@@ -137,11 +137,33 @@ jobs:
       - name: Terraform Apply
         id: apply
         run: |
-          terraform apply -auto-approve -no-color tfplan
+          set -o pipefail
+          terraform apply -auto-approve -no-color tfplan 2>&1 | tee apply.log
         working-directory: ${{ matrix.directory }}
         env:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
           TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Compute result name
+        id: rname
+        if: always()
+        run: echo "name=$(echo '${{ matrix.directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Save apply result
+        if: always()
+        run: |
+          mkdir -p tf-results
+          echo "${{ matrix.directory }}|${{ steps.apply.outcome }}" > "tf-results/${{ steps.rname.outputs.name }}.meta"
+          cp "${{ matrix.directory }}/apply.log" "tf-results/${{ steps.rname.outputs.name }}.log" 2>/dev/null \
+            || echo "(no apply output captured)" > "tf-results/${{ steps.rname.outputs.name }}.log"
+
+      - name: Upload apply result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-result-${{ steps.rname.outputs.name }}
+          path: tf-results/
+          if-no-files-found: warn
 
       - name: Create deployment summary
         if: always()
@@ -162,17 +184,58 @@ jobs:
             echo "❌ **Terraform apply failed!**" >> $GITHUB_STEP_SUMMARY
           fi
 
-  terraform-apply-summary:
+  notify:
     needs: [detect-changes, terraform-apply]
-    if: always()
+    if: always() && needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - name: Summary
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download apply results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tf-result-*
+          path: tf-results
+          merge-multiple: true
+
+      - name: Aggregate results
+        id: agg
         run: |
-          if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
-            echo "No Terraform changes detected or no directories selected"
+          total=0; ok=0; failed_dirs=""
+          echo "details<<__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
+          for meta in tf-results/*.meta; do
+            [ -e "$meta" ] || continue
+            dir=$(cut -d'|' -f1 "$meta")
+            outcome=$(cut -d'|' -f2 "$meta")
+            base=$(basename "$meta" .meta)
+            total=$((total+1))
+            if [ "$outcome" = "success" ]; then ok=$((ok+1)); else failed_dirs="$failed_dirs $dir"; fi
+            echo "===== $dir ($outcome) =====" >> "$GITHUB_OUTPUT"
+            cat "tf-results/$base.log" 2>/dev/null >> "$GITHUB_OUTPUT" || echo "(no output)" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
+          done
+          echo "__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$failed_dirs" ]; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=$ok/$total workspaces applied — failed:$failed_dirs" >> "$GITHUB_OUTPUT"
           else
-            echo "Terraform apply completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "summary=$ok/$total workspaces applied" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Notify
+        uses: ./.github/actions/deploy-notify
+        with:
+          status: ${{ steps.agg.outputs.status }}
+          title: Terraform Apply
+          summary: ${{ steps.agg.outputs.summary }}
+          details: ${{ steps.agg.outputs.details }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
 
