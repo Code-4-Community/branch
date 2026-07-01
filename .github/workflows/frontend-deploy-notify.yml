@@ -1,15 +1,13 @@
 name: Frontend Deploy Notify
 
 # The frontend is deployed by AWS Amplify auto-build on push to main (see
-# infrastructure/aws/amplify.tf). Amplify runs outside GitHub Actions, so this
-# workflow polls the Amplify API for the build of this commit and reports the
-# outcome to the PR + #branch-deployments Slack channel.
+# infrastructure/aws/amplify.tf). Amplify runs outside GitHub Actions, so an
+# EventBridge rule (infrastructure/aws/amplify_notifications.tf) fires a
+# repository_dispatch when a build reaches a terminal state. This workflow
+# reacts to that event and reports the outcome to the PR + #branch-deployments.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/frontend/**'
-      - 'shared/types/**'
+  repository_dispatch:
+    types: [amplify-deploy]
 
 permissions:
   contents: read
@@ -29,56 +27,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
-      - name: Poll Amplify deploy
+      - name: Resolve Amplify job details
         id: amplify
         env:
-          COMMIT_SHA: ${{ github.sha }}
+          APP_ID: ${{ github.event.client_payload.appId }}
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+          JOB_STATUS: ${{ github.event.client_payload.status }}
         run: |
           set -euo pipefail
 
-          APP_ID=$(aws amplify list-apps --query "apps[?name=='branch-frontend'].appId" --output text)
-          if [ -z "$APP_ID" ] || [ "$APP_ID" = "None" ]; then
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-            echo "summary=Could not find Amplify app 'branch-frontend'" >> "$GITHUB_OUTPUT"
-            printf 'details<<__EOF__\n%s\n__EOF__\n' "aws amplify list-apps returned no app id" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "App id: $APP_ID"
-
-          # Amplify's build may lag behind the push — retry to find the job.
-          JOB_ID=""
-          for attempt in $(seq 1 10); do
-            JOB_ID=$(aws amplify list-jobs --app-id "$APP_ID" --branch-name main --max-results 25 \
-              --query "jobSummaries[?commitId=='${COMMIT_SHA}'].jobId | [0]" --output text)
-            if [ -n "$JOB_ID" ] && [ "$JOB_ID" != "None" ]; then break; fi
-            echo "No Amplify job for ${COMMIT_SHA} yet (attempt $attempt); waiting…"
-            JOB_ID=""
-            sleep 30
-          done
-
-          if [ -z "$JOB_ID" ]; then
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-            echo "summary=No Amplify build found for commit ${COMMIT_SHA:0:7} (auto-build delayed or disabled)" >> "$GITHUB_OUTPUT"
-            printf 'details<<__EOF__\n%s\n__EOF__\n' "Checked app $APP_ID branch main." >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Job id: $JOB_ID"
-
-          # Poll until terminal (~20 min max).
-          STATUS=""
-          for attempt in $(seq 1 40); do
-            STATUS=$(aws amplify get-job --app-id "$APP_ID" --branch-name main --job-id "$JOB_ID" \
-              --query "job.summary.status" --output text)
-            echo "Amplify job $JOB_ID status: $STATUS"
-            case "$STATUS" in
-              SUCCEED|FAILED|CANCELLED) break ;;
-            esac
-            sleep 30
-          done
+          COMMIT=$(aws amplify get-job --app-id "$APP_ID" --branch-name main --job-id "$JOB_ID" \
+            --query "job.summary.commitId" --output text)
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
 
           # Collect step logs on non-success.
           echo "details<<__EOF__" >> "$GITHUB_OUTPUT"
-          if [ "$STATUS" != "SUCCEED" ]; then
+          if [ "$JOB_STATUS" != "SUCCEED" ]; then
             LOG_URLS=$(aws amplify get-job --app-id "$APP_ID" --branch-name main --job-id "$JOB_ID" \
               --query "job.steps[].logUrl" --output text || true)
             for url in $LOG_URLS; do
@@ -89,20 +53,21 @@ jobs:
           fi
           echo "__EOF__" >> "$GITHUB_OUTPUT"
 
-          if [ "$STATUS" = "SUCCEED" ]; then
-            echo "status=success" >> "$GITHUB_OUTPUT"
+          if [ "$JOB_STATUS" = "SUCCEED" ]; then
+            echo "result=success" >> "$GITHUB_OUTPUT"
             echo "summary=Amplify build $JOB_ID succeeded" >> "$GITHUB_OUTPUT"
           else
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-            echo "summary=Amplify build $JOB_ID finished with status ${STATUS:-unknown}" >> "$GITHUB_OUTPUT"
+            echo "result=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=Amplify build $JOB_ID finished with status $JOB_STATUS" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Notify
         uses: ./.github/actions/deploy-notify
         with:
-          status: ${{ steps.amplify.outputs.status }}
+          status: ${{ steps.amplify.outputs.result }}
           title: Frontend Deploy
           summary: ${{ steps.amplify.outputs.summary }}
           details: ${{ steps.amplify.outputs.details }}
+          commit-sha: ${{ steps.amplify.outputs.commit }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
