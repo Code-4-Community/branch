@@ -157,6 +157,10 @@ jobs:
       needs.detect-changes.outputs.terraform-dirs != '' &&
       needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # assume the OIDC plan role
+      contents: read
+      pull-requests: write # post plan comments
     strategy:
       matrix:
         directory: ${{ fromJson(needs.detect-changes.outputs.terraform-dirs) }}
@@ -179,11 +183,10 @@ jobs:
           tfenv install
           terraform version
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (read-only plan role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-plan
           aws-region: us-east-2
 
       - name: Terraform Init

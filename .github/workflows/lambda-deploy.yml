@@ -91,14 +91,14 @@ jobs:
     needs: [detect-changes, build]
     if: needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write # assume the OIDC apply role
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         lambda: ${{ fromJson(needs.detect-changes.outputs.lambdas) }}
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: us-east-2
     steps:
       - name: Compute artifact name
         id: artifact
@@ -109,6 +109,12 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: ${{ matrix.lambda }}
+
+      - name: Configure AWS credentials (write apply role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-apply
+          aws-region: us-east-2
 
       - name: Deploy lambda
         id: deploy
