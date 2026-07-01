@@ -1,0 +1,325 @@
+name: PR Preview Environment
+
+# Ephemeral per-PR test environments, gated by the `test-environment` label.
+#
+#   label added        → create the stack + deploy FE/BE, comment the URL
+#   new commits (sync)  → fast update (changed lambdas + frontend), no terraform
+#   label removed/close → tear the stack down
+#
+# Cost: ~$0. Per-PR lambdas + one REST API Gateway (all serverless-at-rest);
+# the frontend is a path prefix on the ONE shared CloudFront distribution
+# (infrastructure/preview-shared). Shared RDS + Cognito are reused as-is;
+# migrations are never run here. See infrastructure/preview/*.
+on:
+  pull_request:
+    types: [labeled, synchronize, unlabeled, closed]
+
+concurrency:
+  # One run per PR. Back-to-back commits: a new push cancels the older in-flight
+  # run for this PR (cancel-in-progress), so a stale update never finishes on top
+  # of a newer one. Deploys are also idempotent+convergent — the surviving run
+  # rebuilds from the FULL base...HEAD diff (see "Detect what to deploy"), not an
+  # incremental one, so even if a prior run was killed mid-sync the final state
+  # matches the latest commit.
+  group: preview-env-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  LABEL: test-environment
+  AWS_REGION: us-east-2
+  ROLE_ARN: arn:aws:iam::489881683177:role/branch-ci-preview
+  TF_VERSION: 1.13.0
+  DIST_COMMENT: branch PR previews (shared, per-PR path prefixes)
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Create (label added) or update (new commits on a labeled PR).
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy:
+    if: >
+      (github.event.action == 'labeled' && github.event.label.name == 'test-environment') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'test-environment'))
+    runs-on: ubuntu-latest
+    environment: preview
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    env:
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mode (create on label, update on push)
+        id: mode
+        run: |
+          if [ "${{ github.event.action }}" = "labeled" ]; then
+            echo "create=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "create=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Only announce "creating" the first time (label add); commit-updates skip
+      # straight to the "updated in place" note so the PR history stays clean.
+      - name: Comment — creating
+        if: steps.mode.outputs.create == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+              body: `🌿 ⏳ Creating preview environment… ([logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}))`,
+            });
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (scoped preview role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve shared account values
+        id: shared
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "bucket=branch-previews-$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${DIST_COMMENT}'].Id | [0]" --output text)
+          DIST_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${DIST_COMMENT}'].DomainName | [0]" --output text)
+          echo "dist_id=$DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "dist_domain=$DIST_DOMAIN" >> "$GITHUB_OUTPUT"
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
+            echo "::error::Shared preview CloudFront not found. Apply infrastructure/preview-shared first."
+            exit 1
+          fi
+
+      # Build the preview lambdas' env from the ACTUAL prod config (single source
+      # of truth) + the live RDS endpoint. Reserved / credential keys are dropped;
+      # the module adds NODE_ENV. Only needed when creating the stack.
+      - name: Resolve preview lambda env
+        if: steps.mode.outputs.create == 'true'
+        run: |
+          DB_HOST=$(aws rds describe-db-instances --query "DBInstances[0].Endpoint.Address" --output text)
+          AUTH_ENV=$(aws lambda get-function-configuration --function-name branch-auth --query 'Environment.Variables' --output json)
+          REPORTS_ENV=$(aws lambda get-function-configuration --function-name branch-reports --query 'Environment.Variables' --output json)
+          ENV_JSON=$(jq -n --argjson a "$AUTH_ENV" --argjson r "$REPORTS_ENV" --arg dbh "$DB_HOST" '
+            (($a // {}) + ($r // {}) + { "DB_HOST": $dbh })
+            | del(.NODE_ENV, .AWS_REGION, .AWS_DEFAULT_REGION, .AWS_ACCESS_KEY_ID, .AWS_SECRET_ACCESS_KEY, .AWS_SESSION_TOKEN)
+          ')
+          # Stash for the terraform step (multiline-safe).
+          printf 'LAMBDA_ENV<<EOF\n%s\nEOF\n' "$ENV_JSON" >> "$GITHUB_ENV"
+
+      - name: Terraform apply (create/ensure preview stack)
+        if: steps.mode.outputs.create == 'true'
+        working-directory: infrastructure/preview
+        run: |
+          cat > preview.auto.tfvars.json <<EOF
+          { "pr_number": "${PR}", "lambda_env": ${LAMBDA_ENV} }
+          EOF
+          terraform init -input=false
+          terraform workspace select -or-create "pr-${PR}"
+          terraform apply -auto-approve -input=false
+
+      - name: Resolve API URL + function names
+        id: stack
+        working-directory: infrastructure/preview
+        run: |
+          if [ "${{ steps.mode.outputs.create }}" = "true" ]; then
+            API_URL=$(terraform output -raw api_gateway_url)
+          else
+            API_ID=$(aws apigateway get-rest-apis \
+              --query "items[?name=='branch-api-pr${PR}'].id | [0]" --output text)
+            if [ -z "$API_ID" ] || [ "$API_ID" = "None" ]; then
+              echo "::error::No preview API for PR #${PR}. Re-add the ${LABEL} label to (re)create it."
+              exit 1
+            fi
+            API_URL="https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod"
+          fi
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      # On create → all lambdas + frontend. On update → only what changed in the PR.
+      - name: Detect what to deploy
+        id: detect
+        run: |
+          ALL="auth donors expenditures projects reports users"
+          if [ "${{ steps.mode.outputs.create }}" = "true" ]; then
+            echo "lambdas=$ALL" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE="origin/${{ github.event.pull_request.base.ref }}"
+          git fetch --depth=1 origin "${{ github.event.pull_request.base.ref }}"
+          CHANGED=$(git diff --name-only "${BASE}...HEAD" || git diff --name-only HEAD~1 HEAD)
+          lambdas=""
+          shared_changed=false
+          echo "$CHANGED" | grep -q '^shared/' && shared_changed=true
+          for svc in $ALL; do
+            if [ "$shared_changed" = true ] || echo "$CHANGED" | grep -q "^apps/backend/lambdas/${svc}/"; then
+              lambdas="$lambdas $svc"
+            fi
+          done
+          frontend=false
+          echo "$CHANGED" | grep -q '^apps/frontend/' && frontend=true
+          echo "lambdas=$(echo $lambdas | xargs)" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
+      - name: Build + deploy lambdas
+        if: steps.detect.outputs.lambdas != ''
+        run: |
+          set -euo pipefail
+          npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
+          for svc in ${{ steps.detect.outputs.lambdas }}; do
+            echo "::group::lambda $svc"
+            ( cd "apps/backend/lambdas/$svc" && npm ci --legacy-peer-deps && npm run package )
+            aws lambda update-function-code \
+              --function-name "branch-pr${PR}-${svc}" \
+              --zip-file "fileb://apps/backend/lambdas/$svc/lambda.zip" \
+              --no-cli-pager >/dev/null
+            echo "✓ branch-pr${PR}-${svc}"
+            echo "::endgroup::"
+          done
+
+      - name: Build + sync frontend
+        if: steps.detect.outputs.frontend == 'true'
+        working-directory: apps/frontend
+        env:
+          PREVIEW_BASE_PATH: /pr-${{ env.PR }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ steps.stack.outputs.api_url }}
+        run: |
+          npm ci
+          npm run build
+          aws s3 sync out "s3://${{ steps.shared.outputs.bucket }}/pr-${PR}" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.shared.outputs.dist_id }}" \
+            --paths "/pr-${PR}/*" --no-cli-pager >/dev/null
+
+      # Post a NEW comment per event (never edit-in-place) so each commit leaves
+      # a trace in the PR timeline: ready → updated → updated → …
+      - name: Comment — result
+        if: success()
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: https://${{ steps.shared.outputs.dist_domain }}/pr-${{ env.PR }}/
+          API_URL: ${{ steps.stack.outputs.api_url }}
+          CREATE: ${{ steps.mode.outputs.create }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const url = process.env.PREVIEW_URL;
+            const sha = context.sha.slice(0, 7);
+            let body;
+            if (process.env.CREATE === 'true') {
+              body = [
+                '### 🌿 Preview environment — ready ✅',
+                '',
+                `**Open:** ${url}`,
+                `**API:** \`${process.env.API_URL}\``,
+                '',
+                '_Shared RDS + Cognito (prod data); DB migrations are **not** applied here. New commits update this environment in place — a note is posted here on each update. Remove the `test-environment` label or close the PR to tear it down._',
+              ].join('\n');
+            } else {
+              body = `🌿 **Test environment updated in place** ✅ — Click [here](${url}) to open. <sub>updated for ${sha} · [logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})</sub>`;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body,
+            });
+
+      - name: Comment — failed
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          CREATE: ${{ steps.mode.outputs.create }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const verb = process.env.CREATE === 'true' ? 'create' : 'update';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+              body: `🌿 Preview environment — failed ❌ to ${verb}. See the [workflow logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+            });
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Tear down (label removed, or PR closed while labeled).
+  # ─────────────────────────────────────────────────────────────────────────
+  teardown:
+    if: >
+      (github.event.action == 'unlabeled' && github.event.label.name == 'test-environment') ||
+      (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'test-environment'))
+    runs-on: ubuntu-latest
+    environment: preview
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    env:
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (scoped preview role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve shared account values
+        id: shared
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "bucket=branch-previews-$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${DIST_COMMENT}'].Id | [0]" --output text)
+          echo "dist_id=$DIST_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform destroy preview stack
+        working-directory: infrastructure/preview
+        run: |
+          terraform init -input=false
+          if ! terraform workspace select "pr-${PR}" 2>/dev/null; then
+            echo "No workspace pr-${PR}; nothing to destroy."
+            exit 0
+          fi
+          cat > preview.auto.tfvars.json <<EOF
+          { "pr_number": "${PR}", "lambda_env": {} }
+          EOF
+          terraform destroy -auto-approve -input=false
+          terraform workspace select default
+          terraform workspace delete "pr-${PR}"
+
+      - name: Delete frontend prefix + invalidate
+        run: |
+          aws s3 rm "s3://${{ steps.shared.outputs.bucket }}/pr-${PR}" --recursive || true
+          if [ -n "${{ steps.shared.outputs.dist_id }}" ] && [ "${{ steps.shared.outputs.dist_id }}" != "None" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "${{ steps.shared.outputs.dist_id }}" \
+              --paths "/pr-${PR}/*" --no-cli-pager >/dev/null || true
+          fi
+
+      - name: Comment — torn down
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+              body: '🌿 Preview environment torn down 🧹 — the stack for this PR has been destroyed.',
+            });
