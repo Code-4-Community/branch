@@ -51,13 +51,20 @@ jobs:
 
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-            async function slack(method, body) {
+            // Read methods (conversations.history/replies) are unreliable with a
+            // JSON body — replies returns invalid_arguments — so call them as GET
+            // with query-string params. Write methods (chat.delete) use POST JSON.
+            async function slack(method, params, verb = 'POST') {
               for (let attempt = 0; attempt < 6; attempt++) {
-                const resp = await fetch(`https://slack.com/api/${method}`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify(body),
-                });
+                let url = `https://slack.com/api/${method}`;
+                const opts = { method: verb, headers: { Authorization: `Bearer ${token}` } };
+                if (verb === 'GET') {
+                  url += '?' + new URLSearchParams(params).toString();
+                } else {
+                  opts.headers['Content-Type'] = 'application/json; charset=utf-8';
+                  opts.body = JSON.stringify(params);
+                }
+                const resp = await fetch(url, opts);
                 // Respect Slack rate limits (HTTP 429 + Retry-After).
                 if (resp.status === 429) {
                   const wait = (parseInt(resp.headers.get('retry-after') || '1', 10) || 1) * 1000;
@@ -79,7 +86,7 @@ jobs:
               do {
                 const page = await slack('conversations.history', {
                   channel, limit: 200, ...(cursor ? { cursor } : {}),
-                });
+                }, 'GET');
                 if (!page.ok) {
                   core.setFailed(`conversations.history failed: ${page.error}`);
                   return null;
@@ -92,7 +99,7 @@ jobs:
                     do {
                       const replies = await slack('conversations.replies', {
                         channel, ts: msg.ts, limit: 200, ...(rCursor ? { cursor: rCursor } : {}),
-                      });
+                      }, 'GET');
                       if (!replies.ok) { console.log(`replies failed for ${msg.ts}: ${replies.error}`); break; }
                       for (const r of replies.messages || []) {
                         if (r.ts !== msg.ts) tsList.push(r.ts);
