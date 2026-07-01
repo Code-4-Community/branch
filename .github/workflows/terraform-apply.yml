@@ -81,6 +81,34 @@ jobs:
           echo "Resolved directories: $dirs_json"
           echo "dirs=$dirs_json" >> $GITHUB_OUTPUT
 
+  # Post the initial "Deploying infrastructure" Slack message before applies run.
+  prep:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ts: ${{ steps.slack.outputs.ts }}
+      total: ${{ steps.count.outputs.total }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Count workspaces
+        id: count
+        env:
+          DIRS: ${{ needs.detect-changes.outputs.terraform-dirs }}
+        run: echo "total=$(echo "$DIRS" | jq 'length')" >> "$GITHUB_OUTPUT"
+      - name: Start deploy notification
+        id: slack
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: start
+          component: infrastructure
+          total-steps: ${{ steps.count.outputs.total }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   terraform-apply:
     needs: detect-changes
     if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
@@ -187,12 +215,12 @@ jobs:
           fi
 
   notify:
-    needs: [detect-changes, terraform-apply]
+    needs: [detect-changes, prep, terraform-apply]
     if: always() && needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -204,39 +232,15 @@ jobs:
           path: tf-results
           merge-multiple: true
 
-      - name: Aggregate results
-        id: agg
-        run: |
-          total=0; ok=0; failed_dirs=""
-          echo "details<<__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
-          for meta in tf-results/*.meta; do
-            [ -e "$meta" ] || continue
-            dir=$(cut -d'|' -f1 "$meta")
-            outcome=$(cut -d'|' -f2 "$meta")
-            base=$(basename "$meta" .meta)
-            total=$((total+1))
-            if [ "$outcome" = "success" ]; then ok=$((ok+1)); else failed_dirs="$failed_dirs $dir"; fi
-            echo "===== $dir ($outcome) =====" >> "$GITHUB_OUTPUT"
-            cat "tf-results/$base.log" 2>/dev/null >> "$GITHUB_OUTPUT" || echo "(no output)" >> "$GITHUB_OUTPUT"
-            echo "" >> "$GITHUB_OUTPUT"
-          done
-          echo "__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$failed_dirs" ]; then
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-            echo "summary=$ok/$total workspaces applied — failed:$failed_dirs" >> "$GITHUB_OUTPUT"
-          else
-            echo "status=success" >> "$GITHUB_OUTPUT"
-            echo "summary=$ok/$total workspaces applied" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Notify
-        uses: ./.github/actions/deploy-notify
+      - name: Report deploy status
+        uses: ./.github/actions/slack-deploy
         with:
-          status: ${{ steps.agg.outputs.status }}
-          title: Terraform Apply
-          summary: ${{ steps.agg.outputs.summary }}
-          details: ${{ steps.agg.outputs.details }}
+          mode: report
+          component: infrastructure
+          total-steps: ${{ needs.prep.outputs.total }}
+          results-dir: tf-results
+          verb: Applied
+          ts: ${{ needs.prep.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 

@@ -7,16 +7,17 @@ on:
       - 'apps/frontend/**'
   workflow_dispatch:
 
-# Requires the OIDC apply role (branch-ci-apply) from infrastructure/aws/oidc.tf
-# to exist. Deploys the static export to S3 + invalidates CloudFront.
+# Requires the OIDC apply role (branch-ci-apply) from infrastructure/aws/oidc.tf.
+# Deploys the static export to S3 + CloudFront and reports a threaded status to
+# #branch-deployments (initial message → per-step threads → complete/fail).
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
     permissions:
-      id-token: write # assume the OIDC apply role
+      id-token: write
       contents: read
-      pull-requests: write # deploy-notify PR comment
+      pull-requests: read
     defaults:
       run:
         working-directory: apps/frontend
@@ -34,49 +35,107 @@ jobs:
           role-to-assume: arn:aws:iam::489881683177:role/branch-ci-apply
           aws-region: us-east-2
 
+      - name: Start deploy notification
+        id: slack
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: start
+          component: frontend
+          total-steps: '3'
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Resolve backend API base URL
         run: |
           API_ID=$(aws apigateway get-rest-apis --query "items[?name=='branch-api'].id | [0]" --output text)
           echo "NEXT_PUBLIC_API_BASE_URL=https://$API_ID.execute-api.us-east-2.amazonaws.com/prod" >> "$GITHUB_ENV"
 
-      - name: Install dependencies
-        run: npm ci
+      # ── Step 1: build ────────────────────────────────────────────
+      - name: Build static export
+        run: |
+          npm ci 2>&1 | tee "$RUNNER_TEMP/build.log"
+          npm run build 2>&1 | tee -a "$RUNNER_TEMP/build.log"
+      - name: Thread — built
+        if: success()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: frontend
+          total-steps: '3'
+          step-index: '1'
+          step-name: Built static export
+          details-file: ${{ runner.temp }}/build.log
+          ts: ${{ steps.slack.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build (static export)
-        run: npm run build
-
-      - name: Resolve S3 bucket + CloudFront distribution
+      # ── Step 2: sync ─────────────────────────────────────────────
+      - name: Sync to S3
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "BUCKET=branch-frontend-$ACCOUNT_ID" >> "$GITHUB_ENV"
+          aws s3 sync out "s3://branch-frontend-$ACCOUNT_ID" --delete 2>&1 | tee "$RUNNER_TEMP/sync.log"
+      - name: Thread — synced
+        if: success()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: frontend
+          total-steps: '3'
+          step-index: '2'
+          step-name: Synced build to S3
+          details-file: ${{ runner.temp }}/sync.log
+          ts: ${{ steps.slack.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 3: invalidate ───────────────────────────────────────
+      - name: Invalidate CloudFront
+        run: |
           DIST_ID=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?Comment=='branch frontend (static SPA)'].Id | [0]" \
             --output text)
-          echo "DIST_ID=$DIST_ID" >> "$GITHUB_ENV"
-
-      - name: Sync to S3
-        run: aws s3 sync out "s3://$BUCKET" --delete 2>&1 | tee -a deploy.log
-
-      - name: Invalidate CloudFront
-        run: |
-          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" 2>&1 | tee -a deploy.log
-          echo "Deployed apps/frontend to s3://$BUCKET and invalidated $DIST_ID" | tee -a deploy.log
-
-      - name: Collect deploy details
-        if: always()
-        id: details
-        run: |
-          echo "log<<__EOF__" >> "$GITHUB_OUTPUT"
-          tail -n 60 deploy.log 2>/dev/null >> "$GITHUB_OUTPUT" || echo "(no output captured)" >> "$GITHUB_OUTPUT"
-          echo "__EOF__" >> "$GITHUB_OUTPUT"
-
-      - name: Notify
-        if: always()
-        uses: ./.github/actions/deploy-notify
+          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" 2>&1 | tee "$RUNNER_TEMP/invalidate.log"
+      - name: Thread — invalidated
+        if: success()
+        uses: ./.github/actions/slack-deploy
         with:
-          status: ${{ job.status }}
-          title: Frontend Deploy
-          summary: ${{ job.status == 'success' && 'Frontend deployed to S3 + CloudFront' || 'Frontend deploy failed' }}
-          details: ${{ steps.details.outputs.log }}
+          mode: step
+          component: frontend
+          total-steps: '3'
+          step-index: '3'
+          step-name: Invalidated CloudFront cache
+          details-file: ${{ runner.temp }}/invalidate.log
+          ts: ${{ steps.slack.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Complete ─────────────────────────────────────────────────
+      - name: Thread — complete
+        if: success()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: complete
+          component: frontend
+          total-steps: '3'
+          step-index: '3'
+          ts: ${{ steps.slack.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Failure ──────────────────────────────────────────────────
+      - name: Collect failure logs
+        if: failure()
+        run: cat "$RUNNER_TEMP"/build.log "$RUNNER_TEMP"/sync.log "$RUNNER_TEMP"/invalidate.log > "$RUNNER_TEMP/fail.log" 2>/dev/null || true
+      - name: Thread — failed
+        if: failure()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: fail
+          component: frontend
+          total-steps: '3'
+          step-name: build/sync/invalidate — see workflow run
+          details-file: ${{ runner.temp }}/fail.log
+          ts: ${{ steps.slack.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

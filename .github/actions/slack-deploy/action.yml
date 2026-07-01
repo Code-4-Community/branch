@@ -1,0 +1,261 @@
+name: Slack Deploy
+description: >
+  Post and update a threaded deploy status in #branch-deployments.
+  Modes: start (initial message + status bar, outputs ts), step (threaded
+  past-tense update with collapsed logs + advance the bar), complete, fail.
+
+inputs:
+  mode:
+    description: 'start | step | complete | fail'
+    required: true
+  component:
+    description: 'frontend | backend | infrastructure'
+    required: true
+  total-steps:
+    description: 'Total number of steps (for the status bar)'
+    required: false
+    default: '1'
+  step-index:
+    description: 'Completed step count so far (for step/complete)'
+    required: false
+    default: '0'
+  step-name:
+    description: 'Past-tense label for a step, e.g. "Applied infrastructure/aws"'
+    required: false
+    default: ''
+  results-dir:
+    description: '(report mode) dir of <name>.meta ("name|outcome") + <name>.log files'
+    required: false
+    default: ''
+  verb:
+    description: '(report mode) past-tense verb per item, e.g. "Applied" / "Deployed"'
+    required: false
+    default: 'Deployed'
+  step-status:
+    description: 'success | failure (per-step icon)'
+    required: false
+    default: 'success'
+  details:
+    description: 'Logs for the threaded update (collapsed)'
+    required: false
+    default: ''
+  details-file:
+    description: 'Path to a log file; used as details when `details` is empty'
+    required: false
+    default: ''
+  ts:
+    description: 'Slack message ts from the start call (required for step/complete/fail)'
+    required: false
+    default: ''
+  deployed-by:
+    description: 'GitHub login that triggered the deploy'
+    required: false
+    default: ${{ github.actor }}
+  commit-sha:
+    description: 'Commit being deployed'
+    required: false
+    default: ${{ github.sha }}
+  slack-channel:
+    description: 'Slack channel id'
+    required: false
+    default: C0BE7FYMHFF
+  slack-bot-token:
+    required: true
+  github-token:
+    required: true
+
+outputs:
+  ts:
+    description: 'Slack message timestamp of the initial message'
+    value: ${{ steps.slack.outputs.ts }}
+
+runs:
+  using: composite
+  steps:
+    # GitHub->Slack mapping + always-reviewer (Nour) live in config.json on the
+    # bot-state branch (owned by Terraform). Best effort — fall back to usernames.
+    - name: Fetch GitHub→Slack mapping
+      uses: actions/checkout@v4
+      continue-on-error: true
+      with:
+        ref: bot-state
+        path: .slack-deploy-state
+        token: ${{ inputs.github-token }}
+        persist-credentials: false
+
+    - name: Slack deploy ${{ inputs.mode }}
+      id: slack
+      uses: actions/github-script@v7
+      env:
+        MODE: ${{ inputs.mode }}
+        COMPONENT: ${{ inputs.component }}
+        TOTAL: ${{ inputs.total-steps }}
+        STEP_INDEX: ${{ inputs.step-index }}
+        STEP_NAME: ${{ inputs.step-name }}
+        STEP_STATUS: ${{ inputs.step-status }}
+        DETAILS: ${{ inputs.details }}
+        DETAILS_FILE: ${{ inputs.details-file }}
+        RESULTS_DIR: ${{ inputs.results-dir }}
+        VERB: ${{ inputs.verb }}
+        TS: ${{ inputs.ts }}
+        DEPLOY_BY: ${{ inputs.deployed-by }}
+        COMMIT_SHA: ${{ inputs.commit-sha }}
+        SLACK_CHANNEL: ${{ inputs.slack-channel }}
+        SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          const mode      = process.env.MODE;
+          const component = process.env.COMPONENT || 'app';
+          const total     = parseInt(process.env.TOTAL || '1', 10) || 1;
+          const done      = parseInt(process.env.STEP_INDEX || '0', 10) || 0;
+          const stepName  = process.env.STEP_NAME || '';
+          const stepOk    = (process.env.STEP_STATUS || 'success').toLowerCase() === 'success';
+          let rawDetails  = process.env.DETAILS || '';
+          if (!rawDetails && process.env.DETAILS_FILE) {
+            try { rawDetails = fs.readFileSync(process.env.DETAILS_FILE, 'utf8'); }
+            catch (err) { console.log(`Could not read details-file: ${err.message}`); }
+          }
+          const ts        = process.env.TS || '';
+          const deployedBy = (process.env.DEPLOY_BY || '').trim();
+          const sha       = process.env.COMMIT_SHA || context.sha;
+          const channel   = process.env.SLACK_CHANNEL;
+          const token     = process.env.SLACK_BOT_TOKEN;
+
+          const { owner, repo } = context.repo;
+          const shortSha = sha.slice(0, 7);
+          const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+          const commitUrl = `${context.serverUrl}/${owner}/${repo}/commit/${sha}`;
+
+          // ── Resolve author + always-reviewer (Nour) from the mapping ──
+          let cfg = {};
+          try {
+            const p = path.join(process.env.GITHUB_WORKSPACE || '.', '.slack-deploy-state', 'config.json');
+            cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+          } catch (err) {
+            console.log(`No config.json mapping (fallback to usernames): ${err.message}`);
+          }
+          const map = cfg.github_to_slack || {};
+          const authorSlackId = deployedBy ? map[deployedBy] : null;
+          const authorMention = authorSlackId ? `<@${authorSlackId}>` : `@${deployedBy || 'unknown'}`;
+          const nourId = cfg.always_reviewer_slack || null;
+
+          async function slack(method, body) {
+            try {
+              const resp = await fetch(`https://slack.com/api/${method}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(body),
+              });
+              const data = await resp.json();
+              if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+              return data;
+            } catch (err) {
+              console.log(`Slack ${method} failed: ${err.message}`);
+              return { ok: false };
+            }
+          }
+
+          async function resolvePrLinks() {
+            try {
+              const r = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+              if (r.data.length) return r.data.map(pr => `<${pr.html_url}|#${pr.number}>`).join(', ');
+            } catch (err) { /* ignore */ }
+            return `<${commitUrl}|\`${shortSha}\`>`;
+          }
+
+          function bar(d, t) {
+            const filled = Math.max(0, Math.min(t, d));
+            return '`[' + '▰'.repeat(filled) + '▱'.repeat(Math.max(0, t - filled)) + `] ${filled}/${t}\``;
+          }
+
+          function logBlock(text) {
+            if (!text || !text.trim()) return null;
+            let out = text.split('\n').slice(-40).join('\n');
+            if (out.length > 2600) out = '… (truncated; see workflow run)\n' + out.slice(-2600);
+            return { type: 'section', text: { type: 'mrkdwn', text: '```' + out + '```' } };
+          }
+
+          // Root "Deploying" message. Header is FIXED (never changes) — only the
+          // status bar advances. Completion/failure are told in thread replies.
+          async function mainBlocks(d) {
+            const prLinks = await resolvePrLinks();
+            return [
+              { type: 'header', text: { type: 'plain_text', text: `:ship: :evergreen_tree:  Deploying ${component} — ${shortSha}`, emoji: true } },
+              { type: 'section', text: { type: 'mrkdwn', text: bar(d, total) } },
+              { type: 'context', elements: [
+                { type: 'mrkdwn', text: `Deployed by ${authorMention}  |  ${prLinks}  |  <${runUrl}|Workflow run>` },
+              ] },
+            ];
+          }
+
+          async function updateBar(d) {
+            if (ts) await slack('chat.update', { channel, ts, text: `Deploying ${component}`, blocks: await mainBlocks(d) });
+          }
+
+          async function threadStep(idx, name, ok, log) {
+            const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: `${ok ? ':white_check_mark:' : ':x:'} ${name}` } }];
+            const lb = logBlock(log);
+            if (lb) blocks.push(lb);
+            if (ts) await slack('chat.postMessage', { channel, thread_ts: ts, text: name, blocks });
+            await updateBar(idx);
+          }
+
+          async function threadComplete() {
+            if (!ts) return;
+            await slack('chat.postMessage', {
+              channel, thread_ts: ts, text: 'Deploy complete',
+              blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'Deploy complete :white_check_mark: :freaky-pumpkin:' } }],
+            });
+            await updateBar(total);
+          }
+
+          async function threadFail(name, log, atBar) {
+            const pings = [...new Set([authorMention, nourId ? `<@${nourId}>` : null].filter(Boolean))].join(' ');
+            const blocks = [
+              { type: 'section', text: { type: 'mrkdwn', text: `:warning: *${component} deploy failed*${name ? ` at: ${name}` : ''}\n${pings}` } },
+            ];
+            const lb = logBlock(log);
+            if (lb) blocks.push(lb);
+            // reply_broadcast surfaces the failure in the channel as well as the thread.
+            const body = { channel, text: `${component} deploy failed ${pings}`, blocks };
+            if (ts) await slack('chat.postMessage', { ...body, thread_ts: ts, reply_broadcast: true });
+            else await slack('chat.postMessage', body);
+            await updateBar(atBar);
+          }
+
+          if (mode === 'start') {
+            const res = await slack('chat.postMessage', { channel, text: `Deploying ${component} for ${shortSha}`, blocks: await mainBlocks(0) });
+            core.setOutput('ts', res.ts || '');
+            return;
+          }
+
+          if (mode === 'step') { await threadStep(done, stepName, stepOk, rawDetails); return; }
+          if (mode === 'complete') { await threadComplete(); return; }
+          if (mode === 'fail') { await threadFail(stepName, rawDetails, done); return; }
+
+          // Batch: read matrix result artifacts and tell the whole story at once.
+          if (mode === 'report') {
+            const dir = process.env.RESULTS_DIR || '';
+            const verb = process.env.VERB || 'Deployed';
+            let metas = [];
+            try { metas = fs.readdirSync(dir).filter(f => f.endsWith('.meta')).sort(); } catch (err) {
+              console.log(`No results in ${dir}: ${err.message}`);
+            }
+            let anyFail = false, i = 0;
+            for (const m of metas) {
+              const [name, outcome] = fs.readFileSync(path.join(dir, m), 'utf8').trim().split('|');
+              const ok = outcome === 'success';
+              if (!ok) anyFail = true;
+              i++;
+              let log = '';
+              try { log = fs.readFileSync(path.join(dir, m.replace(/\.meta$/, '.log')), 'utf8'); } catch (err) { /* ignore */ }
+              await threadStep(i, `${verb} ${name}`, ok, log);
+            }
+            if (anyFail) await threadFail('', '', i);
+            else await threadComplete();
+            return;
+          }
