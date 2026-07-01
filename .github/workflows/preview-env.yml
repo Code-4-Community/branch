@@ -14,16 +14,16 @@ on:
   pull_request:
     types: [labeled, synchronize, unlabeled, closed]
 
-concurrency:
-  # One run per PR. Back-to-back commits: a new push cancels the older in-flight
-  # run for this PR (cancel-in-progress), so a stale update never finishes on top
-  # of a newer one. Deploys are also idempotent+convergent — the surviving run
-  # rebuilds from the FULL base...HEAD diff (see "Detect what to deploy"), not an
-  # incremental one, so even if a prior run was killed mid-sync the final state
-  # matches the latest commit.
-  group: preview-env-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
+# Concurrency is set PER JOB, not workflow-wide, on purpose:
+#   - deploy uses a `preview-deploy-<pr>` group with cancel-in-progress so
+#     back-to-back commits cancel the older run (the survivor rebuilds from the
+#     full base...HEAD diff, so the final state matches the latest commit).
+#   - teardown uses a SEPARATE `preview-teardown-<pr>` group with
+#     cancel-in-progress: false so a teardown is NEVER cancelled by a deploy.
+# A single shared group would let a push (e.g. right after removing the label)
+# cancel an in-flight teardown, leaking the stack. Separate groups + the
+# DynamoDB state lock (which serializes any overlapping terraform) keep cleanup
+# reliable regardless of event ordering.
 env:
   LABEL: test-environment
   AWS_REGION: us-east-2
@@ -40,6 +40,10 @@ jobs:
       (github.event.action == 'labeled' && github.event.label.name == 'test-environment') ||
       (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'test-environment'))
     runs-on: ubuntu-latest
+    concurrency:
+      # Back-to-back commits: newer deploy cancels the older one for this PR.
+      group: preview-deploy-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     environment: preview
     permissions:
       id-token: write
@@ -259,6 +263,12 @@ jobs:
       (github.event.action == 'unlabeled' && github.event.label.name == 'test-environment') ||
       (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'test-environment'))
     runs-on: ubuntu-latest
+    concurrency:
+      # Separate group + never cancel: a teardown must always run to completion,
+      # so a concurrent push/deploy can't kill it and leak the stack. Repeated
+      # teardowns (unlabel then close) queue and no-op on the missing workspace.
+      group: preview-teardown-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     environment: preview
     permissions:
       id-token: write
