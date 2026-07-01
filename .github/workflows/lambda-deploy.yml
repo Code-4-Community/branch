@@ -50,6 +50,34 @@ jobs:
           echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
           echo "has-changes=$has_changes" >> $GITHUB_OUTPUT
 
+  # Post the initial "Deploying backend" Slack message before builds run.
+  prep:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ts: ${{ steps.slack.outputs.ts }}
+      total: ${{ steps.count.outputs.total }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Count lambdas
+        id: count
+        env:
+          LAMBDAS: ${{ needs.detect-changes.outputs.lambdas }}
+        run: echo "total=$(echo "$LAMBDAS" | jq 'length')" >> "$GITHUB_OUTPUT"
+      - name: Start deploy notification
+        id: slack
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: start
+          component: backend
+          total-steps: ${{ steps.count.outputs.total }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   build:
     needs: detect-changes
     if: needs.detect-changes.outputs.has-changes == 'true'
@@ -88,13 +116,15 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    needs: [detect-changes, build]
+    needs: [detect-changes, prep, build]
     if: needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions:
       id-token: write # assume the OIDC apply role
       contents: read
+      actions: read # count completed legs for the live status bar
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix:
@@ -151,14 +181,29 @@ jobs:
           path: lambda-results/
           if-no-files-found: warn
 
+      - name: Thread step (live)
+        if: always()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: backend
+          total-steps: ${{ needs.prep.outputs.total }}
+          job-name: deploy
+          step-name: Deployed branch-${{ steps.rname.outputs.name }}
+          step-status: ${{ steps.deploy.outcome }}
+          details-file: deploy.log
+          ts: ${{ needs.prep.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   notify:
     name: Deployment Notify
-    needs: [detect-changes, deploy]
+    needs: [detect-changes, prep, deploy]
     if: always() && needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -170,42 +215,13 @@ jobs:
           path: lambda-results
           merge-multiple: true
 
-      - name: Aggregate results
-        id: agg
-        run: |
-          total=0; ok=0; failed=""
-          echo "details<<__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
-          for meta in lambda-results/*.meta; do
-            [ -e "$meta" ] || continue
-            name=$(cut -d'|' -f1 "$meta")
-            outcome=$(cut -d'|' -f2 "$meta")
-            base=$(basename "$meta" .meta)
-            total=$((total+1))
-            if [ "$outcome" = "success" ]; then
-              ok=$((ok+1))
-            else
-              failed="$failed $name"
-              echo "===== $name ($outcome) =====" >> "$GITHUB_OUTPUT"
-              cat "lambda-results/$base.log" 2>/dev/null >> "$GITHUB_OUTPUT" || echo "(no output)" >> "$GITHUB_OUTPUT"
-              echo "" >> "$GITHUB_OUTPUT"
-            fi
-          done
-          echo "__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$failed" ]; then
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-            echo "summary=$ok/$total lambdas deployed — failed:$failed" >> "$GITHUB_OUTPUT"
-          else
-            echo "status=success" >> "$GITHUB_OUTPUT"
-            echo "summary=$ok/$total lambdas deployed" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Notify
-        uses: ./.github/actions/deploy-notify
+      - name: Finalize deploy notification
+        uses: ./.github/actions/slack-deploy
         with:
-          status: ${{ steps.agg.outputs.status }}
-          title: Lambda Deploy
-          summary: ${{ steps.agg.outputs.summary }}
-          details: ${{ steps.agg.outputs.details }}
+          mode: finalize
+          component: backend
+          total-steps: ${{ needs.prep.outputs.total }}
+          results-dir: lambda-results
+          ts: ${{ needs.prep.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
