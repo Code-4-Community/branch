@@ -13,7 +13,8 @@ Application infra. Providers: AWS 6.14.1, Infisical.
 - `cognito.tf` — user pool (email sign-in, auto-verify, 8-char password policy, advanced security, deletion protection) + public client (1h access/ID tokens, 30d refresh, no secret). **Manual step:** copy output pool/client IDs into Infisical `/aws/cognito/`.
 - `api_gateway.tf` — REST API, one resource per lambda, method routing, `AWS_PROXY` integration, `prod` stage.
 - `s3.tf` — public-read reports bucket + versioned/encrypted lambda-deployments bucket.
-- `amplify.tf` — frontend (Next.js SSR), monorepo root `apps/frontend`, auto-deploys `main` (GitHub token from Infisical).
+- `frontend_hosting.tf` — static frontend: private S3 bucket + CloudFront (OAC) with an SPA fallback (403/404 → `/index.html`) and an index-rewrite CloudFront Function. The Next.js app is exported (`output: 'export'`) and synced to S3 by the `frontend-deploy` workflow.
+- `oidc.tf` — GitHub OIDC provider + `branch-ci-plan` (read-only) / `branch-ci-apply` (write, `production` env only) roles for CI.
 - `secrets.tf`, `variables.tf` — Infisical data sources.
 
 ### `github/` (state key `github/terraform.tfstate`)
