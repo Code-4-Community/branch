@@ -167,9 +167,27 @@ runs:
             return `<${commitUrl}|\`${shortSha}\`>`;
           }
 
-          function bar(d, t) {
+          // A filled progress bar with a leading status icon. The icon is
+          // `:loading:` while in progress and flips to a check / cross when the
+          // deploy finishes. `d`/`t` are still shown as x/y alongside a percent.
+          function bar(d, t, state = 'progress') {
+            const width = 24;
             const filled = Math.max(0, Math.min(t, d));
-            return '`[' + '▰'.repeat(filled) + '▱'.repeat(Math.max(0, t - filled)) + `] ${filled}/${t}\``;
+            const ratio = t > 0 ? filled / t : 0;
+            const pct = Math.round(ratio * 100);
+            const exact = ratio * width;
+            const fullCells = Math.floor(exact);
+            const partials = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+            const partIdx = fullCells < width ? Math.floor((exact - fullCells) * 8) : 0;
+            const partCell = partIdx > 0 ? partials[partIdx] : '';
+            const emptyCells = Math.max(0, width - fullCells - (partCell ? 1 : 0));
+            const track = '█'.repeat(fullCells) + partCell + '░'.repeat(emptyCells);
+            const icon = state === 'complete'
+              ? ':heavy_check_mark:'
+              : state === 'fail'
+                ? ':heavy_multiplication_x:'
+                : ':loading:';
+            return `${icon} \`[${track}]\` ${pct}% (${filled}/${t})`;
           }
 
           function logBlock(text) {
@@ -181,19 +199,19 @@ runs:
 
           // Root "Deploying" message. Header is FIXED (never changes) — only the
           // status bar advances. Completion/failure are told in thread replies.
-          async function mainBlocks(d) {
+          async function mainBlocks(d, state = 'progress') {
             const prLinks = await resolvePrLinks();
             return [
               { type: 'header', text: { type: 'plain_text', text: `:ship: :evergreen_tree:  Deploying ${component} — ${shortSha}`, emoji: true } },
-              { type: 'section', text: { type: 'mrkdwn', text: bar(d, total) } },
+              { type: 'section', text: { type: 'mrkdwn', text: bar(d, total, state) } },
               { type: 'context', elements: [
                 { type: 'mrkdwn', text: `Deployed by ${authorMention}  |  ${prLinks}  |  <${runUrl}|Workflow run>` },
               ] },
             ];
           }
 
-          async function updateBar(d) {
-            if (ts) await slack('chat.update', { channel, ts, text: `Deploying ${component}`, blocks: await mainBlocks(d) });
+          async function updateBar(d, state = 'progress') {
+            if (ts) await slack('chat.update', { channel, ts, text: `Deploying ${component}`, blocks: await mainBlocks(d, state) });
           }
 
           async function threadStep(idx, name, ok, log) {
@@ -210,7 +228,7 @@ runs:
               channel, thread_ts: ts, text: 'Deploy complete',
               blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'Deploy complete :white_check_mark: :freaky-pumpkin:' } }],
             });
-            await updateBar(total);
+            await updateBar(total, 'complete');
           }
 
           async function threadFail(name, log, atBar) {
@@ -224,7 +242,7 @@ runs:
             const body = { channel, text: `${component} deploy failed ${pings}`, blocks };
             if (ts) await slack('chat.postMessage', { ...body, thread_ts: ts, reply_broadcast: true });
             else await slack('chat.postMessage', body);
-            await updateBar(atBar);
+            await updateBar(atBar, 'fail');
           }
 
           // Live progress: count completed matrix legs of this run for the bar.
