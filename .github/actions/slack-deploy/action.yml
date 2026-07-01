@@ -24,13 +24,13 @@ inputs:
     required: false
     default: ''
   results-dir:
-    description: '(report mode) dir of <name>.meta ("name|outcome") + <name>.log files'
+    description: '(finalize mode) dir of <name>.meta ("name|outcome") files to decide pass/fail'
     required: false
     default: ''
-  verb:
-    description: '(report mode) past-tense verb per item, e.g. "Applied" / "Deployed"'
+  job-name:
+    description: '(step mode) matrix job name to count completed legs for a live status bar'
     required: false
-    default: 'Deployed'
+    default: ''
   step-status:
     description: 'success | failure (per-step icon)'
     required: false
@@ -96,7 +96,7 @@ runs:
         DETAILS: ${{ inputs.details }}
         DETAILS_FILE: ${{ inputs.details-file }}
         RESULTS_DIR: ${{ inputs.results-dir }}
-        VERB: ${{ inputs.verb }}
+        JOB_NAME: ${{ inputs.job-name }}
         TS: ${{ inputs.ts }}
         DEPLOY_BY: ${{ inputs.deployed-by }}
         COMMIT_SHA: ${{ inputs.commit-sha }}
@@ -227,35 +227,50 @@ runs:
             await updateBar(atBar);
           }
 
+          // Live progress: count completed matrix legs of this run for the bar.
+          // Matrix job display names look like "<jobName> (<matrix value>)".
+          async function liveDone(jobName) {
+            let completed = 0;
+            for (let page = 1; page <= 10; page++) {
+              const r = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: context.runId, per_page: 100, page });
+              for (const j of r.data.jobs) {
+                if ((j.name === jobName || j.name.startsWith(jobName + ' (')) && j.status === 'completed') completed++;
+              }
+              if (r.data.jobs.length < 100) break;
+            }
+            return completed;
+          }
+
           if (mode === 'start') {
             const res = await slack('chat.postMessage', { channel, text: `Deploying ${component} for ${shortSha}`, blocks: await mainBlocks(0) });
             core.setOutput('ts', res.ts || '');
             return;
           }
 
-          if (mode === 'step') { await threadStep(done, stepName, stepOk, rawDetails); return; }
-          if (mode === 'complete') { await threadComplete(); return; }
-          if (mode === 'fail') { await threadFail(stepName, rawDetails, done); return; }
+          if (mode === 'step') {
+            const jobName = process.env.JOB_NAME || '';
+            let d = done;
+            // +1 for this leg, which is finishing now but not yet marked completed.
+            if (jobName) { try { d = Math.min(total, (await liveDone(jobName)) + 1); } catch (err) { d = done; } }
+            await threadStep(d, stepName, stepOk, rawDetails);
+            return;
+          }
 
-          // Batch: read matrix result artifacts and tell the whole story at once.
-          if (mode === 'report') {
+          if (mode === 'complete') { await threadComplete(); return; }
+          if (mode === 'fail') { await threadFail(stepName, rawDetails, total); return; }
+
+          // Finalize a matrix deploy after its legs posted their own live steps:
+          // read result artifacts to decide overall pass/fail, then complete/fail.
+          if (mode === 'finalize') {
             const dir = process.env.RESULTS_DIR || '';
-            const verb = process.env.VERB || 'Deployed';
-            let metas = [];
-            try { metas = fs.readdirSync(dir).filter(f => f.endsWith('.meta')).sort(); } catch (err) {
-              console.log(`No results in ${dir}: ${err.message}`);
-            }
-            let anyFail = false, i = 0;
-            for (const m of metas) {
-              const [name, outcome] = fs.readFileSync(path.join(dir, m), 'utf8').trim().split('|');
-              const ok = outcome === 'success';
-              if (!ok) anyFail = true;
-              i++;
-              let log = '';
-              try { log = fs.readFileSync(path.join(dir, m.replace(/\.meta$/, '.log')), 'utf8'); } catch (err) { /* ignore */ }
-              await threadStep(i, `${verb} ${name}`, ok, log);
-            }
-            if (anyFail) await threadFail('', '', i);
+            let anyFail = false;
+            try {
+              for (const m of fs.readdirSync(dir).filter(f => f.endsWith('.meta'))) {
+                const [, outcome] = fs.readFileSync(path.join(dir, m), 'utf8').trim().split('|');
+                if (outcome !== 'success') anyFail = true;
+              }
+            } catch (err) { console.log(`No results in ${dir}: ${err.message}`); anyFail = true; }
+            if (anyFail) await threadFail('', '', total);
             else await threadComplete();
             return;
           }

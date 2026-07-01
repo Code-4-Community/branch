@@ -116,13 +116,15 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    needs: [detect-changes, build]
+    needs: [detect-changes, prep, build]
     if: needs.detect-changes.outputs.has-changes == 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions:
       id-token: write # assume the OIDC apply role
       contents: read
+      actions: read # count completed legs for the live status bar
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix:
@@ -179,6 +181,21 @@ jobs:
           path: lambda-results/
           if-no-files-found: warn
 
+      - name: Thread step (live)
+        if: always()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: backend
+          total-steps: ${{ needs.prep.outputs.total }}
+          job-name: deploy
+          step-name: Deployed branch-${{ steps.rname.outputs.name }}
+          step-status: ${{ steps.deploy.outcome }}
+          details-file: deploy.log
+          ts: ${{ needs.prep.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   notify:
     name: Deployment Notify
     needs: [detect-changes, prep, deploy]
@@ -198,14 +215,13 @@ jobs:
           path: lambda-results
           merge-multiple: true
 
-      - name: Report deploy status
+      - name: Finalize deploy notification
         uses: ./.github/actions/slack-deploy
         with:
-          mode: report
+          mode: finalize
           component: backend
           total-steps: ${{ needs.prep.outputs.total }}
           results-dir: lambda-results
-          verb: Deployed
           ts: ${{ needs.prep.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

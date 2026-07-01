@@ -110,7 +110,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
   terraform-apply:
-    needs: detect-changes
+    needs: [detect-changes, prep]
     if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
     strategy:
@@ -121,6 +121,8 @@ jobs:
     permissions:
       id-token: write # assume the OIDC apply role
       contents: read
+      actions: read # count completed legs for the live status bar
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -195,6 +197,21 @@ jobs:
           path: tf-results/
           if-no-files-found: warn
 
+      - name: Thread step (live)
+        if: always()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: infrastructure
+          total-steps: ${{ needs.prep.outputs.total }}
+          job-name: terraform-apply
+          step-name: Applied ${{ matrix.directory }}
+          step-status: ${{ steps.apply.outcome }}
+          details-file: ${{ matrix.directory }}/apply.log
+          ts: ${{ needs.prep.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create deployment summary
         if: always()
         run: |
@@ -232,14 +249,13 @@ jobs:
           path: tf-results
           merge-multiple: true
 
-      - name: Report deploy status
+      - name: Finalize deploy notification
         uses: ./.github/actions/slack-deploy
         with:
-          mode: report
+          mode: finalize
           component: infrastructure
           total-steps: ${{ needs.prep.outputs.total }}
           results-dir: tf-results
-          verb: Applied
           ts: ${{ needs.prep.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
