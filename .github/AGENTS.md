@@ -15,7 +15,7 @@ CI/CD and PR automation. Two groups: **build/deploy** pipelines and the **PR rev
 | `terraform-plan.yml` | PR main/develop, merge_group | Detect changed TF dirs; `fmt` + terraform-docs (auto-commit); per-dir `init`/`validate`/`plan`, post plan PR comment. **Required check `terraform-plan-summary`.** |
 | `terraform-apply.yml` | push to main `infrastructure/**/*.tf`, or manual (dir list) | Per-dir matrix, `production` env (approval gate), `plan` → `apply -auto-approve`. |
 
-Node 20 across pipelines (Node 23 for `regenerate-db-types`). AWS creds + Cognito/Infisical/Slack values are GitHub secrets, provisioned by `infrastructure/github/secrets.tf`.
+Node 20 across pipelines (Node 23 for `regenerate-db-types`). AWS deploy/plan workflows assume OIDC IAM roles; Cognito/Infisical/Slack values are GitHub secrets provisioned by `infrastructure/github/secrets.tf`.
 
 ## PR review bot
 
