@@ -50,11 +50,16 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           # Get unique directories containing changed terraform files
+          # infrastructure/preview is the per-PR module: it requires a pr_number
+          # var and is applied per-PR (workspace pr-<N>) by preview-env.yml, so it
+          # must NOT be planned in the default workspace here. preview-shared IS
+          # planned normally (grep -vx matches the exact dir only).
           dirs=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
             tr ' ' '\n' | \
             xargs -I {} dirname {} | \
             sort -u | \
-            jq -R -s -c 'split("\n")[:-1]')
+            grep -vx 'infrastructure/preview' | \
+            jq -R -s -c 'split("\n") | map(select(length > 0))')
 
           echo "Unique directories with changes: $dirs"
           echo "dirs=$dirs" >> $GITHUB_OUTPUT
