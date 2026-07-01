@@ -1,38 +1,13 @@
 import type { NextConfig } from 'next';
 
+// Static export (SPA) — the app is fully client-rendered (JWT in localStorage,
+// all data via apiFetch). Output goes to `out/`, hosted on S3 + CloudFront.
+// No server: `next.config` rewrites don't run in export, so prod routing to the
+// backend is entirely via NEXT_PUBLIC_API_BASE_URL (see src/lib/api.ts).
 const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: '/auth/:path*',
-        destination: 'http://localhost:3006/auth/:path*',
-      },
-      {
-        source: '/expenditures/:path*',
-        destination: 'http://localhost:3004/expenditures/:path*',
-      },
-      {
-        source: '/expenditures',
-        destination: 'http://localhost:3004/expenditures',
-      },
-      {
-        source: '/projects/:id/members',
-        destination: 'http://localhost:3002/:id/members',
-      },
-      {
-        source: '/projects/:id/expenditures',
-        destination: 'http://localhost:3002/:id/expenditures',
-      },
-      {
-        source: '/projects/:id/donors',
-        destination: 'http://localhost:3002/:id/donors',
-      },
-      {
-        source: '/projects',
-        destination: 'http://localhost:3002/projects',
-      },
-    ];
-  },
+  output: 'export',
+  trailingSlash: true, // emit /route/index.html — clean S3 key mapping
+  images: { unoptimized: true }, // no server image optimizer in export
 };
 
 export default nextConfig;
