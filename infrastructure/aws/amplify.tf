@@ -8,9 +8,12 @@ resource "aws_iam_role" "amplify_ssr" {
       # sts:TagSession is required alongside AssumeRole — Amplify attaches
       # session tags when assuming the service role; without it the assume is
       # denied ("Unable to assume specified IAM Role").
-      Action    = ["sts:AssumeRole", "sts:TagSession"]
-      Effect    = "Allow"
-      Principal = { Service = "amplify.amazonaws.com" }
+      Action = ["sts:AssumeRole", "sts:TagSession"]
+      Effect = "Allow"
+      # Amplify assumes the role via BOTH the regional and global service
+      # principals; the regional one (amplify.<region>.amazonaws.com) is the
+      # documented fix for "Unable to assume specified IAM Role" on SSR apps.
+      Principal = { Service = ["amplify.us-east-2.amazonaws.com", "amplify.amazonaws.com"] }
     }]
   })
 }
