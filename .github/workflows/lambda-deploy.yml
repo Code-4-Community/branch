@@ -111,33 +111,95 @@ jobs:
           path: ${{ matrix.lambda }}
 
       - name: Deploy lambda
+        id: deploy
         run: |
+          set -o pipefail
           LAMBDA_NAME=$(basename ${{ matrix.lambda }})
           FUNCTION_NAME="branch-${LAMBDA_NAME}"
-          
-          echo "Deploying Lambda function: $FUNCTION_NAME"
-          
-          aws lambda update-function-code \
-            --function-name "$FUNCTION_NAME" \
-            --zip-file fileb://${{ matrix.lambda }}/lambda.zip
-          
-          echo "✓ Successfully deployed $FUNCTION_NAME"
+          {
+            echo "Deploying Lambda function: $FUNCTION_NAME"
+            aws lambda update-function-code \
+              --function-name "$FUNCTION_NAME" \
+              --zip-file fileb://${{ matrix.lambda }}/lambda.zip
+            echo "✓ Successfully deployed $FUNCTION_NAME"
+          } 2>&1 | tee deploy.log
 
-  summary:
-    name: Deployment Summary
-    needs: [deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check deployment results
+      - name: Compute result name
+        id: rname
+        if: always()
+        run: echo "name=$(basename ${{ matrix.lambda }})" >> "$GITHUB_OUTPUT"
+
+      - name: Save deploy result
+        if: always()
         run: |
-          if [ "${{ needs.deploy.result }}" == "success" ]; then
-            echo "✓ All Lambda functions deployed successfully!"
-            exit 0
-          elif [ "${{ needs.deploy.result }}" == "skipped" ]; then
-            echo "⊘ No Lambda changes detected, skipping deployment"
-            exit 0
+          mkdir -p lambda-results
+          echo "${{ steps.rname.outputs.name }}|${{ steps.deploy.outcome }}" > "lambda-results/${{ steps.rname.outputs.name }}.meta"
+          cp deploy.log "lambda-results/${{ steps.rname.outputs.name }}.log" 2>/dev/null \
+            || echo "(no deploy output captured)" > "lambda-results/${{ steps.rname.outputs.name }}.log"
+
+      - name: Upload deploy result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-result-${{ steps.rname.outputs.name }}
+          path: lambda-results/
+          if-no-files-found: warn
+
+  notify:
+    name: Deployment Notify
+    needs: [detect-changes, deploy]
+    if: always() && needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download deploy results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: lambda-result-*
+          path: lambda-results
+          merge-multiple: true
+
+      - name: Aggregate results
+        id: agg
+        run: |
+          total=0; ok=0; failed=""
+          echo "details<<__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
+          for meta in lambda-results/*.meta; do
+            [ -e "$meta" ] || continue
+            name=$(cut -d'|' -f1 "$meta")
+            outcome=$(cut -d'|' -f2 "$meta")
+            base=$(basename "$meta" .meta)
+            total=$((total+1))
+            if [ "$outcome" = "success" ]; then
+              ok=$((ok+1))
+            else
+              failed="$failed $name"
+              echo "===== $name ($outcome) =====" >> "$GITHUB_OUTPUT"
+              cat "lambda-results/$base.log" 2>/dev/null >> "$GITHUB_OUTPUT" || echo "(no output)" >> "$GITHUB_OUTPUT"
+              echo "" >> "$GITHUB_OUTPUT"
+            fi
+          done
+          echo "__DETAILS_EOF__" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$failed" ]; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=$ok/$total lambdas deployed — failed:$failed" >> "$GITHUB_OUTPUT"
           else
-            echo "✗ Lambda deployment failed"
-            exit 1
+            echo "status=success" >> "$GITHUB_OUTPUT"
+            echo "summary=$ok/$total lambdas deployed" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Notify
+        uses: ./.github/actions/deploy-notify
+        with:
+          status: ${{ steps.agg.outputs.status }}
+          title: Lambda Deploy
+          summary: ${{ steps.agg.outputs.summary }}
+          details: ${{ steps.agg.outputs.details }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

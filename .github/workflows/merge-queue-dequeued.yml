@@ -78,6 +78,30 @@ jobs:
               }
             }
 
+            // Merge queue also fires `dequeued` when a PR merges successfully.
+            // Send a positive "merged" DM instead of a removal notice.
+            if (String(reason).toLowerCase() === 'merge') {
+              await slackApi('chat.postMessage', {
+                channel: slackId,
+                text: `PR #${prNumber} merged — deploying shortly`,
+                blocks: [
+                  {
+                    type: 'header',
+                    text: { type: 'plain_text', text: ':merged:  Merged — Deploying Soon', emoji: true },
+                  },
+                  {
+                    type: 'section',
+                    text: {
+                      type: 'mrkdwn',
+                      text: `Your PR *<${prUrl}|#${prNumber} ${prTitle}>* has been merged and will deploy shortly.`,
+                    },
+                  },
+                ],
+              });
+              console.log(`Notified ${author} (${slackId}): PR #${prNumber} merged.`);
+              return;
+            }
+
             const blocks = [
               {
                 type: 'header',
