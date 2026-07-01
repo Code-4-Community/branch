@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PT_Sans } from "next/font/google";
 import { useAuth } from "@/context/AuthContext";
+import { assetPath } from "@/lib/asset";
 
 const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400", "700"] });
 
@@ -74,7 +75,7 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
       {/* Background Image Layer */}
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <Image
-          src="/leaves-bg.png"
+          src={assetPath("/leaves-bg.png")}
           alt=""
           fill
           style={{ objectFit: "cover" }}
@@ -90,7 +91,7 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
         flexDirection: "column",
         alignItems: "center",
       }}>
-        <Image src="/branch-logo.png" alt="Branch" width={75} height={75} />
+        <Image src={assetPath("/branch-logo.png")} alt="Branch" width={75} height={75} />
         <div style={{
           color: COLORS.white,
           fontSize: 18,
