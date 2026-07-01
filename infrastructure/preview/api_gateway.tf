@@ -9,9 +9,33 @@ resource "aws_api_gateway_rest_api" "preview_api" {
   }
 }
 
+# Attach CORS headers to API-Gateway-generated error responses (e.g. a lambda
+# 502 or a 403 for an unmatched route). Without these, such errors reach the
+# browser with no Access-Control-Allow-Origin and surface as an opaque "CORS
+# error" that hides the real status. '*' matches the lambda json() helper.
+resource "aws_api_gateway_gateway_response" "cors" {
+  for_each      = toset(["DEFAULT_4XX", "DEFAULT_5XX"])
+  rest_api_id   = aws_api_gateway_rest_api.preview_api.id
+  response_type = each.key
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+}
+
 # Must be kept in sync with infrastructure/aws/api_gateway.tf.
+# OPTIONS is added to every resource so browser CORS preflights are answered:
+# the frontend sends Content-Type: application/json on every call (see
+# apps/frontend/src/lib/api.ts), which makes even GETs non-simple and triggers a
+# preflight. Preview frontend (shared CloudFront) and the preview API are
+# cross-origin, so without an OPTIONS method API Gateway rejects the preflight
+# with no CORS headers → the browser reports a CORS error. Routing OPTIONS to the
+# proxy lambda works because the lambda short-circuits OPTIONS with 200 +
+# Access-Control-Allow-Origin: * (see each handler's json() helper).
 locals {
-  lambda_methods = {
+  base_methods = {
     auth         = ["GET", "POST"]
     donors       = ["GET"]
     expenditures = ["GET", "POST"]
@@ -19,6 +43,7 @@ locals {
     reports      = ["GET"]
     users        = ["GET", "POST", "DELETE", "PATCH"]
   }
+  lambda_methods = { for svc, methods in local.base_methods : svc => concat(methods, ["OPTIONS"]) }
 }
 
 resource "aws_api_gateway_resource" "lambda_resources" {
