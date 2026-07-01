@@ -22,6 +22,28 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
+    // THROWAWAY (preview smoke test): return one fake expenditure for ANY GET,
+    // bypassing auth status / access entirely. Not for merge.
+    if (method === 'GET') {
+      return json(200, {
+        data: [
+          {
+            expenditure_id: 1,
+            project_id: 1,
+            entered_by: 1,
+            amount: '123.45',
+            category: 'Fake',
+            description: 'Hello World expenditure',
+            status: 'approved',
+            receipt_url: null,
+            spent_on: '2026-07-01',
+            created_at: '2026-07-01T00:00:00.000Z',
+          },
+        ],
+        pagination: { page: 1, limit: 1, totalItems: 1, totalPages: 1 },
+      });
+    }
+
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
 
