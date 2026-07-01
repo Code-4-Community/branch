@@ -98,7 +98,7 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
           fontWeight: 400,
           letterSpacing: "0.05em",
         }}>
-          BRANCH
+          BRANCH Test
         </div>
       </div>
 

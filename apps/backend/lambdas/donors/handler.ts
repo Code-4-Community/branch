@@ -2,6 +2,12 @@ import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { authenticateRequest } from './auth';
 
+// THROWAWAY (preview-env smoke test): force every donor name to "Hello World".
+const helloWorldify = <T extends { organization?: string; contact_name?: string | null }>(
+  rows: T[],
+): T[] =>
+  rows.map((d) => ({ ...d, organization: 'Hello World', contact_name: 'Hello World' }));
+
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
     // Support both API Gateway and Lambda Function URL events
@@ -70,13 +76,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           .execute();
 
         return json(200, {
-          data: donors,
+          data: helloWorldify(donors),
           pagination: { page, limit, totalItems, totalPages },
         });
       }
 
       const donors = await db.selectFrom('branch.donors').selectAll().execute();
-      return json(200, { data: donors });
+      return json(200, { data: helloWorldify(donors) });
     }
 
     // GET /donations
