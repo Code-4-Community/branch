@@ -5,7 +5,10 @@ resource "aws_iam_role" "amplify_ssr" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action    = "sts:AssumeRole"
+      # sts:TagSession is required alongside AssumeRole — Amplify attaches
+      # session tags when assuming the service role; without it the assume is
+      # denied ("Unable to assume specified IAM Role").
+      Action    = ["sts:AssumeRole", "sts:TagSession"]
       Effect    = "Allow"
       Principal = { Service = "amplify.amazonaws.com" }
     }]
@@ -24,27 +27,31 @@ resource "aws_amplify_app" "frontend" {
   platform             = "WEB_COMPUTE"
   iam_service_role_arn = aws_iam_role.amplify_ssr.arn
 
+  # Monorepo build spec: the `applications`/`appRoot` form makes Amplify build
+  # from apps/frontend AND skip builds when no files under that root changed —
+  # so backend/infra pushes to main don't trigger a frontend deploy.
   build_spec = <<-EOT
     version: 1
-    frontend:
-      phases:
-        preBuild:
-          commands:
-            - npm ci
-        build:
-          commands:
-            - npm run build
-      artifacts:
-        baseDirectory: .next
-        files:
-          - '**/*'
-      cache:
-        paths:
-          - .next/cache/**/*
+    applications:
+      - appRoot: apps/frontend
+        frontend:
+          phases:
+            preBuild:
+              commands:
+                - npm ci
+            build:
+              commands:
+                - npm run build
+          artifacts:
+            baseDirectory: .next
+            files:
+              - '**/*'
+          cache:
+            paths:
+              - .next/cache/**/*
   EOT
 
   environment_variables = {
-    AMPLIFY_MONOREPO_APP_ROOT = "apps/frontend"
     # Default the API base URL to the deployed API Gateway stage so the built
     # frontend talks to the real backend instead of localhost. var.api_base_url
     # still overrides when set (was previously "" -> apiFetch hit localhost).
