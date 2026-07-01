@@ -31,11 +31,17 @@ No modules.
 | [aws_api_gateway_resource.lambda_resources](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_resource) | resource |
 | [aws_api_gateway_rest_api.branch_api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_rest_api) | resource |
 | [aws_api_gateway_stage.branch_stage](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_stage) | resource |
+| [aws_cloudwatch_event_api_destination.github_dispatch](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudwatch_event_api_destination) | resource |
+| [aws_cloudwatch_event_connection.github_dispatch](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudwatch_event_connection) | resource |
+| [aws_cloudwatch_event_rule.amplify_frontend_deploy](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudwatch_event_rule) | resource |
+| [aws_cloudwatch_event_target.github_dispatch](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudwatch_event_target) | resource |
 | [aws_cognito_user_pool.branch_user_pool](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool) | resource |
 | [aws_cognito_user_pool_client.branch_client](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool_client) | resource |
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
 | [aws_iam_role.amplify_ssr](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
+| [aws_iam_role.eventbridge_api_dest](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
 | [aws_iam_role.lambda_role](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
+| [aws_iam_role_policy.eventbridge_api_dest](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.amplify_ssr](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.lambda_basic](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_lambda_function.functions](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/lambda_function) | resource |
