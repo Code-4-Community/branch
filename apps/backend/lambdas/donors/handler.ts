@@ -7,7 +7,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // Support both API Gateway and Lambda Function URL events
     // API Gateway: event.path, event.httpMethod
     // Function URL: event.rawPath, event.requestContext.http.method
-    const rawPath = event.rawPath || event.path || '/';
+    const fullPath = event.rawPath || event.path || '/';
+    // API Gateway mounts this service at /donors[/{proxy+}]; strip the mount
+    // prefix so routing below (rawPath and normalizedPath) sees the bare path.
+    const rawPath = fullPath.replace(/^\/donors(?=\/|$)/, '') || '/';
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
@@ -133,7 +136,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
 
     // POST /donors
-    if (normalizedPath === '/donors' && method === 'POST') {
+    if ((normalizedPath === '/' || normalizedPath === '/donors') && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
       // TODO: Add your business logic here
       return json(201, { ok: true, route: 'POST /donors', body });

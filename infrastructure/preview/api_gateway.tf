@@ -91,6 +91,39 @@ resource "aws_api_gateway_integration" "lambda_integrations" {
   uri                     = aws_lambda_function.functions[each.value.lambda].invoke_arn
 }
 
+# Greedy child resource so sub-paths (/service/{id}, /service/login, ...) reach
+# the proxy lambda. Mirrors infrastructure/aws/api_gateway.tf. Each handler
+# strips its own /service prefix before routing (see handler.ts).
+resource "aws_api_gateway_resource" "lambda_proxy" {
+  for_each = local.lambda_functions
+
+  rest_api_id = aws_api_gateway_rest_api.preview_api.id
+  parent_id   = aws_api_gateway_resource.lambda_resources[each.key].id
+  path_part   = "{proxy+}"
+}
+
+# ANY on the proxy resource covers every method, including OPTIONS preflight.
+resource "aws_api_gateway_method" "lambda_proxy_any" {
+  for_each = local.lambda_functions
+
+  rest_api_id   = aws_api_gateway_rest_api.preview_api.id
+  resource_id   = aws_api_gateway_resource.lambda_proxy[each.key].id
+  http_method   = "ANY"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "lambda_proxy_integrations" {
+  for_each = local.lambda_functions
+
+  rest_api_id = aws_api_gateway_rest_api.preview_api.id
+  resource_id = aws_api_gateway_resource.lambda_proxy[each.key].id
+  http_method = aws_api_gateway_method.lambda_proxy_any[each.key].http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.functions[each.key].invoke_arn
+}
+
 resource "aws_lambda_permission" "api_gateway_permissions" {
   for_each = local.lambda_functions
 
@@ -103,14 +136,18 @@ resource "aws_lambda_permission" "api_gateway_permissions" {
 
 resource "aws_api_gateway_deployment" "preview_deployment" {
   depends_on = [
-    aws_api_gateway_integration.lambda_integrations
+    aws_api_gateway_integration.lambda_integrations,
+    aws_api_gateway_integration.lambda_proxy_integrations,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.preview_api.id
 
-  # Re-deploy when routing changes.
+  # Re-deploy when routing changes (methods or the {proxy+} sub-path routes).
   triggers = {
-    redeploy = sha1(jsonencode(local.lambda_methods))
+    redeploy = sha1(jsonencode({
+      methods = local.lambda_methods
+      proxy   = tolist(local.lambda_functions)
+    }))
   }
 
   lifecycle {

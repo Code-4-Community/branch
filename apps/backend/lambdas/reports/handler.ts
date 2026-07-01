@@ -26,9 +26,17 @@ type FileType = typeof ALLOWED_EXTENSIONS[number];
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
-    const rawPath = event.rawPath || event.path || '/';
+    const fullPath = event.rawPath || event.path || '/';
+    // API Gateway mounts this service at /reports[/{proxy+}]; strip the mount
+    // prefix so routing below (rawPath and normalizedPath) sees the bare path.
+    const rawPath = fullPath.replace(/^\/reports(?=\/|$)/, '') || '/';
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
+
+    // CORS preflight — must return 2xx or the browser blocks the request.
+    if (method === 'OPTIONS') {
+      return json(200, {});
+    }
 
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
       return json(200, { ok: true, timestamp: new Date().toISOString() });

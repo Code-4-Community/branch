@@ -14,6 +14,7 @@ import {
   WidthType,
 } from 'docx';
 import path from 'path';
+import fs from 'fs';
 
 // pdfmake's server-side Printer has no TS declarations; use require
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -31,8 +32,14 @@ function getBucketName(): string {
   return bucket;
 }
 
-const PDFMAKE_ROOT = path.join(require.resolve('pdfmake'), '..', '..');
-const FONT_DIR = path.join(PDFMAKE_ROOT, 'build', 'fonts', 'Roboto');
+// The deploy bundle (esbuild) ships the Roboto TTFs under <task>/fonts/Roboto
+// (see package.json "package"). In local dev (ts-node, unbundled) they live in
+// node_modules/pdfmake. pdfmake reads these files at render time, so they must
+// exist on disk — they cannot be bundled into the JS.
+const BUNDLED_FONT_DIR = path.join(__dirname, 'fonts', 'Roboto');
+const FONT_DIR = fs.existsSync(BUNDLED_FONT_DIR)
+  ? BUNDLED_FONT_DIR
+  : path.join(__dirname, 'node_modules', 'pdfmake', 'build', 'fonts', 'Roboto');
 
 const fonts = {
   Roboto: {
