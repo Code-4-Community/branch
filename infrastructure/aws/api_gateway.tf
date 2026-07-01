@@ -8,10 +8,32 @@ resource "aws_api_gateway_rest_api" "branch_api" {
   }
 }
 
+# Attach CORS headers to API-Gateway-generated error responses (e.g. a lambda
+# 502 or a 403 for an unmatched route) so they surface with their real status
+# instead of as an opaque browser "CORS error". '*' matches the lambda json()
+# helper.
+resource "aws_api_gateway_gateway_response" "cors" {
+  for_each      = toset(["DEFAULT_4XX", "DEFAULT_5XX"])
+  rest_api_id   = aws_api_gateway_rest_api.branch_api.id
+  response_type = each.key
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+}
+
 # Define supported HTTP methods per Lambda function based on handlers
 # NOTE: Must be kept in sync with actual Lambda handlers in apps/backend/lambdas/*/openapi.yaml
+# OPTIONS is appended to every resource so browser CORS preflights are answered.
+# The frontend sends Content-Type: application/json on every call (see
+# apps/frontend/src/lib/api.ts), which makes even GETs non-simple and triggers a
+# preflight; the frontend (CloudFront) and this API are cross-origin. Preflight
+# is routed to the proxy lambda, which short-circuits OPTIONS with 200 +
+# Access-Control-Allow-Origin: * (see each handler's json() helper).
 locals {
-  lambda_methods = {
+  base_methods = {
     auth         = ["GET", "POST"]
     donors       = ["GET"]
     expenditures = ["GET", "POST"]
@@ -19,6 +41,7 @@ locals {
     reports      = ["GET"]
     users        = ["GET", "POST", "DELETE", "PATCH"]
   }
+  lambda_methods = { for svc, methods in local.base_methods : svc => concat(methods, ["OPTIONS"]) }
 }
 
 # Create a resource for each Lambda function
@@ -89,6 +112,12 @@ resource "aws_api_gateway_deployment" "branch_deployment" {
   ]
 
   rest_api_id = aws_api_gateway_rest_api.branch_api.id
+
+  # Force a new deployment when routing changes (e.g. the OPTIONS methods added
+  # for CORS) — otherwise the stage keeps serving the old method set.
+  triggers = {
+    redeploy = sha1(jsonencode(local.lambda_methods))
+  }
 
   lifecycle {
     create_before_destroy = true
