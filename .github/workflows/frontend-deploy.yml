@@ -16,6 +16,7 @@ jobs:
     permissions:
       id-token: write # assume the OIDC apply role
       contents: read
+      pull-requests: write # deploy-notify PR comment
     defaults:
       run:
         working-directory: apps/frontend
@@ -54,10 +55,28 @@ jobs:
           echo "DIST_ID=$DIST_ID" >> "$GITHUB_ENV"
 
       - name: Sync to S3
-        run: aws s3 sync out "s3://$BUCKET" --delete
+        run: aws s3 sync out "s3://$BUCKET" --delete 2>&1 | tee -a deploy.log
 
       - name: Invalidate CloudFront
-        run: aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
+        run: |
+          aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*" 2>&1 | tee -a deploy.log
+          echo "Deployed apps/frontend to s3://$BUCKET and invalidated $DIST_ID" | tee -a deploy.log
 
-      - name: Summary
-        run: echo "Deployed apps/frontend to s3://$BUCKET and invalidated $DIST_ID"
+      - name: Collect deploy details
+        if: always()
+        id: details
+        run: |
+          echo "log<<__EOF__" >> "$GITHUB_OUTPUT"
+          tail -n 60 deploy.log 2>/dev/null >> "$GITHUB_OUTPUT" || echo "(no output captured)" >> "$GITHUB_OUTPUT"
+          echo "__EOF__" >> "$GITHUB_OUTPUT"
+
+      - name: Notify
+        if: always()
+        uses: ./.github/actions/deploy-notify
+        with:
+          status: ${{ job.status }}
+          title: Frontend Deploy
+          summary: ${{ job.status == 'success' && 'Frontend deployed to S3 + CloudFront' || 'Frontend deploy failed' }}
+          details: ${{ steps.details.outputs.log }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

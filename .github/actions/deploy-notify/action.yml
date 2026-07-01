@@ -12,9 +12,13 @@ inputs:
     description: 'One-line result summary'
     required: true
   details:
-    description: 'Optional multiline output/logs (PR comment only, never Slack)'
+    description: 'Optional multiline output/logs (rendered collapsibly in the PR comment and Slack message)'
     required: false
     default: ''
+  deployed-by:
+    description: 'GitHub login that triggered the deploy (mapped to Slack via config.json github_to_slack)'
+    required: false
+    default: ${{ github.actor }}
   commit-sha:
     description: 'Commit that triggered the deploy (used to find the PR)'
     required: false
@@ -33,6 +37,18 @@ inputs:
 runs:
   using: composite
   steps:
+    # The GitHub->Slack mapping lives in config.json on the bot-state branch
+    # (owned by Terraform, see infrastructure/github/review-bot.tf). Best effort:
+    # if it can't be fetched we fall back to the GitHub username.
+    - name: Fetch GitHub→Slack mapping
+      uses: actions/checkout@v4
+      continue-on-error: true
+      with:
+        ref: bot-state
+        path: .deploy-notify-state
+        token: ${{ inputs.github-token }}
+        persist-credentials: false
+
     - name: Post deploy result
       uses: actions/github-script@v7
       env:
@@ -40,17 +56,22 @@ runs:
         DEPLOY_TITLE: ${{ inputs.title }}
         DEPLOY_SUMMARY: ${{ inputs.summary }}
         DEPLOY_DETAILS: ${{ inputs.details }}
+        DEPLOY_BY: ${{ inputs.deployed-by }}
         DEPLOY_COMMIT_SHA: ${{ inputs.commit-sha }}
         SLACK_CHANNEL: ${{ inputs.slack-channel }}
         SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
+          const fs = require('fs');
+          const path = require('path');
+
           const status  = (process.env.DEPLOY_STATUS || '').toLowerCase();
           const title   = process.env.DEPLOY_TITLE || 'Deploy';
           const summary = process.env.DEPLOY_SUMMARY || '';
           const sha     = process.env.DEPLOY_COMMIT_SHA || context.sha;
           const rawDetails = process.env.DEPLOY_DETAILS || '';
+          const deployedBy = (process.env.DEPLOY_BY || '').trim();
 
           const ok = status === 'success';
           const ghEmoji = ok ? '✅' : '❌';
@@ -62,85 +83,86 @@ runs:
           const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
           const commitUrl = `${context.serverUrl}/${owner}/${repo}/commit/${sha}`;
 
-          // ── Truncate details for the PR comment ──────────────────
-          function truncate(text) {
+          // ── Resolve "Deployed by" via the GitHub→Slack mapping ────
+          // PR comment uses @login; Slack uses <@slackId> when we have a mapping.
+          let slackDeployedBy = deployedBy ? `@${deployedBy}` : 'unknown';
+          const ghDeployedBy = deployedBy ? `@${deployedBy}` : 'unknown';
+          if (deployedBy) {
+            try {
+              const cfgPath = path.join(process.env.GITHUB_WORKSPACE || '.', '.deploy-notify-state', 'config.json');
+              const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+              const slackId = cfg.github_to_slack && cfg.github_to_slack[deployedBy];
+              if (slackId) slackDeployedBy = `<@${slackId}>`;
+            } catch (err) {
+              console.log(`No Slack mapping for ${deployedBy} (falling back to username): ${err.message}`);
+            }
+          }
+
+          // ── Truncate helpers ─────────────────────────────────────
+          function truncate(text, maxLines, maxChars) {
             if (!text) return '';
-            const MAX_LINES = 50;
-            const MAX_CHARS = 60000;
             let lines = text.split('\n');
             let clipped = false;
-            if (lines.length > MAX_LINES) {
-              lines = lines.slice(-MAX_LINES);
-              clipped = true;
-            }
+            if (lines.length > maxLines) { lines = lines.slice(-maxLines); clipped = true; }
             let out = lines.join('\n');
-            if (out.length > MAX_CHARS) {
-              out = out.slice(-MAX_CHARS);
-              clipped = true;
-            }
-            if (clipped) out = `… (truncated; see full logs in the workflow run)\n${out}`;
+            if (out.length > maxChars) { out = out.slice(-maxChars); clipped = true; }
+            if (clipped) out = `… (truncated; full logs in the workflow run)\n${out}`;
             return out;
           }
 
           // ── Build PR comment body ────────────────────────────────
           let body = `### ${ghEmoji} ${title} — ${statusText}\n\n${summary}\n\n`;
-          body += `[Workflow run](${runUrl}) · [\`${shortSha}\`](${commitUrl})\n`;
-          const details = truncate(rawDetails);
-          if (details) {
-            body += `\n<details><summary>Output</summary>\n\n\`\`\`\n${details}\n\`\`\`\n\n</details>\n`;
+          body += `Deployed by ${ghDeployedBy} · [Workflow run](${runUrl}) · [\`${shortSha}\`](${commitUrl})\n`;
+          const prDetails = truncate(rawDetails, 50, 60000);
+          if (prDetails) {
+            body += `\n<details><summary>Output</summary>\n\n\`\`\`\n${prDetails}\n\`\`\`\n\n</details>\n`;
           }
 
           // ── Comment on associated PR(s) ──────────────────────────
           let prs = [];
           try {
-            const resp = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-              owner, repo, commit_sha: sha,
-            });
+            const resp = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
             prs = resp.data;
           } catch (err) {
             console.log(`Could not resolve PRs for ${sha}: ${err.message}`);
           }
-
-          if (prs.length === 0) {
-            console.log(`No PR associated with ${shortSha}; skipping PR comment.`);
-          }
+          if (prs.length === 0) console.log(`No PR associated with ${shortSha}; skipping PR comment.`);
           for (const pr of prs) {
             try {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: pr.number, body,
-              });
+              await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
               console.log(`Commented on PR #${pr.number}`);
             } catch (err) {
               console.log(`Failed to comment on PR #${pr.number}: ${err.message}`);
             }
           }
 
-          // ── Post concise message to Slack channel ────────────────
+          // ── Post message to Slack channel ────────────────────────
           const prLinks = prs.length
             ? prs.map(pr => `<${pr.html_url}|#${pr.number} ${pr.title}>`).join(', ')
             : `<${commitUrl}|\`${shortSha}\`>`;
 
           const blocks = [
             { type: 'header', text: { type: 'plain_text', text: `${slackEmoji}  ${title}`, emoji: true } },
-            {
-              type: 'section',
-              text: { type: 'mrkdwn', text: `*${statusText.toUpperCase()}* — ${summary}` },
-            },
+            { type: 'section', text: { type: 'mrkdwn', text: `*${statusText.toUpperCase()}* — ${summary}` } },
             {
               type: 'context',
               elements: [
-                { type: 'mrkdwn', text: `${prs.length ? 'PR' : 'Commit'}: ${prLinks}  |  <${runUrl}|Workflow run>` },
+                { type: 'mrkdwn', text: `Deployed by ${slackDeployedBy}  |  ${prs.length ? 'PR' : 'Commit'}: ${prLinks}  |  <${runUrl}|Workflow run>` },
               ],
             },
           ];
 
+          // Logs as a code block. Slack collapses tall messages behind a
+          // "Show more" control; section text is capped at 3000 chars.
+          const slackLog = truncate(rawDetails, 40, 2600);
+          if (slackLog) {
+            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '```' + slackLog + '```' } });
+          }
+
           try {
             const resp = await fetch('https://slack.com/api/chat.postMessage', {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-              },
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
               body: JSON.stringify({
                 channel: process.env.SLACK_CHANNEL,
                 text: `${title} ${statusText}: ${summary}`,
