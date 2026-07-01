@@ -1,24 +1,3 @@
-# GitHub Actions OIDC → scoped IAM roles.
-#
-# Replaces the long-lived branch-ci-and-iac access keys stored as GitHub
-# secrets. Two roles, split by read vs write so plans keep working on PRs while
-# the powerful write path is locked to the `production` environment:
-#
-#   branch-ci-plan   read-only, assumable from ANY workflow context (PR / branch
-#                    / merge queue). Safe to expose broadly — it can only read.
-#   branch-ci-apply  read-write, assumable ONLY from the `production` GitHub
-#                    environment (gate it further with required reviewers on that
-#                    environment). Used by terraform-apply + lambda-deploy.
-#
-# Security comes from *who can assume* (the sub condition), not from narrowing
-# the write role's policy — so a rogue workflow on a feature branch can assume at
-# most the read-only role.
-#
-# BOOTSTRAP: creating the OIDC provider + roles needs IAM perms the locked
-# branch-ci-and-iac user likely lacks (iam:CreateOpenIDConnectProvider). The
-# FIRST apply of this file must be run by an admin/broader principal; afterwards
-# CI uses these roles.
-
 locals {
   github_repo = "Code-4-Community/branch"
 }
