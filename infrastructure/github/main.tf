@@ -47,6 +47,16 @@ resource "github_branch_protection" "main" {
   enforce_admins = false
 }
 
+# Deployment environment for ephemeral PR preview stacks
+# (.github/workflows/preview-env.yml). Intentionally has NO required reviewers —
+# previews must deploy on `test-environment` label without a human gate. The
+# branch-ci-preview OIDC role it maps to is scoped to throwaway branch-pr*
+# resources, so no reviewer gate is needed (unlike `production`).
+resource "github_repository_environment" "preview" {
+  repository  = github_repository.branch.name
+  environment = "preview"
+}
+
 resource "github_repository_collaborator" "collaborators" {
   for_each   = { for c in var.repository_collaborators : c.username => c }
   repository = github_repository.branch.name

@@ -34,7 +34,7 @@ export default function DropdownSelector({
   }
 
   return (
-    <div className="min-w-[235px] font-body text-body">
+    <div className="w-full font-body text-body">
       <Select.Root
         collection={collection}
         multiple={multiSelect}
@@ -82,7 +82,7 @@ export default function DropdownSelector({
         </Select.Trigger>
 
         <Portal>
-          <Select.Positioner style={{ width: '235px', left:"3px" }}>
+          <Select.Positioner style={{ width: 'var(--reference-width)', left:"3px" }}>
             <Select.Content className="!rounded !border !border-black-200 !bg-core-white !shadow-none !p-0 !mt-0.5 !font-body !text-body">
               {collection.items.map((item) =>
                 multiSelect ? (

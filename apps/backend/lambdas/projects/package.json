@@ -12,6 +12,8 @@
   "devDependencies": {
     "@branch/types": "file:../../../../shared/types",
     "@types/aws-lambda": "^8.10.131",
+    "esbuild": "^0.25.12",
+    "jest": "^30.2.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.11.30",
     "@types/pg": "^8.15.6",
@@ -25,7 +27,6 @@
   "dependencies": {
     "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
     "aws-jwt-verify": "^5.1.1",
-    "jest": "^30.2.0",
     "kysely": "^0.28.8",
     "pg": "^8.16.3",
     "@branch/lambda-http": "file:../../../../shared/lambda-http"

@@ -8,6 +8,22 @@ resource "aws_api_gateway_rest_api" "branch_api" {
   }
 }
 
+# Attach CORS headers to API-Gateway-generated error responses (e.g. a lambda
+# 502 or a 403 for an unmatched route) so they surface with their real status
+# instead of as an opaque browser "CORS error". '*' matches the lambda json()
+# helper.
+resource "aws_api_gateway_gateway_response" "cors" {
+  for_each      = toset(["DEFAULT_4XX", "DEFAULT_5XX"])
+  rest_api_id   = aws_api_gateway_rest_api.branch_api.id
+  response_type = each.key
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+}
+
 # One resource per lambda at the API root: /auth, /donors, /projects, ...
 resource "aws_api_gateway_resource" "lambda_resources" {
   for_each = local.lambda_functions

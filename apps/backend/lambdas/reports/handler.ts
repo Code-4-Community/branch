@@ -1,4 +1,6 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { dispatch, json, RouteCtx } from '@branch/lambda-http';
 import db from './db';
 import { authenticateRequest } from './auth';
@@ -11,11 +13,20 @@ import {
   saveReportRecord,
 } from './report-service';
 
-const FILE_TYPES = ['pdf', 'docx'] as const;
-type FileType = typeof FILE_TYPES[number];
+const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
+const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
+const REGION = process.env.AWS_REGION ?? 'us-east-2';
 
-// POST /reports
-async function createReport({ event }: RouteCtx): Promise<APIGatewayProxyResult> {
+const ALLOWED_EXTENSIONS = ['pdf', 'docx'] as const;
+const MIME_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+
+type FileType = typeof ALLOWED_EXTENSIONS[number];
+
+// POST /reports/generate — server generates the report file and stores it.
+async function generateReport({ event }: RouteCtx): Promise<APIGatewayProxyResult> {
   const authContext = await authenticateRequest(event);
   if (!authContext.isAuthenticated || !authContext.user) {
     return json(401, { message: 'Authentication required' });
@@ -33,8 +44,8 @@ async function createReport({ event }: RouteCtx): Promise<APIGatewayProxyResult>
   }
 
   const fileType = (body.file_type ?? 'pdf') as FileType;
-  if (!FILE_TYPES.includes(fileType)) {
-    return json(400, { message: `file_type must be one of: ${FILE_TYPES.join(', ')}` });
+  if (!ALLOWED_EXTENSIONS.includes(fileType)) {
+    return json(400, { message: `file_type must be one of: ${ALLOWED_EXTENSIONS.join(', ')}` });
   }
 
   const reportData = await fetchReportData(projectId);
@@ -63,7 +74,8 @@ async function createReport({ event }: RouteCtx): Promise<APIGatewayProxyResult>
     return json(500, { message: 'Failed to upload report' });
   }
 
-  const record = await saveReportRecord(projectId, objectUrl);
+  const title = `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+  const record = await saveReportRecord(projectId, objectUrl, title);
 
   return json(201, {
     ok: true,
@@ -73,7 +85,105 @@ async function createReport({ event }: RouteCtx): Promise<APIGatewayProxyResult>
   });
 }
 
-// GET /reports
+// GET /reports/upload-url — presigned S3 PUT URL for client-side upload.
+async function getUploadUrl({ event }: RouteCtx): Promise<APIGatewayProxyResult> {
+  const authContext = await authenticateRequest(event);
+  if (!authContext.isAuthenticated || !authContext.user) {
+    return json(401, { message: 'Authentication required' });
+  }
+
+  const { user } = authContext;
+
+  const queryParams = event.queryStringParameters || {};
+  const { fileName, projectId: projectIdStr } = queryParams;
+
+  if (!fileName || typeof fileName !== 'string') {
+    return json(400, { message: 'fileName is required' });
+  }
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
+    return json(400, { message: 'Only PDF and DOCX files are supported' });
+  }
+  if (!projectIdStr || !/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
+    return json(400, { message: 'projectId must be a positive integer' });
+  }
+  const projectId = parseInt(projectIdStr, 10);
+
+  const projectExists = await db.selectFrom('branch.projects')
+    .where('project_id', '=', projectId)
+    .select('project_id')
+    .executeTakeFirst();
+  if (!projectExists) return json(404, { message: 'Project not found' });
+
+  const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
+  if (!hasAccess) {
+    return json(403, { message: 'You do not have access to upload reports for this project' });
+  }
+
+  const key = `reports/${projectId}/${Date.now()}-${fileName}`;
+  const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ContentType: MIME_TYPES[ext],
+  }), { expiresIn: 3600 });
+
+  const objectUrl = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
+
+  return json(200, { uploadUrl, objectUrl });
+}
+
+// POST /reports — record a report whose file was already uploaded (via upload-url).
+async function createReportRecord({ event }: RouteCtx): Promise<APIGatewayProxyResult> {
+  const authContext = await authenticateRequest(event);
+  if (!authContext.isAuthenticated || !authContext.user) {
+    return json(401, { message: 'Authentication required' });
+  }
+
+  const { user } = authContext;
+
+  let body: Record<string, unknown>;
+  try {
+    body = event.body ? JSON.parse(event.body) : {};
+  } catch {
+    return json(400, { message: 'Invalid JSON in request body' });
+  }
+
+  const { title, projectId, objectUrl, reportType } = body;
+
+  if (!title || typeof title !== 'string' || title.trim().length === 0) {
+    return json(400, { message: 'title is required' });
+  }
+  if (!projectId || typeof projectId !== 'number' || !Number.isInteger(projectId) || projectId < 1) {
+    return json(400, { message: 'projectId must be a positive integer' });
+  }
+  if (!objectUrl || typeof objectUrl !== 'string') {
+    return json(400, { message: 'objectUrl is required' });
+  }
+  const REPORT_TYPES = ['technical', 'narrative'] as const;
+  type ReportType = typeof REPORT_TYPES[number];
+  const resolvedReportType: ReportType = (reportType && REPORT_TYPES.includes(reportType as ReportType)) ? reportType as ReportType : 'technical';
+
+  const projectExists = await db.selectFrom('branch.projects')
+    .where('project_id', '=', projectId as number)
+    .select('project_id')
+    .executeTakeFirst();
+  if (!projectExists) return json(404, { message: 'Project not found' });
+
+  const hasAccess = await checkProjectAccess(user.userId!, projectId as number, user.isAdmin);
+  if (!hasAccess) {
+    return json(403, { message: 'You do not have access to upload reports for this project' });
+  }
+
+  const report = await db
+    .insertInto('branch.reports')
+    .values({ project_id: projectId, title: (title as string).trim(), object_url: objectUrl as string, report_type: resolvedReportType })
+    .returningAll()
+    .executeTakeFirst();
+
+  return json(201, report);
+}
+
+// GET /reports — list reports, optionally filtered by project and paginated.
 async function listReports({ event }: RouteCtx): Promise<APIGatewayProxyResult> {
   const authContext = await authenticateRequest(event);
   if (!authContext.isAuthenticated) {
@@ -138,7 +248,9 @@ export const handler = (event: any): Promise<APIGatewayProxyResult> =>
   dispatch(event, {
     prefix: 'reports',
     routes: [
-      { method: 'POST', pattern: '/reports', handler: createReport },
+      { method: 'POST', pattern: '/reports/generate', handler: generateReport },
+      { method: 'GET', pattern: '/reports/upload-url', handler: getUploadUrl },
       { method: 'GET', pattern: '/reports', handler: listReports },
+      { method: 'POST', pattern: '/reports', handler: createReportRecord },
     ],
   });

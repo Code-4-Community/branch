@@ -2,6 +2,8 @@
 
 Next.js 15.5 app (App Router, Turbopack), React 19. Talks to the backend lambda microservices. UI: Chakra UI v3 (unstyled primitives) + Tailwind v4. Auth: JWT in localStorage via a React context.
 
+**Deployed as a static SPA.** `next.config.ts` sets `output: 'export'` — `npm run build` emits `out/`, synced to S3 + served by CloudFront (see `infrastructure/aws/frontend_hosting.tf`, `.github/workflows/frontend-deploy.yml`). No server: everything is client-rendered. Dynamic routes (`projects/[id]`) need `generateStaticParams` in a **Server Component** — the page is a thin server wrapper delegating to a `'use client'` component; deep links resolve via the CloudFront SPA fallback. `NEXT_PUBLIC_API_BASE_URL` (set at build) points the client at API Gateway.
+
 > `README.md` here is `create-next-app` boilerplate — ignore it.
 
 ## Commands
@@ -38,7 +40,7 @@ test/                       # jest + RTL mirror of src/ (custom render in test/u
 
 No React Query / SWR / Redux. Pattern: `useState` + `useEffect` + `apiFetch`, local component state.
 
-`src/lib/api.ts` — `apiFetch<T>(path, { token?, ... })`. In production set `NEXT_PUBLIC_API_BASE_URL` (the API Gateway stage URL) — all calls go there with their **full prefixed path** (`/auth/login`, `/projects/:id/members`). With it unset (local dev), it routes by first path segment to a service port (auth→3006, projects→3002, donors→3003, expenditures→3004, reports→3005, users→3001). Injects `Authorization: Bearer <token>`. Throws on non-2xx. `next.config.ts` has dev-only pass-through rewrites per service (full prefixed paths, no stripping) as a fallback for same-origin requests. New backend calls go through `apiFetch` — don't hand-roll `fetch`.
+`src/lib/api.ts` — `apiFetch<T>(path, { token?, ... })`. Routes by first path segment to a service port (auth→3006, projects→3002, donors→3003, expenditures→3004, reports→3005, users→3001), or to `NEXT_PUBLIC_API_BASE_URL` if set. Injects `Authorization: Bearer <token>`. Throws on non-2xx. In production `NEXT_PUBLIC_API_BASE_URL` (API Gateway) is set at build so every call goes there with its full prefixed path; the localhost port map is the dev fallback. (Static export has no server, so there are no `next.config` rewrites.) New backend calls go through `apiFetch` — don't hand-roll `fetch`.
 
 ## Auth
 
