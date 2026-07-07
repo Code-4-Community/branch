@@ -10,8 +10,8 @@ TODO: Add a description of the reports lambda.
 |--------|------|-------------|
 | GET | /health | Health check |
 | POST | /reports/generate |  |
-| GET | /reports |  |
 | GET | /reports/upload-url |  |
+| GET | /reports |  |
 | POST | /reports |  |
 
 ## Setup
