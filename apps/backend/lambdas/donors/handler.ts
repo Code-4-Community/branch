@@ -135,6 +135,44 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { data: donations });
     }
 
+    // POST /donations
+    if (normalizedPath === '/donations' && method === 'POST') {
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      const { donor_id, project_id, amount } = body;
+
+      if (donor_id === undefined || project_id === undefined || amount === undefined) {
+        return json(400, { message: 'donor_id, project_id, and amount are required' });
+      }
+      if (!Number.isInteger(donor_id) || (donor_id as number) < 1) {
+        return json(400, { message: 'donor_id must be a positive integer' });
+      }
+      if (!Number.isInteger(project_id) || (project_id as number) < 1) {
+        return json(400, { message: 'project_id must be a positive integer' });
+      }
+      if (typeof amount !== 'number' || amount <= 0 || !isFinite(amount)) {
+        return json(400, { message: 'amount must be a positive number' });
+      }
+
+      try {
+      const donation = await db
+        .insertInto('branch.project_donations')
+        .values({
+          donor_id: donor_id as number,
+          project_id: project_id as number,
+          amount: amount as number,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      return json(201, { data: donation });
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        return json(409, { message: 'A donation from this donor to this project already exists' });
+      }
+      throw err;
+    }
+    }
+
     // POST /donors
     if ((normalizedPath === '/' || normalizedPath === '/donors') && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
