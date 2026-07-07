@@ -247,6 +247,41 @@ describe("Donor API with data", () => {
     const res = await handler(createEvent('GET', '/donations'));
     expect(res.statusCode).toBe(401);
   });
+  test("POST /donations returns 201 and created donation", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 1, project_id: 4, amount: 500,
+    }));
+    const body = JSON.parse(res.body);
+    expect(res.statusCode).toBe(201);
+    expect(body.data.donor_id).toBe(1);
+    expect(body.data.project_id).toBe(4);
+    expect(Number(body.data.amount)).toBe(500);
+  });
+
+  test("POST /donations returns 400 when donor_id is missing", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', { project_id: 1, amount: 100 }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  test("POST /donations returns 400 when amount is zero", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', { donor_id: 1, project_id: 1, amount: 0 }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  test("POST /donations returns 400 when amount is negative", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', { donor_id: 1, project_id: 1, amount: -50 }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  test("POST /donations returns 401 when unauthenticated", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce({ isAuthenticated: false });
+    const res = await handler(createEvent('POST', '/donations', { donor_id: 1, project_id: 1, amount: 100 }));
+    expect(res.statusCode).toBe(401);
+  });
 });
 
 describe("Donor API when DB is empty", () => {
