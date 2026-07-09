@@ -475,9 +475,9 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    test('400: status not approved/denied is rejected', async () => {
+    test('400: status not valid is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
-      const res = await handler(patchStatusEvent(1, { status: 'pending' }));
+      const res = await handler(patchStatusEvent(1, { status: 'pend' }));
 
       expect(res.statusCode).toBe(400);
       expect(await getStatus(1)).toBe('pending');

@@ -701,8 +701,8 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
     expect(JSON.parse(res.body).message).toContain('status is required');
   });
 
-  test('400: status not approved/denied (e.g. pending)', async () => {
-    const res = await handler(patchStatusEvent(5, { status: 'pending' }));
+  test('400: status not valid', async () => {
+    const res = await handler(patchStatusEvent(5, { status: 'pend' }));
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).message).toContain('status must be one of');
   });
