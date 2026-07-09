@@ -222,7 +222,7 @@ The GitHub Actions workflow (`.github/workflows/lambda-deploy.yml`) handles the 
 
 ### Deployment Requirements
 
-- AWS credentials are configured in repository secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+- CI deploys via GitHub OIDC (`branch-ci-apply` role); no static AWS keys in repository secrets
 - Lambda function names in AWS must follow the pattern: `branch-{service-name}`
   - Example: `branch-auth`, `branch-users`, `branch-donors`
 - Each Lambda directory must have a `npm run package` script that produces `lambda.zip`

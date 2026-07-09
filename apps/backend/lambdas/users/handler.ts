@@ -18,7 +18,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // Support both API Gateway and Lambda Function URL events
     // API Gateway: event.path, event.httpMethod
     // Function URL: event.rawPath, event.requestContext.http.method
-    const rawPath = event.rawPath || event.path || '/';
+    const fullPath = event.rawPath || event.path || '/';
+    // API Gateway mounts this service at /users[/{proxy+}]; strip the mount
+    // prefix so routing below (rawPath and normalizedPath) sees the bare path.
+    const rawPath = fullPath.replace(/^\/users(?=\/|$)/, '') || '/';
     let normalizedPath = rawPath.replace(/\/$/, '');
     if (normalizedPath.length === 0) {
       normalizedPath = '/';
@@ -26,6 +29,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
         console.log('DEBUG - rawPath:', rawPath, 'normalizedPath:', normalizedPath, 'method:', method);
+
+    // CORS preflight — must return 2xx before auth, or the browser blocks it.
+    if (method === 'OPTIONS') {
+      return json(200, {});
+    }
 
     // Health check
     if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {

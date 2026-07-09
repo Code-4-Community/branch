@@ -73,16 +73,47 @@ jobs:
               dirs_json=$(cat dirs.json)
             fi
           elif [ "$ANY_CHANGED" = "true" ]; then
-            # Derive unique directories from changed files on push
-            echo "$ALL_CHANGED" | tr ' ' '\n' | xargs -I {} dirname {} | sort -u | jq -R -s -c 'split("\n")[:-1]' > dirs.json
+            # Derive unique directories from changed files on push.
+            # Exclude infrastructure/preview: it's the per-PR module (needs a
+            # pr_number, applied per-PR by preview-env.yml). preview-shared is
+            # applied normally here.
+            echo "$ALL_CHANGED" | tr ' ' '\n' | xargs -I {} dirname {} | sort -u | grep -vx 'infrastructure/preview' | jq -R -s -c 'split("\n") | map(select(length > 0))' > dirs.json
             dirs_json=$(cat dirs.json)
           fi
 
           echo "Resolved directories: $dirs_json"
           echo "dirs=$dirs_json" >> $GITHUB_OUTPUT
 
-  terraform-apply:
+  # Post the initial "Deploying infrastructure" Slack message before applies run.
+  prep:
     needs: detect-changes
+    if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ts: ${{ steps.slack.outputs.ts }}
+      total: ${{ steps.count.outputs.total }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Count workspaces
+        id: count
+        env:
+          DIRS: ${{ needs.detect-changes.outputs.terraform-dirs }}
+        run: echo "total=$(echo "$DIRS" | jq 'length')" >> "$GITHUB_OUTPUT"
+      - name: Start deploy notification
+        id: slack
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: start
+          component: infrastructure
+          total-steps: ${{ steps.count.outputs.total }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  terraform-apply:
+    needs: [detect-changes, prep]
     if: needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
     strategy:
@@ -90,6 +121,11 @@ jobs:
         directory: ${{ fromJson(needs.detect-changes.outputs.terraform-dirs) }}
       fail-fast: false
     environment: production
+    permissions:
+      id-token: write # assume the OIDC apply role
+      contents: read
+      actions: read # count completed legs for the live status bar
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,11 +141,10 @@ jobs:
           tfenv install
           terraform version
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (write apply role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-apply
           aws-region: us-east-2
 
       - name: Terraform Init
@@ -137,11 +172,48 @@ jobs:
       - name: Terraform Apply
         id: apply
         run: |
-          terraform apply -auto-approve -no-color tfplan
+          set -o pipefail
+          terraform apply -auto-approve -no-color tfplan 2>&1 | tee apply.log
         working-directory: ${{ matrix.directory }}
         env:
           TF_VAR_infisical_client_id: ${{ secrets.INFISICAL_CLIENT_ID }}
           TF_VAR_infisical_client_secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Compute result name
+        id: rname
+        if: always()
+        run: echo "name=$(echo '${{ matrix.directory }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Save apply result
+        if: always()
+        run: |
+          mkdir -p tf-results
+          echo "${{ matrix.directory }}|${{ steps.apply.outcome }}" > "tf-results/${{ steps.rname.outputs.name }}.meta"
+          cp "${{ matrix.directory }}/apply.log" "tf-results/${{ steps.rname.outputs.name }}.log" 2>/dev/null \
+            || echo "(no apply output captured)" > "tf-results/${{ steps.rname.outputs.name }}.log"
+
+      - name: Upload apply result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-result-${{ steps.rname.outputs.name }}
+          path: tf-results/
+          if-no-files-found: warn
+
+      - name: Thread step (live)
+        if: always()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: infrastructure
+          total-steps: ${{ needs.prep.outputs.total }}
+          job-name: terraform-apply
+          step-name: Applied ${{ matrix.directory }}
+          step-status: ${{ steps.apply.outcome }}
+          details-file: ${{ matrix.directory }}/apply.log
+          ts: ${{ needs.prep.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create deployment summary
         if: always()
@@ -162,17 +234,33 @@ jobs:
             echo "❌ **Terraform apply failed!**" >> $GITHUB_STEP_SUMMARY
           fi
 
-  terraform-apply-summary:
-    needs: [detect-changes, terraform-apply]
-    if: always()
+  notify:
+    needs: [detect-changes, prep, terraform-apply]
+    if: always() && needs.detect-changes.outputs.terraform-dirs != '' && needs.detect-changes.outputs.terraform-dirs != '[]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - name: Summary
-        run: |
-          if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
-            echo "No Terraform changes detected or no directories selected"
-          else
-            echo "Terraform apply completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
-          fi
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download apply results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tf-result-*
+          path: tf-results
+          merge-multiple: true
+
+      - name: Finalize deploy notification
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: finalize
+          component: infrastructure
+          total-steps: ${{ needs.prep.outputs.total }}
+          results-dir: tf-results
+          ts: ${{ needs.prep.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
 

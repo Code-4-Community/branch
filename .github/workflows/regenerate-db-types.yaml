@@ -4,9 +4,6 @@ on:
   pull_request:
     paths:
       - apps/backend/db/db_setup.sql
-  workflow_run:
-    workflows: ["Lambda README Generation"]
-    types: [completed]
   workflow_dispatch:
 
 
@@ -24,13 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      github.event_name == 'pull_request'
     
     steps:
         - name: Checkout
           uses: actions/checkout@v4
           with:
-            ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+            ref: ${{ github.head_ref || github.ref }}
             token: ${{ secrets.GITHUB_TOKEN }}
             fetch-depth: 0
         

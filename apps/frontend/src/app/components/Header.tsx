@@ -1,5 +1,6 @@
 import React from 'react';
 import Image from "next/image";
+import { assetPath } from "@/lib/asset";
 
 interface HeaderProps {
   text?: string;
@@ -25,7 +26,7 @@ const Header: React.FC<HeaderProps> = ({
         {icon || (
           // Default Profile Icon matching Figma
           <div className="h-8 w-8 rounded-full border border-gray-300 flex items-center justify-center">
-             <Image src="/profile-icon.svg" alt="Profile Icon" width={24} height={24} />
+             <Image src={assetPath("/profile-icon.svg")} alt="Profile Icon" width={24} height={24} />
           </div>
         )}
       </div>
