@@ -1,5 +1,20 @@
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
 import { handler } from '../handler';
 import db from '../db';
+
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
 
 function event(body: unknown) {
   return {
@@ -15,6 +30,20 @@ beforeAll(() => {
   process.env.DB_USER = process.env.DB_USER ?? 'branch_dev';
   process.env.DB_PASSWORD = process.env.DB_PASSWORD ?? 'password';
   process.env.DB_NAME = process.env.DB_NAME ?? 'branch_db';
+});
+
+beforeEach(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+  await db.destroy();
 });
 
 test('201: creates project with number budget', async () => {
@@ -148,8 +177,4 @@ test('500: invalid id causes error', async () => {
   expect(res.statusCode).toBe(500);
   const json = JSON.parse(res.body);
   expect(json.message).toContain('Failed to fetch expenditures');
-});
-
-afterAll(async () => {
-  await db.destroy();
 });
