@@ -152,6 +152,20 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (typeof amount !== 'number' || amount <= 0 || !isFinite(amount)) {
         return json(400, { message: 'amount must be a positive number' });
       }
+      // Check user is admin or a member of the project
+      if (!authContext.user?.isAdmin) {
+      const userId = authContext.user!.userId as number;
+      const membership = await db
+        .selectFrom('branch.project_memberships')
+        .select('membership_id')
+        .where('project_id', '=', project_id as number)
+        .where('user_id', '=', userId)
+        .executeTakeFirst();
+
+      if (!membership) {
+        return json(403, { message: 'You must be a member' });
+      }
+    }
 
       try {
       const donation = await db
