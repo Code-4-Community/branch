@@ -10,7 +10,6 @@ Lambda for managing donors.
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /donors |  |
-| GET | /donations |  |
 | POST | /donations |  |
 | POST | /donors |  |
 
