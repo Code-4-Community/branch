@@ -130,6 +130,14 @@ runs:
           const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
           const commitUrl = `${context.serverUrl}/${owner}/${repo}/commit/${sha}`;
 
+          async function resolveAssociatedPrs() {
+            try {
+              const r = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+              return r.data || [];
+            } catch (err) { /* ignore */ }
+            return [];
+          }
+
           // ── Resolve author + always-reviewer (Nour) from the mapping ──
           let cfg = {};
           try {
@@ -139,8 +147,11 @@ runs:
             console.log(`No config.json mapping (fallback to usernames): ${err.message}`);
           }
           const map = cfg.github_to_slack || {};
-          const authorSlackId = deployedBy ? map[deployedBy] : null;
-          const authorMention = authorSlackId ? `<@${authorSlackId}>` : `@${deployedBy || 'unknown'}`;
+          const associatedPrs = await resolveAssociatedPrs();
+          const prAuthorLogin = associatedPrs.find(pr => pr?.user?.login)?.user?.login || '';
+          const deployAuthor = prAuthorLogin || deployedBy;
+          const authorSlackId = deployAuthor ? map[deployAuthor] : null;
+          const authorMention = authorSlackId ? `<@${authorSlackId}>` : `@${deployAuthor || 'unknown'}`;
           const nourId = cfg.always_reviewer_slack || null;
 
           async function slack(method, body) {
@@ -160,10 +171,7 @@ runs:
           }
 
           async function resolvePrLinks() {
-            try {
-              const r = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
-              if (r.data.length) return r.data.map(pr => `<${pr.html_url}|#${pr.number}>`).join(', ');
-            } catch (err) { /* ignore */ }
+            if (associatedPrs.length) return associatedPrs.map(pr => `<${pr.html_url}|#${pr.number}>`).join(', ');
             return `<${commitUrl}|\`${shortSha}\`>`;
           }
 
