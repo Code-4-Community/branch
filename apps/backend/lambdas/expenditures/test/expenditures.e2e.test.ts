@@ -7,9 +7,24 @@ import { Pool } from 'pg';
 jest.mock('../auth');
 
 import { handler } from '../handler';
-import { authenticateRequest } from '../auth';
+import { authenticateRequest, checkAuthorization } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
+
+mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
+  if (requiredAccess === 'PUBLIC') return { allowed: true };
+  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
+  if (requiredAccess === 'ADMIN') {
+    const isAdmin = authContext.user.isAdmin ?? false;
+    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
+  }
+  if (requiredAccess === 'ADMIN_OR_SELF') {
+    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
+    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
+  }
+  return { allowed: false, reason: 'Unknown access level' };
+});
 
 const pool = new Pool({
   host: 'localhost',
@@ -39,6 +54,15 @@ function getEvent(path: string, queryStringParameters?: Record<string, string>) 
     requestContext: { http: { method: 'GET' } },
     headers: { Authorization: 'Bearer fake-token' },
     queryStringParameters: queryStringParameters ?? {},
+  };
+}
+
+function patchStatusEvent(id: number | string, body: Record<string, unknown>) {
+  return {
+    rawPath: `/expenditures/${id}/status`,
+    requestContext: { http: { method: 'PATCH' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    body: JSON.stringify(body),
   };
 }
 
@@ -399,6 +423,70 @@ describe('Expenditures integration tests', () => {
     test('400: invalid projectId returns 400', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
       const res = await handler(getEvent('/', { projectId: 'abc' }));
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('PATCH /expenditures/{id}/status — approve/decline', () => {
+    async function getStatus(id: number): Promise<string | undefined> {
+      const result = await pool.query('SELECT status FROM branch.expenditures WHERE expenditure_id = $1', [id]);
+      return result.rows[0]?.status;
+    }
+
+    test('200: admin approves a pending expenditure', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).body.status).toBe('approved');
+      // confirms it persisted to the database
+      expect(await getStatus(1)).toBe('approved');
+    });
+
+    test('200: admin declines a pending expenditure', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).body.status).toBe('denied');
+      expect(await getStatus(1)).toBe('denied');
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+
+      expect(res.statusCode).toBe(401);
+      expect(await getStatus(1)).toBe('pending');
+    });
+
+    test('403: non-admin user is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+
+      expect(res.statusCode).toBe(403);
+      expect(await getStatus(1)).toBe('pending');
+    });
+
+    test('404: expenditure not found', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(patchStatusEvent(9999, { status: 'approved' }));
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('400: status not valid is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(patchStatusEvent(1, { status: 'pend' }));
+
+      expect(res.statusCode).toBe(400);
+      expect(await getStatus(1)).toBe('pending');
+    });
+
+    test('400: invalid id is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const res = await handler(patchStatusEvent('abc', { status: 'approved' }));
+
       expect(res.statusCode).toBe(400);
     });
   });
