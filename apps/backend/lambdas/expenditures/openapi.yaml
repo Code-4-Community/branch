@@ -101,3 +101,27 @@ paths:
       responses:
         '201':
           description: Success
+
+  /expenditures/{id}:
+    get:
+      summary: GET /expenditures/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: DELETE /expenditures/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK

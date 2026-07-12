@@ -169,7 +169,90 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         },
       });
     }
-    // <<< ROUTES-END
+    
+    // GET /expenditures/{id}
+    if (/^\/[^\/]+$/.test(normalizedPath) && method === 'GET') {
+      const id = normalizedPath.split('/')[1];
+      if (!id) return json(400, { message: 'id is required' });
+      
+      if (!id || !/^\d+$/.test(id)) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+    
+
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+      
+      const expenditure = await db.selectFrom("branch.expenditures").where("expenditure_id", "=", Number(id)).selectAll().executeTakeFirst();
+      if (!expenditure) return json(404, { message: 'Expenditure not found' });
+
+      return json(200, { 
+        ok: true, 
+        route: 'GET /expenditures/{id}', 
+        pathParams: { id }, 
+        body: { 
+          expenditureId: expenditure.expenditure_id,
+          projectId: expenditure.project_id,
+          enteredBy: expenditure.entered_by,
+          amount: expenditure.amount,
+          category: expenditure.category,
+          description: expenditure.description,
+          status: expenditure.status,
+          receiptUrl: expenditure.receipt_url,
+          spent_on: expenditure.spent_on,
+          createdAt: expenditure.created_at,
+        } 
+      });
+    }
+    
+    // DELETE /expenditures/{id}
+    if (/^\/[^\/]+$/.test(normalizedPath) && method === 'DELETE') {
+      const id = normalizedPath.split('/')[1];
+      if (!id) return json(400, { message: 'id is required' });
+      if (!id || !/^\d+$/.test(id)) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+      const { user } = authContext;
+
+      const expenditure = await db
+        .selectFrom('branch.expenditures')
+        .where('expenditure_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+    if (!expenditure) {
+      return json(404, { message: 'Expenditure not found' });
+    }
+
+    // (mirrors POST endpoint) Authorize: must be global admin, or PI/Accountant/Admin on this expenditure's project
+    if (!user.isAdmin) {
+      const membership = await db
+        .selectFrom('branch.project_memberships')
+        .where('project_id', '=', expenditure.project_id)
+        .where('user_id', '=', user.userId!)
+        .select('role')
+        .executeTakeFirst();
+
+      if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+        return json(403, { message: 'Unable to delete this expenditure' });
+      }
+    }
+      
+      const deleted = await db.deleteFrom('branch.expenditures').where('expenditure_id', '=', Number(id)).execute();
+    
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Expenditure not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
+    }
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
