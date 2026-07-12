@@ -341,6 +341,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
     }
 
+    // <<< ROUTES-END
+
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
     console.error('Lambda error:', err);
