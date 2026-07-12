@@ -227,23 +227,23 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         .selectAll()
         .executeTakeFirst();
 
-    if (!expenditure) {
-      return json(404, { message: 'Expenditure not found' });
-    }
-
-    // (mirrors POST endpoint) Authorize: must be global admin, or PI/Accountant/Admin on this expenditure's project
-    if (!user.isAdmin) {
-      const membership = await db
-        .selectFrom('branch.project_memberships')
-        .where('project_id', '=', expenditure.project_id)
-        .where('user_id', '=', user.userId!)
-        .select('role')
-        .executeTakeFirst();
-
-      if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
-        return json(403, { message: 'Unable to delete this expenditure' });
+      if (!expenditure) {
+        return json(404, { message: 'Expenditure not found' });
       }
-    }
+
+      // (mirrors POST endpoint) Authorize: must be global admin, or PI/Accountant/Admin on this expenditure's project
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', expenditure.project_id)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+          return json(403, { message: 'Unable to delete this expenditure' });
+        }
+      }
       
       const deleted = await db.deleteFrom('branch.expenditures').where('expenditure_id', '=', Number(id)).execute();
     
@@ -253,6 +253,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
     }
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
