@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useQueryParams } from '@/hooks/useQueryParams';
+import { useGenerateReport } from '@/hooks/useGenerateReport';
 import Header from '../components/Header';
 import Pagination from '../components/Pagination';
 import {
@@ -85,14 +86,6 @@ function ReportsPageContent() {
     // Tab: Reports vs Schedule
     const [activeTab, setActiveTab] = useState<'reports' | 'schedule'>('reports');
     
-    // Generate controls — POST /reports/generate requires project_id + file_type
-    const [generateProjectId, setGenerateProjectId] = useState<string>('');
-    const [generateFileType, setGenerateFileType] = useState<'pdf' | 'docx'>('pdf');
-    const [generating, setGenerating] = useState(false);
-
-    // Generate modal visibility
-    const [showGenerateModal, setShowGenerateModal] = useState(false);
-
     // Pagination (synced to URL query params)
     const [filters, setFilter] = useQueryParams({
         page: '',
@@ -126,6 +119,19 @@ function ReportsPageContent() {
         // Projects fetch failure is non-critical
         }
     }
+
+    const {
+      showGenerateModal,
+      setShowGenerateModal,
+      generateProjectId,
+      setGenerateProjectId,
+      generateFileType,
+      setGenerateFileType,
+      generating,
+      error: generateError,
+      handleGenerate,
+    } = useGenerateReport({ token, onSuccess: fetchReports });
+    
 
     useEffect(() => {
         fetchReports();
@@ -172,32 +178,6 @@ function ReportsPageContent() {
          setSelectedIds([]);
          await fetchReports();
         */
-    }
-
-    // Generate handler — POST /reports/generate { project_id, file_type }
-    async function handleGenerate() {
-        if (!generateProjectId) {
-            setError('Select a project before generating a report');
-            return;
-        }
-        setGenerating(true);
-        setError(null);
-        try {
-            await apiFetch('/reports/generate', {
-                token,
-                method: 'POST',
-                body: JSON.stringify({
-                    project_id: parseInt(generateProjectId, 10),
-                    file_type: generateFileType,
-                }),
-            });
-            await fetchReports();
-            setShowGenerateModal(false);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to generate report');
-        } finally {
-            setGenerating(false);
-        }
     }
 
     // New Report handler
@@ -459,6 +439,9 @@ function ReportsPageContent() {
                             <NativeSelect.Indicator />
                           </NativeSelect.Root>
                         </div>
+                        {generateError && (
+                          <p style={{ color: 'var(--color-error-red)', fontSize: '14px' }}>{generateError}</p>
+                        )}
                       </VStack>
                     </Dialog.Body>
                     <Dialog.Footer>
