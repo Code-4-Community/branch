@@ -139,8 +139,6 @@ runs:
             console.log(`No config.json mapping (fallback to usernames): ${err.message}`);
           }
           const map = cfg.github_to_slack || {};
-          const authorSlackId = deployedBy ? map[deployedBy] : null;
-          const authorMention = authorSlackId ? `<@${authorSlackId}>` : `@${deployedBy || 'unknown'}`;
           const nourId = cfg.always_reviewer_slack || null;
 
           async function slack(method, body) {
@@ -159,12 +157,29 @@ runs:
             }
           }
 
-          async function resolvePrLinks() {
-            try {
-              const r = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
-              if (r.data.length) return r.data.map(pr => `<${pr.html_url}|#${pr.number}>`).join(', ');
-            } catch (err) { /* ignore */ }
-            return `<${commitUrl}|\`${shortSha}\`>`;
+          let prContextPromise;
+          async function resolvePrContext() {
+            if (!prContextPromise) {
+              prContextPromise = (async () => {
+                try {
+                  const r = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+                  if (r.data.length) {
+                    return {
+                      prLinks: r.data.map(pr => `<${pr.html_url}|#${pr.number}>`).join(', '),
+                      prAuthorLogin: r.data[0]?.user?.login || null,
+                    };
+                  }
+                } catch (err) { /* ignore */ }
+                return { prLinks: `<${commitUrl}|\`${shortSha}\`>`, prAuthorLogin: null };
+              })();
+            }
+            return prContextPromise;
+          }
+
+          function resolveAuthorMention(login) {
+            const effectiveLogin = login || deployedBy || 'unknown';
+            const authorSlackId = map[effectiveLogin];
+            return authorSlackId ? `<@${authorSlackId}>` : `@${effectiveLogin}`;
           }
 
           // A filled progress bar with a leading status icon. The icon is
@@ -200,7 +215,8 @@ runs:
           // Root "Deploying" message. Header is FIXED (never changes) — only the
           // status bar advances. Completion/failure are told in thread replies.
           async function mainBlocks(d, state = 'progress') {
-            const prLinks = await resolvePrLinks();
+            const { prLinks, prAuthorLogin } = await resolvePrContext();
+            const authorMention = resolveAuthorMention(prAuthorLogin);
             return [
               { type: 'header', text: { type: 'plain_text', text: `:ship: :evergreen_tree:  Deploying ${component} — ${shortSha}`, emoji: true } },
               { type: 'section', text: { type: 'mrkdwn', text: bar(d, total, state) } },
@@ -232,6 +248,8 @@ runs:
           }
 
           async function threadFail(name, log, atBar) {
+            const { prAuthorLogin } = await resolvePrContext();
+            const authorMention = resolveAuthorMention(prAuthorLogin);
             const pings = [...new Set([authorMention, nourId ? `<@${nourId}>` : null].filter(Boolean))].join(' ');
             const blocks = [
               { type: 'section', text: { type: 'mrkdwn', text: `:warning: *${component} deploy failed*${name ? ` at: ${name}` : ''}\n${pings}` } },
