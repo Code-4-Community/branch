@@ -1,15 +1,11 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
-  SignUpCommand,
-  SignUpCommandInput,
-  AdminDeleteUserCommand,
   InitiateAuthCommand,
-  InitiateAuthCommandInput,
+  RespondToAuthChallengeCommand,
   ConfirmSignUpCommand,
   ConfirmSignUpCommandInput,
   ResendConfirmationCodeCommand,
-
   GlobalSignOutCommand,
   GlobalSignOutCommandInput,
   ForgotPasswordCommand,
@@ -17,7 +13,6 @@ import {
   ConfirmForgotPasswordCommand,
   ConfirmForgotPasswordCommandInput,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { CognitoUser, CognitoUserPool, AuthenticationDetails } from 'amazon-cognito-identity-js';
 import db from './db';
 
 // Initialize Cognito client (region defaults to us-east-2)
@@ -26,7 +21,6 @@ const cognitoClient = new CognitoIdentityProviderClient({
 });
 
 const USER_POOL_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
-const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -53,15 +47,19 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     
-    // POST /register
+    // POST /register — disabled: accounts are created by admins only
     if (normalizedPath === '/register' && method === 'POST') {
-      return await handleRegister(event);
+      return json(410, { message: 'Self-registration is not available. Contact an administrator to create an account.' });
     }
 
-    
     // POST /login
     if (normalizedPath === '/login' && method === 'POST') {
       return await handleLogin(event);
+    }
+
+    // POST /set-password — complete NEW_PASSWORD_REQUIRED challenge for invited users
+    if (normalizedPath === '/set-password' && method === 'POST') {
+      return await handleSetPassword(event);
     }
     
     // POST /verify-email
@@ -255,182 +253,92 @@ async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
     return json(400, { message: 'email and password are required' });
   }
 
-  const userPool = new CognitoUserPool({
-    UserPoolId: USER_POOL_ID,
-    ClientId: USER_POOL_CLIENT_ID,
-  });
-
-  const cognitoUser = new CognitoUser({
-    Username: email as string,
-    Pool: userPool,
-  });
-
-  const authDetails = new AuthenticationDetails({
-    Username: email as string,
-    Password: password as string,
-  });
-
-  return new Promise<APIGatewayProxyResult>((resolve) => {
-    cognitoUser.authenticateUser(authDetails, {
-      onSuccess: (result) => {
-        resolve(json(200, {
-          AccessToken: result.getAccessToken().getJwtToken(),
-          IdToken: result.getIdToken().getJwtToken(),
-          RefreshToken: result.getRefreshToken().getToken(),
-        }));
-      },
-      onFailure: (err) => {
-        console.error('SRP auth error:', err);
-        if (err.code === 'UserNotConfirmedException') {
-          resolve(json(403, { message: 'Email not verified' }));
-        } else if (err.code === 'NotAuthorizedException') {
-          resolve(json(401, { message: 'Invalid email or password' }));
-        } else if (err.code === 'UserNotFoundException') {
-          resolve(json(401, { message: 'Invalid email or password' }));
-        } else {
-          resolve(json(500, { message: 'Authentication failed', error: err.message }));
-        }
-      },
-      newPasswordRequired: (userAttributes) => {
-        resolve(json(403, { message: 'Password change required', userAttributes }));
-      },
-    });
-  });
-}
-
-async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
   try {
-    // Parse request body
-    const body = event.body ? JSON.parse(event.body) : {};
-    const { email, password, name } = body;
+    const response = await cognitoClient.send(new InitiateAuthCommand({
+      AuthFlow: 'USER_PASSWORD_AUTH',
+      ClientId: USER_POOL_CLIENT_ID,
+      AuthParameters: {
+        USERNAME: (email as string).toLowerCase(),
+        PASSWORD: password as string,
+      },
+    }));
 
-    // Validate required fields
-    if (!email || !password || !name) {
-      return json(400, {
-        message: 'Missing required fields',
-        required: ['email', 'password', 'name'],
+    if (response.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+      return json(200, {
+        challengeName: 'NEW_PASSWORD_REQUIRED',
+        session: response.Session,
+        email: (email as string).toLowerCase(),
       });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return json(400, { message: 'Invalid email format' });
-    }
-
-    // Validate password requirements
-    if (password.length < 8) {
-      return json(400, { message: 'Password must be at least 8 characters long' });
-    }
-    if (!/[a-z]/.test(password)) {
-      return json(400, { message: 'Password must contain at least one lowercase letter' });
-    }
-    if (!/[A-Z]/.test(password)) {
-      return json(400, { message: 'Password must contain at least one uppercase letter' });
-    }
-    if (!/[0-9]/.test(password)) {
-      return json(400, { message: 'Password must contain at least one number' });
-    }
-
-    // Validate name
-    if (name.trim().length < 2) {
-      return json(400, { message: 'Name must be at least 2 characters long' });
-    }
-
-    // Check if user already exists in database
-    const existingUser = await db
-      .selectFrom('branch.users')
-      .where('email', '=', email.toLowerCase())
-      .selectAll()
-      .executeTakeFirst();
-
-    if (existingUser) {
-      return json(409, { message: 'User with this email already exists' });
-    }
-
-    // Prepare Cognito SignUp parameters
-    const signUpParams: SignUpCommandInput = {
-      ClientId: USER_POOL_CLIENT_ID,
-      Username: email.toLowerCase(),
-      Password: password,
-      UserAttributes: [
-        {
-          Name: 'email',
-          Value: email.toLowerCase(),
-        },
-        {
-          Name: 'name',
-          Value: name.trim(),
-        },
-      ],
-    };
-
-    // Register user in Cognito
-    let cognitoUserSub: string;
-    try {
-      const command = new SignUpCommand(signUpParams);
-      const response = await cognitoClient.send(command);
-      cognitoUserSub = response.UserSub!;
-    } catch (error: any) {
-      console.error('Cognito registration error:', error);
-
-      // Handle specific Cognito errors
-      if (error.name === 'UsernameExistsException') {
-        return json(409, { message: 'User with this email already exists' });
-      }
-      if (error.name === 'InvalidPasswordException') {
-        return json(400, { message: 'Password does not meet requirements' });
-      }
-      if (error.name === 'InvalidParameterException') {
-        return json(400, { message: error.message || 'Invalid parameters provided' });
-      }
-
-      return json(500, { message: 'Failed to register user in authentication service' });
-    }
-
-    // Create user in database
-    try {
-      await db
-        .insertInto('branch.users')
-        .values({
-          cognito_sub: cognitoUserSub,
-          email: email.toLowerCase(),
-          name: name.trim(),
-          is_admin: false,
-        })
-        .execute();
-    } catch (dbError: any) {
-      console.error('Database insert error:', dbError);
-
-      // Rollback: Delete user from Cognito if database insert fails
-      try {
-        await cognitoClient.send(
-          new AdminDeleteUserCommand({
-            UserPoolId: process.env.COGNITO_USER_POOL_ID || '',
-            Username: email.toLowerCase(),
-          })
-        );
-        console.log('Rolled back Cognito user after database failure');
-      } catch (rollbackError) {
-        console.error('Failed to rollback Cognito user:', rollbackError);
-      }
-
-      return json(500, { message: 'Failed to create user account' });
-    }
-
-    return json(201, {
-      message: 'User registered successfully',
-      userId: cognitoUserSub,
-      email: email.toLowerCase(),
-      name: name.trim(),
-      emailVerificationRequired: true,
-      details: 'Please check your email for verification code',
+    return json(200, {
+      AccessToken: response.AuthenticationResult!.AccessToken,
+      IdToken: response.AuthenticationResult!.IdToken,
+      RefreshToken: response.AuthenticationResult!.RefreshToken,
     });
-  } catch (error: any) {
-    console.error('Registration error:', error);
-    return json(500, { message: 'Internal server error during registration' });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    if (err.name === 'NotAuthorizedException' || err.name === 'UserNotFoundException') {
+      return json(401, { message: 'Invalid email or password' });
+    }
+    if (err.name === 'UserNotConfirmedException') {
+      return json(403, { message: 'Email not verified' });
+    }
+    return json(500, { message: 'Authentication failed' });
   }
 }
+
+async function handleSetPassword(event: any): Promise<APIGatewayProxyResult> {
+  let body: Record<string, unknown>;
+  try {
+    body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+  } catch (e) {
+    return json(400, { message: 'Invalid JSON in request body' });
+  }
+
+  const { email, session, newPassword } = body;
+  if (!email || !session || !newPassword) {
+    return json(400, { message: 'email, session, and newPassword are required' });
+  }
+
+  const pwd = newPassword as string;
+  if (
+    pwd.length < 8 ||
+    !/[a-z]/.test(pwd) ||
+    !/[A-Z]/.test(pwd) ||
+    !/[0-9]/.test(pwd)
+  ) {
+    return json(400, { message: 'Password must be at least 8 characters and include uppercase, lowercase, and a number' });
+  }
+
+  try {
+    const response = await cognitoClient.send(new RespondToAuthChallengeCommand({
+      ChallengeName: 'NEW_PASSWORD_REQUIRED',
+      ClientId: USER_POOL_CLIENT_ID,
+      Session: session as string,
+      ChallengeResponses: {
+        USERNAME: (email as string).toLowerCase(),
+        NEW_PASSWORD: pwd,
+      },
+    }));
+
+    return json(200, {
+      AccessToken: response.AuthenticationResult!.AccessToken,
+      IdToken: response.AuthenticationResult!.IdToken,
+      RefreshToken: response.AuthenticationResult!.RefreshToken,
+    });
+  } catch (err: any) {
+    console.error('Set password error:', err);
+    if (err.name === 'InvalidPasswordException') {
+      return json(400, { message: 'Password does not meet requirements (min 8 chars, uppercase, lowercase, number)' });
+    }
+    if (err.name === 'ExpiredCodeException' || err.name === 'NotAuthorizedException') {
+      return json(401, { message: 'Session expired. Please log in again.' });
+    }
+    return json(500, { message: 'Failed to set password' });
+  }
+}
+
 
 function json(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {
