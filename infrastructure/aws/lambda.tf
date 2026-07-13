@@ -17,6 +17,25 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Cognito admin permissions for the users lambda (AdminCreateUser / AdminDeleteUser)
+resource "aws_iam_role_policy" "lambda_cognito" {
+  name = "branch-lambda-cognito-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminGetUser",
+      ]
+      Resource = aws_cognito_user_pool.branch_user_pool.arn
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 
@@ -97,12 +116,14 @@ resource "aws_lambda_function" "functions" {
 
   environment {
     variables = {
-      NODE_ENV    = "production"
-      DB_HOST     = aws_db_instance.branch_rds.address
-      DB_USER     = data.infisical_secrets.rds_folder.secrets["username"].value
-      DB_PASSWORD = data.infisical_secrets.rds_folder.secrets["password"].value
-      DB_PORT     = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
-      DB_NAME     = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
+      NODE_ENV             = "production"
+      DB_HOST              = aws_db_instance.branch_rds.address
+      DB_USER              = data.infisical_secrets.rds_folder.secrets["username"].value
+      DB_PASSWORD          = data.infisical_secrets.rds_folder.secrets["password"].value
+      DB_PORT              = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
+      DB_NAME              = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.branch_user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.branch_client.id
     }
   }
 }

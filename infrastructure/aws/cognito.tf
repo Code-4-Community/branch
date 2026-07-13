@@ -49,6 +49,17 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
     }
   }
 
+  # Disable self-signup — accounts are created by admins only
+  admin_create_user_config {
+    allow_admin_create_user_only = true
+
+    invite_message_template {
+      email_subject = "Your BRANCH Accounting Platform Invitation"
+      email_message = "You have been invited to the BRANCH Accounting Platform. Your username is {username} and temporary password is {####}. Log in and set a new password to get started."
+      sms_message   = "BRANCH invite: username {username}, temp password {####}."
+    }
+  }
+
   # Email configuration (using Cognito default for now)
   email_configuration {
     email_sending_account = "COGNITO_DEFAULT"
