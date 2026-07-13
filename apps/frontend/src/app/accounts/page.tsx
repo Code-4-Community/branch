@@ -1,7 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import StaffCard from '../components/StaffCard';
+import AddUserModal from '../components/AddUserModal';
+import { useAuth } from '@/context/AuthContext';
+import { Button } from '@chakra-ui/react';
 
 interface User {
     user_id: number;
@@ -35,9 +38,21 @@ export const teamMembers = mockUsers.filter(u => !u.is_admin);
 
 
 export default function AccountsPage() {
+    const { getAccessToken } = useAuth();
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
     return (
         <div className="!p-6">
-            <h1 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-1)] !font-semibold">Accounts</h1>
+            <div className="flex items-center justify-between !mb-4">
+                <h1 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-1)] !font-semibold">Accounts</h1>
+                <Button
+                    backgroundColor="var(--color-core-green)"
+                    color="var(--color-core-white)"
+                    onClick={() => setIsModalOpen(true)}
+                >
+                    + Add User
+                </Button>
+            </div>
             <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">Core BRANCH Facilitation Team</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 !pt-3 !pb-7">
                 {facilitationTeam.map(user => (
@@ -50,6 +65,12 @@ export default function AccountsPage() {
                     <StaffCard key={user.user_id} name={user.name} email={user.email} />
                 ))}
             </div>
+            <AddUserModal
+                open={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSuccess={() => setIsModalOpen(false)}
+                token={getAccessToken() ?? ''}
+            />
         </div>
     );
 }
