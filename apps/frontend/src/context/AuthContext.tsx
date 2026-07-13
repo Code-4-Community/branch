@@ -19,14 +19,18 @@ interface AuthTokens {
   refreshToken: string;
 }
 
+export interface NewPasswordChallenge {
+  challengeName: 'NEW_PASSWORD_REQUIRED';
+  session: string;
+  email: string;
+}
+
 interface AuthContextValue {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
-  verifyEmail: (email: string, code: string) => Promise<void>;
-  resendCode: (email: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<NewPasswordChallenge | void>;
+  setPassword: (email: string, session: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   getAccessToken: () => string | null;
   forgotPassword: (email: string) => Promise<void>;
@@ -42,6 +46,8 @@ interface LoginResponse {
   IdToken: string;
   RefreshToken: string;
 }
+
+type LoginResult = LoginResponse | NewPasswordChallenge;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,10 +106,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  async function login(email: string, password: string) {
-    const data = await apiFetch<LoginResponse>('/auth/login', {
+  async function login(email: string, password: string): Promise<NewPasswordChallenge | void> {
+    const data = await apiFetch<LoginResult>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+
+    if ('challengeName' in data) {
+      return data as NewPasswordChallenge;
+    }
+
+    const tokens: AuthTokens = {
+      accessToken: (data as LoginResponse).AccessToken,
+      idToken: (data as LoginResponse).IdToken,
+      refreshToken: (data as LoginResponse).RefreshToken,
+    };
+    saveTokens(tokens);
+    setUser(decodeIdToken(tokens.idToken));
+  }
+
+  async function setPassword(email: string, session: string, newPassword: string) {
+    const data = await apiFetch<LoginResponse>('/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, session, newPassword }),
     });
     const tokens: AuthTokens = {
       accessToken: data.AccessToken,
@@ -112,27 +137,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     saveTokens(tokens);
     setUser(decodeIdToken(tokens.idToken));
-  }
-
-  async function register(email: string, password: string, name: string) {
-    await apiFetch('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, name }),
-    });
-  }
-
-  async function verifyEmail(email: string, code: string) {
-    await apiFetch('/auth/verify-email', {
-      method: 'POST',
-      body: JSON.stringify({ email, code }),
-    });
-  }
-
-  async function resendCode(email: string) {
-    await apiFetch('/auth/resend-code', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
   }
 
   async function logout() {
@@ -176,9 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: user !== null,
         isLoading,
         login,
-        register,
-        verifyEmail,
-        resendCode,
+        setPassword,
         logout,
         getAccessToken,
         forgotPassword,
