@@ -164,7 +164,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
-      const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      const projects = user.isAdmin
+        ? await db.selectFrom("branch.projects").selectAll().execute()
+        : await db
+            .selectFrom("branch.projects as p")
+            .innerJoin("branch.project_memberships as pm", "pm.project_id", "p.project_id")
+            .where("pm.user_id", "=", user.userId!)
+            .selectAll("p")
+            .execute();
       return json(200, projects);
     }
 

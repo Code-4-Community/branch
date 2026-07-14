@@ -36,6 +36,18 @@ const nonAdminAuthResult = {
   user: { cognitoSub: 'staff-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
 };
 
+// Non-admin users inserted by the Authorization block after each reseed.
+// The seed creates users 1-3, so these deterministically become 4 and 5.
+const nonMemberUser = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'nonmember-sub', userId: 4, email: 'nonmember@branch.org', isAdmin: false },
+};
+
+const piMemberUser = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'pi-sub', userId: 5, email: 'pimember@branch.org', isAdmin: false },
+};
+
 beforeEach(async () => {
   jest.clearAllMocks();
   mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
@@ -69,6 +81,109 @@ function getExpendituresEvent(id: string) {
     headers: { Authorization: 'Bearer fake-token' },
   } as any;
 }
+
+function getEvent(rawPath: string) {
+  return {
+    rawPath,
+    requestContext: { http: { method: 'GET' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    queryStringParameters: {},
+  } as any;
+}
+
+function putEvent(rawPath: string, body: unknown) {
+  return {
+    rawPath,
+    requestContext: { http: { method: 'PUT' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    body: JSON.stringify(body),
+  } as any;
+}
+
+describe('Authorization', () => {
+  // Seed users are all admins, so add non-admin users to exercise the
+  // membership-based paths in canCreateProject/canEditProject/canAccessProject.
+  beforeEach(async () => {
+    const client = await pool.connect();
+    try {
+      await client.query(
+        `INSERT INTO branch.users (name, email, is_admin) VALUES
+           ('Non Member', 'nonmember@branch.org', FALSE),
+           ('PI Member', 'pimember@branch.org', FALSE)`,
+      );
+      await client.query(
+        `INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours)
+         SELECT 1, user_id, 'PI', '2025-01-01', 10 FROM branch.users WHERE email = 'pimember@branch.org'`,
+      );
+    } finally {
+      client.release();
+    }
+  });
+
+  test('403: non-admin cannot create a project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(postEvent({ name: 'Nope' }));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('Admin access required');
+  });
+
+  test('403: non-member cannot read a project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(getEvent('/projects/1'));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('You do not have access to this project');
+  });
+
+  test('200: admin lists every project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+    const res = await handler(getEvent('/projects'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).length).toBe(4);
+  });
+
+  test('200: member lists only projects they belong to', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(getEvent('/projects'));
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.length).toBe(1);
+    expect(body[0].project_id).toBe(1);
+  });
+
+  test('200: non-member lists no projects', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(getEvent('/projects'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).length).toBe(0);
+  });
+
+  test('403: non-member cannot edit a project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(putEvent('/projects/1', { name: 'X' }));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('You do not have access to edit this project');
+  });
+
+  test('200: PI member can read their project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(getEvent('/projects/1'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).project_id).toBe(1);
+  });
+
+  test('200: PI member can edit their project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(putEvent('/projects/1', { name: 'Renamed by PI' }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).name).toBe('Renamed by PI');
+  });
+
+  test('403: PI member cannot edit a project they do not belong to', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(putEvent('/projects/2', { name: 'X' }));
+    expect(res.statusCode).toBe(403);
+  });
+});
 
 describe('POST /projects (e2e)', () => {
   test('201 creates project with number budget', async () => {
