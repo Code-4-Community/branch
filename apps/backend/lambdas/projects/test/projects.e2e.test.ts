@@ -1,9 +1,12 @@
-import { jest } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterAll, jest } from '@jest/globals';
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
 
-jest.mock('../auth');
+jest.mock('../auth', () => ({
+  ...jest.requireActual<typeof import('../auth')>('../auth'),
+  authenticateRequest: jest.fn(),
+}));
 
 import { handler } from '../handler';
 import db from '../db';
@@ -11,38 +14,50 @@ import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
 const adminAuthResult = {
-  isAuthenticated: true,
-  user: {
-    cognitoSub: 'admin-sub',
-    userId: 1,
-    email: 'ashley@branch.org',
-    isAdmin: true,
-  },
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'admin-sub', userId: 1, email: 'ashley@branch.org', isAdmin: true },
 };
 
 const nonAdminAuthResult = {
-  isAuthenticated: true,
-  user: {
-    cognitoSub: 'staff-sub',
-    userId: 3,
-    email: 'nour@branch.org',
-    isAdmin: false,
-  },
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'staff-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
 };
 
-beforeAll(() => {
-  process.env.DB_HOST = process.env.DB_HOST ?? 'localhost';
-  process.env.DB_PORT = process.env.DB_PORT ?? '5432';
-  process.env.DB_USER = process.env.DB_USER ?? 'branch_dev';
-  process.env.DB_PASSWORD = process.env.DB_PASSWORD ?? 'password';
-  process.env.DB_NAME = process.env.DB_NAME ?? 'branch_db';
+beforeEach(async () => {
+  jest.clearAllMocks();
+  mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+  await db.destroy();
 });
 
 function postEvent(body: unknown) {
   return {
     rawPath: '/projects',
     requestContext: { http: { method: 'POST' } },
+    headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify(body),
   } as any;
 }
@@ -51,6 +66,7 @@ function getExpendituresEvent(id: string) {
   return {
     rawPath: `/projects/${id}/expenditures`,
     requestContext: { http: { method: 'GET' } },
+    headers: { Authorization: 'Bearer fake-token' },
   } as any;
 }
 
@@ -161,18 +177,6 @@ describe('GET /projects/{id}/expenditures (e2e)', () => {
 });
 
 describe('GET /dashboard (e2e)', () => {
-  const pool = new Pool({
-    host: 'localhost',
-    port: Number(5432),
-    user: 'branch_dev',
-    password: 'password',
-    database: 'branch_db',
-    ssl: false,
-  });
-
-  const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
-  const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
-
   function dashboardEvent() {
     return {
       rawPath: '/dashboard',
@@ -182,30 +186,14 @@ describe('GET /dashboard (e2e)', () => {
     } as any;
   }
 
-  beforeEach(async () => {
-    jest.clearAllMocks();
-    mockAuthenticateRequest.mockResolvedValue(adminAuthResult as any);
-
-    const client = await pool.connect();
-    try {
-      await client.query(seedSql);
-    } finally {
-      client.release();
-    }
-  });
-
-  afterAll(async () => {
-    await pool.end();
-  });
-
   test('401: unauthenticated request rejected 🌞', async () => {
-    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(401);
   });
 
   test('403: non-admin is forbidden 🌞', async () => {
-    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult as any);
+    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult);
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).message).toBe('Admin access required');
@@ -266,8 +254,4 @@ describe('GET /dashboard (e2e)', () => {
       expect(typeof row.amount).toBe('number');
     });
   });
-});
-
-afterAll(async () => {
-  await db.destroy();
 });
