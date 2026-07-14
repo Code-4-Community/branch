@@ -76,6 +76,18 @@ export class ExpenditureValidationUtils {
         return status as ExpenditureStatus;
     }
 
+    static validateApprovalStatus(status: unknown): ExpenditureStatus | Error {
+        if (status === undefined || status === null || status === '') {
+            return new Error('status is required');
+        }
+
+        if (typeof status !== 'string' || !EXPENDITURE_STATUSES.includes(status as ExpenditureStatus)) {
+            return new Error(`status must be one of: ${EXPENDITURE_STATUSES.join(', ')}`);
+        }
+
+        return status as ExpenditureStatus;
+    }
+
     static validateReceiptUrl(receiptUrl: unknown): string | undefined | Error {
         if (receiptUrl === undefined || receiptUrl === null) {
             return undefined;
