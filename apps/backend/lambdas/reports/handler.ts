@@ -263,7 +263,76 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(201, report);
     }
-    // <<< ROUTES-END 
+    
+    // GET /reports/{id}
+    if ((/^\/reports\/\d+$/.test(normalizedPath) || /^\/\d+$/.test(normalizedPath)) && method === 'GET') {      const id = normalizedPath.split('/').pop() as string;
+
+      if (!/^\d+$/.test(id)) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const { user } = authContext;
+
+      const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+      if (!report) return json(404, { message: 'Report not found' });
+
+      const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to this report' });
+      }
+
+      return json(200, { 
+        ok: true, 
+        route: 'GET /reports/{id}', 
+        pathParams: { id }, 
+        body: { 
+          report_id: report.report_id,
+          project_id: report.project_id,
+          title: report.title,
+          object_url: report.object_url,
+          report_type: report.report_type,
+          date_created: report.date_created,
+        } 
+      });
+    }
+    
+    // DELETE /reports/{id}
+    if ((/^\/reports\/\d+$/.test(normalizedPath) || /^\/\d+$/.test(normalizedPath)) && method === 'DELETE') {
+      const id = normalizedPath.split('/').pop() as string;
+
+      if (!/^\d+$/.test(id)) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+
+      const { user } = authContext;
+
+      const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+      if (!report) return json(404, { message: 'Report not found' });
+
+      const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to delete this report' });
+      }
+
+      const deleted = await db.deleteFrom('branch.reports').where('report_id', '=', Number(id)).execute();
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Report not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
+    }
+    // <<< ROUTES-END   
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
