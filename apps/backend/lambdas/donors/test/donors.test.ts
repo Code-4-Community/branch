@@ -290,6 +290,171 @@ describe("Donor API with data", () => {
     }));
     expect(res.statusCode).toBe(403);
 });
+
+  // --- POST /donors ---
+
+    test("POST /donors returns 201 for admin with organization only", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('POST', '/', { organization: 'New Foundation' }));
+      const body = JSON.parse(res.body);
+
+      expect(res.statusCode).toBe(201);
+      expect(body.ok).toBe(true);
+      expect(body.body.organization).toBe('New Foundation');
+      expect(body.body.contactName).toBeNull();
+      expect(body.body.contactEmail).toBeNull();
+    });
+
+    test("POST /donors returns 201 for admin with full fields", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('POST', '/', {
+        organization: 'Gates Foundation',
+        contact_name: 'Bill Gates',
+        contact_email: 'bill@gatesfoundation.org',
+      }));
+      const body = JSON.parse(res.body);
+
+      expect(res.statusCode).toBe(201);
+      expect(body.body.organization).toBe('Gates Foundation');
+      expect(body.body.contactName).toBe('Bill Gates');
+      expect(body.body.contactEmail).toBe('bill@gatesfoundation.org');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query(
+          "SELECT * FROM branch.donors WHERE organization = 'Gates Foundation'"
+        );
+        expect(result.rows.length).toBe(1);
+        expect(result.rows[0].contact_email).toBe('bill@gatesfoundation.org');
+      } finally {
+        client.release();
+      }
+    });
+
+    test("POST /donors returns 400 when organization is missing", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('POST', '/', { contact_name: 'No Org' }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test("POST /donors returns 400 for invalid contact_email format", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('POST', '/', {
+        organization: 'Bad Email Org',
+        contact_email: 'not-an-email',
+      }));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test("POST /donors returns 403 for non-admin authenticated user", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+      const res = await handler(createEvent('POST', '/', { organization: 'Should Fail' }));
+      expect(res.statusCode).toBe(403);
+    });
+
+    test("POST /donors returns 401 when unauthenticated", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce({ isAuthenticated: false });
+      const res = await handler(createEvent('POST', '/', { organization: 'Should Fail' }));
+      expect(res.statusCode).toBe(401);
+    });
+
+    // --- DELETE /donors/{id} ---
+
+    test("DELETE /donors/{id} returns 200 for admin and removes the donor", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      // Donor 2 (Harvard Medical) — note this cascades and also removes donation_id 2
+      const res = await handler(createEvent('DELETE', '/donors/2'));
+      const body = JSON.parse(res.body);
+
+      expect(res.statusCode).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(body.pathParams.id).toBe('2');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query('SELECT * FROM branch.donors WHERE donor_id = 2');
+        expect(result.rows.length).toBe(0);
+      } finally {
+        client.release();
+      }
+    });
+
+    test("DELETE /donors/{id} returns 400 for non-numeric id", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('DELETE', '/donors/abc'));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test("DELETE /donors/{id} returns 404 for a nonexistent donor", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('DELETE', '/donors/9999'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test("DELETE /donors/{id} returns 403 for non-admin authenticated user", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+      const res = await handler(createEvent('DELETE', '/donors/1'));
+      expect(res.statusCode).toBe(403);
+    });
+
+    test("DELETE /donors/{id} returns 401 when unauthenticated", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce({ isAuthenticated: false });
+      const res = await handler(createEvent('DELETE', '/donors/1'));
+      expect(res.statusCode).toBe(401);
+    });
+
+    // --- DELETE /donations/{id} ---
+
+    test("DELETE /donations/{id} returns 200 for admin", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      // donation_id 3 belongs to project_id 3, donor_id 3
+      const res = await handler(createEvent('DELETE', '/donations/3'));
+      const body = JSON.parse(res.body);
+
+      expect(res.statusCode).toBe(200);
+      expect(body.ok).toBe(true);
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query('SELECT * FROM branch.project_donations WHERE donation_id = 3');
+        expect(result.rows.length).toBe(0);
+      } finally {
+        client.release();
+      }
+    });
+
+    test("DELETE /donations/{id} returns 200 for a project member (PI) deleting a donation on their project", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, PI on project 1
+      // donation_id 1 belongs to project_id 1
+      const res = await handler(createEvent('DELETE', '/donations/1'));
+      expect(res.statusCode).toBe(200);
+    });
+
+    test("DELETE /donations/{id} returns 403 for a user with no membership on that donation's project", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, only member of project 1
+      // donation_id 2 belongs to project_id 2 — user 1 has no membership there
+      const res = await handler(createEvent('DELETE', '/donations/2'));
+      expect(res.statusCode).toBe(403);
+    });
+
+    test("DELETE /donations/{id} returns 400 for non-numeric id", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('DELETE', '/donations/abc'));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test("DELETE /donations/{id} returns 404 for a nonexistent donation", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+      const res = await handler(createEvent('DELETE', '/donations/9999'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test("DELETE /donations/{id} returns 401 when unauthenticated", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce({ isAuthenticated: false });
+      const res = await handler(createEvent('DELETE', '/donations/1'));
+      expect(res.statusCode).toBe(401);
+    });
+  
 });
 
 describe("Donor API when DB is empty", () => {
