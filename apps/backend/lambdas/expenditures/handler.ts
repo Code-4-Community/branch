@@ -184,10 +184,25 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!authContext.isAuthenticated || !authContext.user) {
         return json(401, { message: 'Authentication required' });
       }
+
+      const { user } = authContext;
       
       const expenditure = await db.selectFrom("branch.expenditures").where("expenditure_id", "=", Number(id)).selectAll().executeTakeFirst();
       if (!expenditure) return json(404, { message: 'Expenditure not found' });
 
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', expenditure.project_id)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership) {
+          return json(403, { message: 'Unable to view this expenditure' });
+        }
+      }
+      
       return json(200, { 
         ok: true, 
         route: 'GET /expenditures/{id}', 

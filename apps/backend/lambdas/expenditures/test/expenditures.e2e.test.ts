@@ -476,10 +476,18 @@ describe('Expenditures integration tests', () => {
       expect(body.body.projectId).toBe(1);
     });
 
-    test('200: staff with no membership on the project can still read it', async () => {
+    test('403: staff with no membership on the project cannot read it', async () => {
       mockAuthenticateRequest.mockResolvedValue(staffUser);
       const id = await firstExpenditureId(1); // staffUser has no role on project 1
-
+    
+      const res = await handler(idRequestEvent('GET', id));
+      expect(res.statusCode).toBe(403);
+    });
+    
+    test('200: staff can read an expenditure on a project they have a role on', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      const id = await firstExpenditureId(2); // staffUser is Staff on project 2
+    
       const res = await handler(idRequestEvent('GET', id));
       expect(res.statusCode).toBe(200);
     });

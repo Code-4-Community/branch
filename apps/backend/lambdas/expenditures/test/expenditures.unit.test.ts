@@ -699,6 +699,29 @@ describe('GET /expenditures/{id} unit tests', () => {
     });
   });
 
+  describe('Authorization', () => {
+    test('403: non-admin with no project membership cannot read', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure)) // expenditure lookup
+        .mockReturnValueOnce(mockMembership(null)); // no membership row
+
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('Unable to view this expenditure');
+    });
+
+    test('200: non-admin with membership on the project can read', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure)) // expenditure lookup
+        .mockReturnValueOnce(mockMembership({ role: 'Staff' })); // has a role on the project
+
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
   describe('Success cases', () => {
     test('200: admin can read any expenditure', async () => {
       mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(fakeExpenditure));
@@ -711,14 +734,6 @@ describe('GET /expenditures/{id} unit tests', () => {
       expect(json.body.expenditureId).toBe(5);
       expect(json.body.projectId).toBe(1);
       expect(json.body.amount).toBe('1200');
-    });
-
-    test('200: authenticated non-admin with no project membership can still read (read is not project-scoped)', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
-      mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(fakeExpenditure));
-
-      const res = await handler(idEvent('GET', '5'));
-      expect(res.statusCode).toBe(200);
     });
 
     test('response has correct HTTP headers', async () => {
