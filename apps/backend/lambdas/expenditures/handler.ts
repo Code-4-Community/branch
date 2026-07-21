@@ -1,7 +1,16 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
-import { authenticateRequest } from './auth';
+import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
+
+function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
+  const authCheck = checkAuthorization(authContext, level, resourceUserId);
+  if (!authCheck.allowed) {
+    return authContext.isAuthenticated
+      ? json(403, { message: authCheck.reason || 'Forbidden' })
+      : json(401, { message: 'Authentication required' });
+  }
+}
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -169,16 +178,15 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         },
       });
     }
-    
+
     // GET /expenditures/{id}
     if (/^\/[^\/]+$/.test(normalizedPath) && method === 'GET') {
       const id = normalizedPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
-      
+
       if (!id || !/^\d+$/.test(id)) {
         return json(400, { message: 'id must be a positive integer' });
       }
-    
 
       const authContext = await authenticateRequest(event);
       if (!authContext.isAuthenticated || !authContext.user) {
@@ -186,7 +194,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
 
       const { user } = authContext;
-      
+
       const expenditure = await db.selectFrom("branch.expenditures").where("expenditure_id", "=", Number(id)).selectAll().executeTakeFirst();
       if (!expenditure) return json(404, { message: 'Expenditure not found' });
 
@@ -202,12 +210,12 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           return json(403, { message: 'Unable to view this expenditure' });
         }
       }
-      
-      return json(200, { 
-        ok: true, 
-        route: 'GET /expenditures/{id}', 
-        pathParams: { id }, 
-        body: { 
+
+      return json(200, {
+        ok: true,
+        route: 'GET /expenditures/{id}',
+        pathParams: { id },
+        body: {
           expenditureId: expenditure.expenditure_id,
           projectId: expenditure.project_id,
           enteredBy: expenditure.entered_by,
@@ -218,10 +226,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           receiptUrl: expenditure.receipt_url,
           spent_on: expenditure.spent_on,
           createdAt: expenditure.created_at,
-        } 
+        }
       });
     }
-    
+
     // DELETE /expenditures/{id}
     if (/^\/[^\/]+$/.test(normalizedPath) && method === 'DELETE') {
       const id = normalizedPath.split('/')[1];
@@ -259,14 +267,68 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           return json(403, { message: 'Unable to delete this expenditure' });
         }
       }
-      
+
       const deleted = await db.deleteFrom('branch.expenditures').where('expenditure_id', '=', Number(id)).execute();
-    
+
       if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
         return json(404, { message: 'Expenditure not found' });
       }
 
       return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
+    }
+
+    // PATCH /expenditures/{id}/status — approve/decline (admin only)
+    // (dev server strips the /expenditures prefix, so match the trailing /{id}/status)
+    const statusSegments = normalizedPath.split('/').filter(Boolean);
+    if ((statusSegments.length >= 2 && statusSegments[statusSegments.length - 1] === 'status') && method === 'PATCH') {
+      const authContext = await authenticateRequest(event);
+      const authError = requireAuth(authContext, 'ADMIN');
+      if (authError) return authError;
+
+      const id = statusSegments[statusSegments.length - 2];
+      if (!/^\d+$/.test(id) || parseInt(id, 10) < 1) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+
+      // Only 'approved' or 'denied' may be set through this endpoint
+      const statusResult = ExpenditureValidationUtils.validateApprovalStatus(body.status);
+      if (statusResult instanceof Error) {
+        return json(400, { message: statusResult.message });
+      }
+
+      // make sure expenditure exists
+      const expenditure = await db
+        .selectFrom('branch.expenditures')
+        .where('expenditure_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+      if (!expenditure) {
+        return json(404, { message: 'Expenditure not found' });
+      }
+
+      // update
+      await db
+        .updateTable('branch.expenditures')
+        .set({ status: statusResult })
+        .where('expenditure_id', '=', Number(id))
+        .execute();
+
+      // get updated expenditure
+      const updated = await db
+        .selectFrom('branch.expenditures')
+        .where('expenditure_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+      return json(200, {
+        ok: true,
+        route: 'PATCH /expenditures/{id}/status',
+        pathParams: { id },
+        body: { expenditureId: updated!.expenditure_id, status: updated!.status },
+      });
     }
     // <<< ROUTES-END
 
@@ -284,7 +346,7 @@ function json(statusCode: number, body: unknown): APIGatewayProxyResult {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
     },
     body: JSON.stringify(body)
   };

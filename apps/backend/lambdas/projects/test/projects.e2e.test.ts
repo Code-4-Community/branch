@@ -31,12 +31,38 @@ const nonAdminAuthResult = {
   },
 };
 
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
 beforeAll(() => {
   process.env.DB_HOST = process.env.DB_HOST ?? 'localhost';
   process.env.DB_PORT = process.env.DB_PORT ?? '5432';
   process.env.DB_USER = process.env.DB_USER ?? 'branch_dev';
   process.env.DB_PASSWORD = process.env.DB_PASSWORD ?? 'password';
   process.env.DB_NAME = process.env.DB_NAME ?? 'branch_db';
+});
+
+beforeEach(async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+  await db.destroy();
 });
 
 function postEvent(body: unknown) {
@@ -161,18 +187,6 @@ describe('GET /projects/{id}/expenditures (e2e)', () => {
 });
 
 describe('GET /dashboard (e2e)', () => {
-  const pool = new Pool({
-    host: 'localhost',
-    port: Number(5432),
-    user: 'branch_dev',
-    password: 'password',
-    database: 'branch_db',
-    ssl: false,
-  });
-
-  const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
-  const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
-
   function dashboardEvent() {
     return {
       rawPath: '/dashboard',
@@ -181,23 +195,12 @@ describe('GET /dashboard (e2e)', () => {
       queryStringParameters: {},
     } as any;
   }
-
-  beforeEach(async () => {
+  
+  beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthResult as any);
-
-    const client = await pool.connect();
-    try {
-      await client.query(seedSql);
-    } finally {
-      client.release();
-    }
   });
-
-  afterAll(async () => {
-    await pool.end();
-  });
-
+  
   test('401: unauthenticated request rejected 🌞', async () => {
     mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
     const res = await handler(dashboardEvent());
@@ -266,8 +269,4 @@ describe('GET /dashboard (e2e)', () => {
       expect(typeof row.amount).toBe('number');
     });
   });
-});
-
-afterAll(async () => {
-  await db.destroy();
 });
