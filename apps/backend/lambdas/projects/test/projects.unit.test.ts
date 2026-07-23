@@ -52,6 +52,11 @@ beforeEach(async () => {
   }
 });
 
+afterAll(async () => {
+  await pool.end();
+  await db.destroy();
+});
+
 test('201: creates project with number budget', async () => {
   const res = await handler(event({ name: 'Proj Number', total_budget: 1000 }));
   expect(res.statusCode).toBe(201);

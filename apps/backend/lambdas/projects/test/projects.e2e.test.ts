@@ -14,6 +14,17 @@ import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
+
+const adminAuthResult = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'admin-sub', userId: 1, email: 'ashley@branch.org', isAdmin: true },
+};
+
+const nonAdminAuthResult = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'staff-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
+};
+
 const pool = new Pool({
   host: 'localhost',
   port: Number(5432),
@@ -25,16 +36,6 @@ const pool = new Pool({
 
 const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
 const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
-
-const adminAuthResult = {
-  isAuthenticated: true as const,
-  user: { cognitoSub: 'admin-sub', userId: 1, email: 'ashley@branch.org', isAdmin: true },
-};
-
-const nonAdminAuthResult = {
-  isAuthenticated: true as const,
-  user: { cognitoSub: 'staff-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
-};
 
 // Non-admin users inserted by the Authorization block after each reseed.
 // The seed creates users 1-3, so these deterministically become 4 and 5.
@@ -300,6 +301,22 @@ describe('GET /dashboard (e2e)', () => {
       queryStringParameters: {},
     } as any;
   }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult as any);
+
+    const client = await pool.connect();
+    try {
+      await client.query(seedSql);
+    } finally {
+      client.release();
+    }
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
 
   test('401: unauthenticated request rejected 🌞', async () => {
     mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });

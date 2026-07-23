@@ -147,3 +147,38 @@ test("update project ignores protected fields 🌞", async () => {
   expect(after.project_id).toBe(1);
   expect(after.created_at).toBe(before.created_at);
 });
+
+test("delete project test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/projects/1", {
+    method: "DELETE",
+  });
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  expect(body.ok).toBe(true);
+  expect(body.pathParams.id).toBe("1");
+
+  // confirm it's actually gone
+  let getRes = await fetch("http://localhost:3000/projects/1");
+  expect(getRes.status).toBe(404);
+});
+
+test("delete project 404 test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/projects/1000", {
+    method: "DELETE",
+  });
+  expect(res.status).toBe(404);
+  let body = await res.json();
+  expect(body.message).toBe("Project not found");
+});
+
+test("delete project invalid id test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/projects/abc", { method: "DELETE" });
+  expect(res.status).toBe(400);
+});
+
+test("delete project with dependent expenditures test 🌞", async () => {
+  let res = await fetch("http://localhost:3000/projects/1", { method: "DELETE" });
+  expect(res.status).toBe(200);
+  let body = await res.json();
+  expect(body.ok).toBe(true);
+});

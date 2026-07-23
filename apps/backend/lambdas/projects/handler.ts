@@ -260,7 +260,23 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, updatedProject);
     }
-    // <<< ROUTES-END
+    
+    // DELETE /projects/{id}
+    if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'DELETE') {
+      // TODO: requireAuth needs to be added here once ticket #241 is completed
+
+      const id = rawPath.split('/')[1];
+      if (!id) return json(400, { message: 'id is required' });
+      if (!/^\d+$/.test(id)) return json(400, { message: 'id must be a valid number' });
+
+      const deleted = await db.deleteFrom('branch.projects').where('project_id', '=', Number(id)).execute();
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Project not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id } });
+    }
+
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
       if (!(await canCreateProject(user.userId!))) {
@@ -356,6 +372,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to fetch expenditures', error: err instanceof Error ? err.message : 'Unknown error' });
       }
     }
+
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
