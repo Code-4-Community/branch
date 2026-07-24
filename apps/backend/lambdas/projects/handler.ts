@@ -1,7 +1,12 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
-import { authenticateRequest } from './auth';
+import {
+  authenticateRequest,
+  canAccessProject,
+  canCreateProject,
+  canEditProject,
+} from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -25,15 +30,16 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
+    const authContext = await authenticateRequest(event);
+    if (!authContext.isAuthenticated || !authContext.user) {
+      return json(401, { message: 'Authentication required' });
+    }
+    const { user } = authContext;
+
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     // GET /dashboard
     if ((normalizedPath === '/dashboard' || normalizedPath.endsWith('/dashboard')) && method === 'GET') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-      const { user } = authContext;
       if (!user.isAdmin) {
         return json(403, { message: 'Admin access required' });
       }
@@ -136,6 +142,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       // handles both /projects/1/members and /1/members
       const id = parts.length === 3 ? parts[1] : parts[0];
       if (!id) return json(400, { message: 'id is required' });
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
       const users = await db
         .selectFrom('branch.project_memberships as pm')
         .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
@@ -155,7 +164,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
-      const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      const projects = user.isAdmin
+        ? await db.selectFrom("branch.projects").selectAll().execute()
+        : await db
+            .selectFrom("branch.projects as p")
+            .innerJoin("branch.project_memberships as pm", "pm.project_id", "p.project_id")
+            .where("pm.user_id", "=", user.userId!)
+            .selectAll("p")
+            .execute();
       return json(200, projects);
     }
 
@@ -168,6 +184,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!id) return json(400, { message: 'id is required' });
       if (isNaN(Number(id))) {
         return json(400, { message: 'Project id must be a valid number' });
+      }
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
       }
       const queryString = event.rawQueryString || event.queryStringParameters;
 
@@ -201,6 +220,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'GET') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
       const project = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).selectAll().executeTakeFirst();
       if (!project) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, project);
@@ -211,6 +233,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
+      if (!(await canEditProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to edit this project' });
+      }
       let body: Record<string, unknown>;
       try {
         body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
@@ -254,6 +279,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
+      if (!(await canCreateProject(user.userId!))) {
+        return json(403, { message: 'Admin access required' });
+      }
       let body: Record<string, unknown>;
       try {
         body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
@@ -313,6 +341,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         id = pathParts[0];
       }
       if (!id) return json(400, { message: 'id is required' });
+
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
 
       try {
 
