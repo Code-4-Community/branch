@@ -49,6 +49,14 @@ function putEvent(rawPath: string, body: unknown) {
   } as any;
 }
 
+function deleteEvent(rawPath: string) {
+  return {
+    rawPath,
+    requestContext: { http: { method: 'DELETE' } },
+    headers: { Authorization: 'Bearer fake-token' },
+  } as any;
+}
+
 beforeEach(async () => {
   jest.clearAllMocks();
   mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
@@ -63,7 +71,6 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
 });
 
 test("health test 🌞", async () => {
@@ -149,36 +156,32 @@ test("update project ignores protected fields 🌞", async () => {
 });
 
 test("delete project test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/projects/1", {
-    method: "DELETE",
-  });
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  let res = await handler(deleteEvent('/projects/1'));
+  expect(res.statusCode).toBe(200);
+  let body = JSON.parse(res.body);
   expect(body.ok).toBe(true);
   expect(body.pathParams.id).toBe("1");
 
   // confirm it's actually gone
-  let getRes = await fetch("http://localhost:3000/projects/1");
-  expect(getRes.status).toBe(404);
+  let getRes = await handler(getEvent('/projects/1'));
+  expect(getRes.statusCode).toBe(404);
 });
 
 test("delete project 404 test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/projects/1000", {
-    method: "DELETE",
-  });
-  expect(res.status).toBe(404);
-  let body = await res.json();
+  let res = await handler(deleteEvent('/projects/1000'));
+  expect(res.statusCode).toBe(404);
+  let body = JSON.parse(res.body);
   expect(body.message).toBe("Project not found");
 });
 
 test("delete project invalid id test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/projects/abc", { method: "DELETE" });
-  expect(res.status).toBe(400);
+  let res = await handler(deleteEvent('/projects/abc'));
+  expect(res.statusCode).toBe(400);
 });
 
 test("delete project with dependent expenditures test 🌞", async () => {
-  let res = await fetch("http://localhost:3000/projects/1", { method: "DELETE" });
-  expect(res.status).toBe(200);
-  let body = await res.json();
+  let res = await handler(deleteEvent('/projects/1'));
+  expect(res.statusCode).toBe(200);
+  let body = JSON.parse(res.body);
   expect(body.ok).toBe(true);
 });

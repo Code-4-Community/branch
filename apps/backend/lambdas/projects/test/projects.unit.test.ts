@@ -190,8 +190,3 @@ test('500: invalid id causes error', async () => {
   const json = JSON.parse(res.body);
   expect(json.message).toContain('Failed to fetch expenditures');
 });
-
-afterAll(async () => {
-  await pool.end();
-  await db.destroy();
-});

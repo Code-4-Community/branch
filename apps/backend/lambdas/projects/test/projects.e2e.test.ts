@@ -314,10 +314,6 @@ describe('GET /dashboard (e2e)', () => {
     }
   });
 
-  afterAll(async () => {
-    await pool.end();
-  });
-
   test('401: unauthenticated request rejected 🌞', async () => {
     mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
     const res = await handler(dashboardEvent());
