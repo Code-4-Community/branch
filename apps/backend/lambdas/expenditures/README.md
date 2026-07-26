@@ -11,6 +11,8 @@ Lambda for tracking project expenditures.
 | GET | /health | Health check |
 | GET | /expenditures |  |
 | POST | /expenditures |  |
+| GET | /expenditures/{id} |  |
+| DELETE | /expenditures/{id} |  |
 | PATCH | /expenditures/{id}/status |  |
 
 ## Setup
