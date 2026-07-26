@@ -110,6 +110,48 @@ const staffUser = {
   },
 };
 
+// Builds a Lambda event for GET or DELETE /expenditures/{id}
+function idRequestEvent(method: 'GET' | 'DELETE', id: string | number) {
+  return {
+    rawPath: `/expenditures/${id}`,
+    requestContext: { http: { method } },
+    headers: { Authorization: 'Bearer fake-token' },
+  };
+}
+
+// Looks up a real expenditure_id belonging to the given project from the
+// freshly-seeded DB, so tests don't hardcode ids that could drift if the
+// seed data changes. Throws error if none found
+async function firstExpenditureId(projectId: number): Promise<number> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      'SELECT expenditure_id FROM branch.expenditures WHERE project_id = $1 ORDER BY expenditure_id LIMIT 1',
+      [projectId]
+    );
+    if (result.rows.length === 0) {
+      throw new Error(`No seeded expenditure found for project_id=${projectId}`);
+    }
+    return result.rows[0].expenditure_id;
+  } finally {
+    client.release();
+  }
+}
+
+// Directly queries the DB to confirm whether a row still exists
+async function expenditureExists(id: number): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      'SELECT 1 FROM branch.expenditures WHERE expenditure_id = $1',
+      [id]
+    );
+    return (result.rowCount ?? 0) > 0;
+  } finally {
+    client.release();
+  }
+}
+
 describe('Expenditures integration tests', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -427,6 +469,151 @@ describe('Expenditures integration tests', () => {
     });
   });
 
+  
+  describe('GET /expenditures/{id}', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const id = await firstExpenditureId(1);
+
+      const res = await handler(idRequestEvent('GET', id));
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('400: non-numeric id returns 400', async () => {
+      const res = await handler(idRequestEvent('GET', 'not-a-number'));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('404: unknown id returns 404', async () => {
+      const res = await handler(idRequestEvent('GET', 999999));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Expenditure not found');
+    });
+
+    test('200: admin can fetch an expenditure by id', async () => {
+      const id = await firstExpenditureId(1);
+      const res = await handler(idRequestEvent('GET', id));
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.body.expenditureId).toBe(id);
+      expect(body.body.projectId).toBe(1);
+    });
+
+    test('403: staff with no membership on the project cannot read it', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      const id = await firstExpenditureId(1); // staffUser has no role on project 1
+    
+      const res = await handler(idRequestEvent('GET', id));
+      expect(res.statusCode).toBe(403);
+    });
+    
+    test('200: staff can read an expenditure on a project they have a role on', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      const id = await firstExpenditureId(2); // staffUser is Staff on project 2
+    
+      const res = await handler(idRequestEvent('GET', id));
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('DELETE /expenditures/{id}', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const id = await firstExpenditureId(1);
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(401);
+      expect(await expenditureExists(id)).toBe(true);
+    });
+
+    test('400: non-numeric id returns 400', async () => {
+      const res = await handler(idRequestEvent('DELETE', 'abc'));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('404: unknown id returns 404', async () => {
+      const res = await handler(idRequestEvent('DELETE', 999999));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('403: Staff cannot delete an expenditure on a project they have no role on', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      const id = await firstExpenditureId(1); // staffUser has no membership on project 1
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(403);
+      expect(await expenditureExists(id)).toBe(true);
+    });
+
+    test('403: Staff role on their own project is still not sufficient to delete', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      const id = await firstExpenditureId(2); // staffUser is Staff on project 2
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(403);
+      expect(await expenditureExists(id)).toBe(true);
+    });
+
+    test('200: PI can delete an expenditure on their own project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(piUser);
+      const id = await firstExpenditureId(1);
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(200);
+      expect(await expenditureExists(id)).toBe(false);
+    });
+
+    test('200: Accountant can delete an expenditure on their own project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(accountantUser);
+      const id = await firstExpenditureId(1);
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(200);
+      expect(await expenditureExists(id)).toBe(false);
+    });
+
+    test('200: admin can delete an expenditure on any project', async () => {
+      const id = await firstExpenditureId(2);
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(200);
+      expect(await expenditureExists(id)).toBe(false);
+    });
+
+    test('404: deleting the same expenditure twice returns 404 the second time', async () => {
+      const id = await firstExpenditureId(1);
+
+      const first = await handler(idRequestEvent('DELETE', id));
+      expect(first.statusCode).toBe(200);
+
+      const second = await handler(idRequestEvent('DELETE', id));
+      expect(second.statusCode).toBe(404);
+    });
+
+    test('deleting one expenditure does not affect other rows', async () => {
+      const client = await pool.connect();
+      let totalBefore: number;
+      try {
+        const result = await client.query('SELECT COUNT(*)::int AS count FROM branch.expenditures');
+        totalBefore = result.rows[0].count;
+      } finally {
+        client.release();
+      }
+
+      const id = await firstExpenditureId(1);
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(200);
+
+      const client2 = await pool.connect();
+      try {
+        const result = await client2.query('SELECT COUNT(*)::int AS count FROM branch.expenditures');
+        expect(result.rows[0].count).toBe(totalBefore - 1);
+      } finally {
+        client2.release();
+      }
+    });
+  });
   describe('PATCH /expenditures/{id}/status — approve/decline', () => {
     async function getStatus(id: number): Promise<string | undefined> {
       const result = await pool.query('SELECT status FROM branch.expenditures WHERE expenditure_id = $1', [id]);
