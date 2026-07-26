@@ -6,19 +6,14 @@ import DropdownSelector from './DropdownSelector';
 import { apiFetch } from '@/lib/api';
 import FileUpload from './FileUpload';
 import { FiDollarSign } from 'react-icons/fi';
-
-interface Project {
-  project_id: number;
-  name: string;
-}
-
+import { Project } from '@/types';
 interface AddExpenseModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   token: string;
   categories: string[];
-  projects: Project[];
+  projects: Pick<Project, 'project_id' | 'name'>[];
 }
 
 export default function AddExpenseModal({

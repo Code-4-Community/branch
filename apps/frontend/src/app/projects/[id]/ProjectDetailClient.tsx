@@ -6,26 +6,8 @@ import { RxCaretRight } from 'react-icons/rx';
 import NavBar from '../../components/Navbar';
 import ExpensesTable from '../../components/ExpensesTable';
 import StaffCard from '../../components/StaffCard';
-import type { Expenditure } from '../../components/ExpensesTable';
 import { apiFetch } from '@/lib/api';
-
-type Project = {
-  project_id: number;
-  name: string;
-  description: string;
-  total_budget: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  currency: string | null;
-  created_at: string | null;
-};
-
-type Member = {
-  user_id: number;
-  name: string;
-  email: string;
-  role: string;
-};
+import { Project, Expenditure, Member } from '@/types';
 
 const PREVIEW_EXPENSES = 8;
 const PREVIEW_STAFF = 4;

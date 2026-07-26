@@ -2,16 +2,11 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { AuthUser } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface User {
-  sub: string;
-  email: string;
-  name?: string;
-}
 
 interface AuthTokens {
   accessToken: string;
@@ -20,7 +15,7 @@ interface AuthTokens {
 }
 
 interface AuthContextValue {
-  user: User | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -53,7 +48,7 @@ const STORAGE_KEYS = {
   REFRESH: 'branch_refresh_token',
 } as const;
 
-function decodeIdToken(token: string): User | null {
+function decodeIdToken(token: string): AuthUser | null {
   try {
     const payload = token.split('.')[1];
     const padded = payload.replace(/-/g, '+').replace(/_/g, '/');
@@ -88,7 +83,7 @@ function clearTokens() {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Restore session from localStorage on mount
