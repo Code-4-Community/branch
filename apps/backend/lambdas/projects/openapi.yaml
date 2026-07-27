@@ -78,6 +78,21 @@ paths:
       responses:
         '200':
           description: OK
+    delete:
+      summary: DELETE /projects/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Bad Request - id is required
+        '404':
+          description: Project not found
   /projects/{id}/expenditures:
     get:
       summary: GET /projects/{id}/expenditures
@@ -120,4 +135,3 @@ paths:
       responses:
         '200':
           description: OK
-      

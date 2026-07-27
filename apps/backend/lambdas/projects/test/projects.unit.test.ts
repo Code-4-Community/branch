@@ -1,20 +1,60 @@
+import { test, expect, beforeEach, afterAll, jest } from '@jest/globals';
+import fs from 'fs';
+import path from 'path';
+import { Pool } from 'pg';
+
+jest.mock('../auth', () => ({
+  ...jest.requireActual<typeof import('../auth')>('../auth'),
+  authenticateRequest: jest.fn(),
+}));
+
 import { handler } from '../handler';
 import db from '../db';
+import { authenticateRequest } from '../auth';
+
+const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
+const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+
+const adminUser = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'admin-sub', userId: 1, email: 'ashley@branch.org', isAdmin: true },
+};
 
 function event(body: unknown) {
   return {
     rawPath: '/projects',
     requestContext: { http: { method: 'POST' } },
+    headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify(body),
   } as any;
 }
 
-beforeAll(() => {
-  process.env.DB_HOST = process.env.DB_HOST ?? 'localhost';
-  process.env.DB_PORT = process.env.DB_PORT ?? '5432';
-  process.env.DB_USER = process.env.DB_USER ?? 'branch_dev';
-  process.env.DB_PASSWORD = process.env.DB_PASSWORD ?? 'password';
-  process.env.DB_NAME = process.env.DB_NAME ?? 'branch_db';
+beforeEach(async () => {
+  jest.clearAllMocks();
+  mockAuthenticateRequest.mockResolvedValue(adminUser);
+
+  const client = await pool.connect();
+  try {
+    await client.query(seedSql);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+  await db.destroy();
 });
 
 test('201: creates project with number budget', async () => {
@@ -126,6 +166,7 @@ function getExpendituresEvent(id: string) {
   return {
     rawPath: `/projects/${id}/expenditures`,
     requestContext: { http: { method: 'GET' } },
+    headers: { Authorization: 'Bearer fake-token' },
   } as any;
 }
 
@@ -148,8 +189,4 @@ test('500: invalid id causes error', async () => {
   expect(res.statusCode).toBe(500);
   const json = JSON.parse(res.body);
   expect(json.message).toContain('Failed to fetch expenditures');
-});
-
-afterAll(async () => {
-  await db.destroy();
 });

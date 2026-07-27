@@ -7,7 +7,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // Support both API Gateway and Lambda Function URL events
     // API Gateway: event.path, event.httpMethod
     // Function URL: event.rawPath, event.requestContext.http.method
-    const rawPath = event.rawPath || event.path || '/';
+    const fullPath = event.rawPath || event.path || '/';
+    // API Gateway mounts this service at /donors[/{proxy+}]; strip the mount
+    // prefix so routing below (rawPath and normalizedPath) sees the bare path.
+    const rawPath = fullPath.replace(/^\/donors(?=\/|$)/, '') || '/';
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
@@ -132,8 +135,60 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { data: donations });
     }
 
+    // POST /donations
+    if (normalizedPath === '/donations' && method === 'POST') {
+      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      const { donor_id, project_id, amount } = body;
+
+      if (donor_id === undefined || project_id === undefined || amount === undefined) {
+        return json(400, { message: 'donor_id, project_id, and amount are required' });
+      }
+      if (!Number.isInteger(donor_id) || (donor_id as number) < 1) {
+        return json(400, { message: 'donor_id must be a positive integer' });
+      }
+      if (!Number.isInteger(project_id) || (project_id as number) < 1) {
+        return json(400, { message: 'project_id must be a positive integer' });
+      }
+      if (typeof amount !== 'number' || amount <= 0 || !isFinite(amount)) {
+        return json(400, { message: 'amount must be a positive number' });
+      }
+      // Check user is admin or a member of the project
+      if (!authContext.user?.isAdmin) {
+      const userId = authContext.user!.userId as number;
+      const membership = await db
+        .selectFrom('branch.project_memberships')
+        .select('membership_id')
+        .where('project_id', '=', project_id as number)
+        .where('user_id', '=', userId)
+        .executeTakeFirst();
+
+      if (!membership) {
+        return json(403, { message: 'You must be a member' });
+      }
+    }
+
+      try {
+      const donation = await db
+        .insertInto('branch.project_donations')
+        .values({
+          donor_id: donor_id as number,
+          project_id: project_id as number,
+          amount: amount as number,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      return json(201, { data: donation });
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        return json(409, { message: 'A donation from this donor to this project already exists' });
+      }
+      throw err;
+    }
+    }
+
     // POST /donors
-    if (normalizedPath === '/donors' && method === 'POST') {
+    if ((normalizedPath === '/' || normalizedPath === '/donors') && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
       // TODO: Add your business logic here
       return json(201, { ok: true, route: 'POST /donors', body });

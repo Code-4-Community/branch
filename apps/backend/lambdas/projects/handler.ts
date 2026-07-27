@@ -1,14 +1,22 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
-import { authenticateRequest } from './auth';
+import {
+  authenticateRequest,
+  canAccessProject,
+  canCreateProject,
+  canEditProject,
+} from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
     // Support both API Gateway and Lambda Function URL events
     // API Gateway: event.path, event.httpMethod
     // Function URL: event.rawPath, event.requestContext.http.method
-    const rawPath = event.rawPath || event.path || '/';
+    const fullPath = event.rawPath || event.path || '/';
+    // API Gateway mounts this service at /projects[/{proxy+}]; strip the mount
+    // prefix so routing below (rawPath and normalizedPath) sees the bare path.
+    const rawPath = fullPath.replace(/^\/projects(?=\/|$)/, '') || '/';
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
@@ -22,15 +30,16 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 
+    const authContext = await authenticateRequest(event);
+    if (!authContext.isAuthenticated || !authContext.user) {
+      return json(401, { message: 'Authentication required' });
+    }
+    const { user } = authContext;
+
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
     // GET /dashboard
     if ((normalizedPath === '/dashboard' || normalizedPath.endsWith('/dashboard')) && method === 'GET') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-      const { user } = authContext;
       if (!user.isAdmin) {
         return json(403, { message: 'Admin access required' });
       }
@@ -133,6 +142,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       // handles both /projects/1/members and /1/members
       const id = parts.length === 3 ? parts[1] : parts[0];
       if (!id) return json(400, { message: 'id is required' });
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
       const users = await db
         .selectFrom('branch.project_memberships as pm')
         .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
@@ -152,7 +164,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
-      const projects = await db.selectFrom("branch.projects").selectAll().execute();
+      const projects = user.isAdmin
+        ? await db.selectFrom("branch.projects").selectAll().execute()
+        : await db
+            .selectFrom("branch.projects as p")
+            .innerJoin("branch.project_memberships as pm", "pm.project_id", "p.project_id")
+            .where("pm.user_id", "=", user.userId!)
+            .selectAll("p")
+            .execute();
       return json(200, projects);
     }
 
@@ -165,6 +184,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!id) return json(400, { message: 'id is required' });
       if (isNaN(Number(id))) {
         return json(400, { message: 'Project id must be a valid number' });
+      }
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
       }
       const queryString = event.rawQueryString || event.queryStringParameters;
 
@@ -198,6 +220,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'GET') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
       const project = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).selectAll().executeTakeFirst();
       if (!project) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, project);
@@ -208,19 +233,55 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
-      const body = event.body ? JSON.parse(event.body) as Record<string, { name: string, total_budget: number }> : {};
+      if (!(await canEditProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to edit this project' });
+      }
+      let body: Record<string, unknown>;
+      try {
+        body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+      } catch (e) {
+        return json(400, { message: 'Invalid JSON in request body' });
+      }
+
+      const result = ProjectValidationUtils.buildUpdateValues(body);
+      if (!result.isValid) return json(400, { message: result.error });
+      const updateValues = result.values!;
+
+      if (Object.keys(updateValues).length === 0) {
+        return json(400, { message: 'No valid fields provided' });
+      }
+
       const updatedProject = await db
         .updateTable("branch.projects")
-        .set(body)
+        .set(updateValues)
         .where("project_id", "=", Number(id))
-        .returning(["project_id", "name", "description", "total_budget"]) // control returned fields
+        .returning(["project_id", "name", "description", "total_budget"])
         .executeTakeFirst();
       if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
       return json(200, updatedProject);
     }
-    // <<< ROUTES-END
+    
+    // DELETE /projects/{id}
+    if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'DELETE') {
+      // TODO: requireAuth needs to be added here once ticket #241 is completed
+
+      const id = rawPath.split('/')[1];
+      if (!id) return json(400, { message: 'id is required' });
+      if (!/^\d+$/.test(id)) return json(400, { message: 'id must be a valid number' });
+
+      const deleted = await db.deleteFrom('branch.projects').where('project_id', '=', Number(id)).execute();
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Project not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id } });
+    }
+
     // POST /projects
     if ((normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/projects') && method === 'POST') {
+      if (!(await canCreateProject(user.userId!))) {
+        return json(403, { message: 'Admin access required' });
+      }
       let body: Record<string, unknown>;
       try {
         body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
@@ -281,6 +342,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
       if (!id) return json(400, { message: 'id is required' });
 
+      if (!(await canAccessProject(user.userId!, Number(id)))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
+
       try {
 
         const project = await db
@@ -307,6 +372,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to fetch expenditures', error: err instanceof Error ? err.message : 'Unknown error' });
       }
     }
+
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

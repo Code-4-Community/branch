@@ -1,0 +1,141 @@
+name: Slack Purge Bot Messages
+
+# One-off manual cleanup: deletes messages posted by the deploy bot in a Slack
+# channel (default: #proj-branch-deployments). A bot token's chat.delete can
+# only remove messages the bot itself authored, so this only touches bot posts.
+#
+# Safety: defaults to a dry run. To actually delete, set dry_run=false AND type
+# DELETE into the confirm box.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel id to purge'
+        required: true
+        default: C0BE7FYMHFF
+      dry_run:
+        description: 'Dry run (only count, delete nothing)'
+        type: boolean
+        required: true
+        default: true
+      confirm:
+        description: 'Type DELETE to confirm a real purge (ignored on dry run)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete bot messages
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRM: ${{ inputs.confirm }}
+        with:
+          script: |
+            const token = process.env.SLACK_BOT_TOKEN;
+            const channel = process.env.CHANNEL;
+            const dryRun = process.env.DRY_RUN !== 'false';
+
+            if (!dryRun && process.env.CONFIRM !== 'DELETE') {
+              core.setFailed('Refusing to purge: set dry_run=false AND type DELETE in confirm.');
+              return;
+            }
+
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+            // Read methods (conversations.history/replies) are unreliable with a
+            // JSON body — replies returns invalid_arguments — so call them as GET
+            // with query-string params. Write methods (chat.delete) use POST JSON.
+            async function slack(method, params, verb = 'POST') {
+              for (let attempt = 0; attempt < 6; attempt++) {
+                let url = `https://slack.com/api/${method}`;
+                const opts = { method: verb, headers: { Authorization: `Bearer ${token}` } };
+                if (verb === 'GET') {
+                  url += '?' + new URLSearchParams(params).toString();
+                } else {
+                  opts.headers['Content-Type'] = 'application/json; charset=utf-8';
+                  opts.body = JSON.stringify(params);
+                }
+                const resp = await fetch(url, opts);
+                // Respect Slack rate limits (HTTP 429 + Retry-After).
+                if (resp.status === 429) {
+                  const wait = (parseInt(resp.headers.get('retry-after') || '1', 10) || 1) * 1000;
+                  console.log(`Rate limited on ${method}; waiting ${wait}ms`);
+                  await sleep(wait);
+                  continue;
+                }
+                const data = await resp.json();
+                if (!data.ok && data.error === 'ratelimited') { await sleep(1000); continue; }
+                return data;
+              }
+              return { ok: false, error: 'rate_limit_retries_exhausted' };
+            }
+
+            // Gather every timestamp: top-level messages + their thread replies.
+            async function collectTimestamps() {
+              const tsList = [];
+              let cursor;
+              do {
+                const page = await slack('conversations.history', {
+                  channel, limit: 200, ...(cursor ? { cursor } : {}),
+                }, 'GET');
+                if (!page.ok) {
+                  core.setFailed(`conversations.history failed: ${page.error}`);
+                  return null;
+                }
+                for (const msg of page.messages || []) {
+                  tsList.push(msg.ts);
+                  // Thread parents report reply_count; pull replies so we delete them too.
+                  if (msg.reply_count > 0 || msg.thread_ts === msg.ts) {
+                    let rCursor;
+                    do {
+                      const replies = await slack('conversations.replies', {
+                        channel, ts: msg.ts, limit: 200, ...(rCursor ? { cursor: rCursor } : {}),
+                      }, 'GET');
+                      if (!replies.ok) { console.log(`replies failed for ${msg.ts}: ${replies.error}`); break; }
+                      for (const r of replies.messages || []) {
+                        if (r.ts !== msg.ts) tsList.push(r.ts);
+                      }
+                      rCursor = replies.response_metadata && replies.response_metadata.next_cursor;
+                    } while (rCursor);
+                  }
+                }
+                cursor = page.response_metadata && page.response_metadata.next_cursor;
+              } while (cursor);
+              return tsList;
+            }
+
+            const timestamps = await collectTimestamps();
+            if (timestamps === null) return;
+            console.log(`Found ${timestamps.length} message(s) in ${channel}.`);
+
+            if (dryRun) {
+              console.log('Dry run — nothing deleted. Re-run with dry_run=false and confirm=DELETE to purge.');
+              return;
+            }
+
+            // Delete newest-first isn't required, but process oldest-first so parents
+            // outlast replies. Non-bot messages return cant_delete_message — skipped.
+            let deleted = 0, skipped = 0;
+            for (const ts of timestamps.reverse()) {
+              const res = await slack('chat.delete', { channel, ts });
+              if (res.ok) {
+                deleted++;
+              } else if (['message_not_found', 'cant_delete_message'].includes(res.error)) {
+                skipped++;
+              } else {
+                console.log(`Delete ${ts} failed: ${res.error}`);
+                skipped++;
+              }
+              // chat.delete is Tier 3 (~50/min); ~1.2s keeps us comfortably under.
+              await sleep(1200);
+            }
+            console.log(`Done. Deleted ${deleted}, skipped ${skipped}.`);

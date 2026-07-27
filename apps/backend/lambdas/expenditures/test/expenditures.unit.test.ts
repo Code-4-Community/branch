@@ -6,10 +6,25 @@ jest.mock('../auth');
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest } from '../auth';
+import { authenticateRequest, checkAuthorization } from '../auth';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
+const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
+
+mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
+  if (requiredAccess === 'PUBLIC') return { allowed: true };
+  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
+  if (requiredAccess === 'ADMIN') {
+    const isAdmin = authContext.user.isAdmin ?? false;
+    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
+  }
+  if (requiredAccess === 'ADMIN_OR_SELF') {
+    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
+    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
+  }
+  return { allowed: false, reason: 'Unknown access level' };
+});
 
 // Helper function to create a POST event
 function postEvent(body: Record<string, unknown>) {
@@ -39,6 +54,71 @@ function getEvent(queryStringParameters?: Record<string, string>) {
       Authorization: 'Bearer fake-token',
     },
     queryStringParameters: queryStringParameters ?? {},
+  };
+}
+
+// Builds a Lambda event for GET or DELETE /expenditures/{id}
+function idEvent(method: 'GET' | 'DELETE', id: string) {
+  return {
+    rawPath: `/expenditures/${id}`,
+    requestContext: { http: { method } },
+    headers: { Authorization: 'Bearer fake-token' },
+  };
+}
+
+const staffAuthContext = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'staff-sub', userId: 2, email: 'staff@example.com', isAdmin: false },
+};
+
+const piAuthContext = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'pi-sub', userId: 3, email: 'pi@example.com', isAdmin: false },
+};
+
+const fakeExpenditure = {
+  expenditure_id: 5,
+  project_id: 1,
+  entered_by: 1,
+  amount: '1200',
+  category: 'Travel',
+  description: 'Flight',
+  status: 'pending',
+  receipt_url: null,
+  spent_on: new Date('2025-06-01'),
+  created_at: new Date('2025-06-01'),
+};
+
+// Mocks the query chain used by the handler to fetch a single expenditure
+function mockSelectExpenditure(result: any) {
+  return {
+    where: jest.fn().mockReturnValue({
+      selectAll: jest.fn().mockReturnValue({
+        executeTakeFirst: jest.fn().mockReturnValue(result),
+      }),
+    }),
+  };
+}
+
+// Mocks the query chain used by the handler to check project membership
+function mockMembership(result: any) {
+  return {
+    where: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(result),
+        }),
+      }),
+    }),
+  };
+}
+
+// Mocks the query chain used by the handler to delete an expenditure
+function mockDelete(numDeletedRows: bigint) {
+  return {
+    where: jest.fn().mockReturnValue({
+      execute: jest.fn().mockReturnValue([{ numDeletedRows }]),
+    }),
   };
 }
 
@@ -588,5 +668,340 @@ describe('POST /expenditures unit tests', () => {
       const res = await handler(getEvent({ projectId: '-5' }));
       expect(res.statusCode).toBe(400);
     });
+  });
+});
+
+
+describe('GET /expenditures/{id} unit tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  describe('Validation', () => {
+    test('400: non-numeric id', async () => {
+      const res = await handler(idEvent('GET', 'abc'));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toContain('positive integer');
+    });
+
+    test('400: negative id', async () => {
+      const res = await handler(idEvent('GET', '-5'));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: decimal id', async () => {
+      const res = await handler(idEvent('GET', '5.5'));
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toBe('Authentication required');
+    });
+  });
+
+  describe('Not found', () => {
+    test('404: expenditure does not exist', async () => {
+      mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(null));
+      const res = await handler(idEvent('GET', '999'));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Expenditure not found');
+    });
+  });
+
+  describe('Authorization', () => {
+    test('403: non-admin with no project membership cannot read', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure)) // expenditure lookup
+        .mockReturnValueOnce(mockMembership(null)); // no membership row
+
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('Unable to view this expenditure');
+    });
+
+    test('200: non-admin with membership on the project can read', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure)) // expenditure lookup
+        .mockReturnValueOnce(mockMembership({ role: 'Staff' })); // has a role on the project
+
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('Success cases', () => {
+    test('200: admin can read any expenditure', async () => {
+      mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(fakeExpenditure));
+      const res = await handler(idEvent('GET', '5'));
+
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.ok).toBe(true);
+      expect(json.route).toBe('GET /expenditures/{id}');
+      expect(json.body.expenditureId).toBe(5);
+      expect(json.body.projectId).toBe(1);
+      expect(json.body.amount).toBe('1200');
+    });
+
+    test('response has correct HTTP headers', async () => {
+      mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(fakeExpenditure));
+      const res = await handler(idEvent('GET', '5'));
+
+      expect(res.headers?.['Content-Type']).toBe('application/json');
+      expect(res.headers?.['Access-Control-Allow-Origin']).toBe('*');
+      expect(res.headers?.['Access-Control-Allow-Methods']).toContain('GET');
+    });
+  });
+});
+
+
+describe('DELETE /expenditures/{id} unit tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  describe('Validation', () => {
+    test('400: non-numeric id', async () => {
+      const res = await handler(idEvent('DELETE', 'abc'));
+      expect(res.statusCode).toBe(400);
+    });
+
+    test('400: negative id', async () => {
+      const res = await handler(idEvent('DELETE', '-1'));
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('Not found', () => {
+    test('404: expenditure does not exist (checked before authorization)', async () => {
+      mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(null));
+      const res = await handler(idEvent('DELETE', '999'));
+
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Expenditure not found');
+      // deleteFrom should never be reached if the expenditure lookup fails
+      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+    });
+
+    test('404: row already gone by the time delete executes (race condition)', async () => {
+      mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
+      mockDb.deleteFrom.mockReturnValue(mockDelete(0n));
+
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('Authorization', () => {
+    test('403: non-admin with no membership on the project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure)) // expenditure lookup
+        .mockReturnValueOnce(mockMembership(null)); // no membership row
+
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('Unable to delete this expenditure');
+      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+    });
+
+    test('403: user with Staff role on the project is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure))
+        .mockReturnValueOnce(mockMembership({ role: 'Staff' }));
+
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(403);
+    });
+
+    test('membership check is scoped to the expenditure\'s own project_id, not the path id', async () => {
+      mockAuthenticateRequest.mockResolvedValue(piAuthContext);
+      const membershipWhereProjectSpy = jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            executeTakeFirst: jest.fn().mockReturnValue({ role: 'PI' }),
+          }),
+        }),
+      });
+
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure)) // project_id: 1
+        .mockReturnValueOnce({ where: membershipWhereProjectSpy });
+      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+
+      await handler(idEvent('DELETE', '5'));
+      expect(membershipWhereProjectSpy).toHaveBeenCalledWith('project_id', '=', fakeExpenditure.project_id);
+    });
+  });
+
+  describe('Success cases', () => {
+    test('200: admin can delete without a membership lookup', async () => {
+      mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
+      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+
+      const res = await handler(idEvent('DELETE', '5'));
+
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.ok).toBe(true);
+      expect(json.route).toBe('DELETE /expenditures/{id}');
+      expect(json.pathParams).toEqual({ id: '5' });
+    });
+
+    test('200: PI on the expenditure\'s project can delete', async () => {
+      mockAuthenticateRequest.mockResolvedValue(piAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure))
+        .mockReturnValueOnce(mockMembership({ role: 'PI' }));
+      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(200);
+    });
+
+    test('200: Accountant on the expenditure\'s project can delete', async () => {
+      const accountantAuthContext = {
+        isAuthenticated: true as const,
+        user: { cognitoSub: 'acct-sub', userId: 4, email: 'acct@example.com', isAdmin: false },
+      };
+      mockAuthenticateRequest.mockResolvedValue(accountantAuthContext);
+      mockDb.selectFrom
+        .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure))
+        .mockReturnValueOnce(mockMembership({ role: 'Accountant' }));
+      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(200);
+    });
+  });
+});
+
+
+describe('PATCH /expenditures/{id}/status unit tests', () => {
+  function patchStatusEvent(id: string | number, body: unknown) {
+    return {
+      rawPath: `/expenditures/${id}/status`,
+      requestContext: { http: { method: 'PATCH' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    };
+  }
+
+  // Sets up selectFrom (existing + updated lookups) and updateTable chains.
+  function mockExpenditureForPatch(existing: Record<string, unknown> | null, updated?: Record<string, unknown>) {
+    mockDb.selectFrom.mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: (jest.fn() as any)
+            .mockResolvedValueOnce(existing)
+            .mockResolvedValueOnce(updated ?? existing),
+        }),
+      }),
+    });
+
+    mockDb.updateTable.mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          execute: (jest.fn() as any).mockResolvedValue(undefined),
+        }),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  test('200: admin approves an expenditure', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending' },
+      { expenditure_id: 5, status: 'approved' },
+    );
+
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.ok).toBe(true);
+    expect(json.pathParams).toEqual({ id: '5' });
+    expect(json.body.status).toBe('approved');
+  });
+
+  test('200: admin declines an expenditure', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending' },
+      { expenditure_id: 5, status: 'denied' },
+    );
+
+    const res = await handler(patchStatusEvent(5, { status: 'denied' }));
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).body.status).toBe('denied');
+  });
+
+  test('401: unauthenticated request', async () => {
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(401);
+  });
+
+  test('403: authenticated non-admin is rejected', async () => {
+    mockAuthenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      user: { cognitoSub: 'staff-sub', userId: 2, email: 'staff@example.com', isAdmin: false },
+    });
+
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toContain('Admin');
+  });
+
+  test('400: invalid id', async () => {
+    const res = await handler(patchStatusEvent('abc', { status: 'approved' }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('id');
+  });
+
+  test('400: missing status', async () => {
+    const res = await handler(patchStatusEvent(5, {}));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('status is required');
+  });
+
+  test('400: status not valid', async () => {
+    const res = await handler(patchStatusEvent(5, { status: 'pend' }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('status must be one of');
+  });
+
+  test('404: expenditure not found', async () => {
+    mockExpenditureForPatch(null);
+
+    const res = await handler(patchStatusEvent(999, { status: 'approved' }));
+
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).message).toContain('not found');
   });
 });
