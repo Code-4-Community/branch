@@ -21,6 +21,17 @@ const MIME_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
+const REPORT_ID_ROUTE = /^\/(\d+)$/;
+
+async function requireAuth(
+  event: any
+): Promise<{ user: NonNullable<Awaited<ReturnType<typeof authenticateRequest>>['user']> } | { errorResponse: APIGatewayProxyResult }> {
+  const authContext = await authenticateRequest(event);
+  if (!authContext.isAuthenticated || !authContext.user) {
+    return { errorResponse: json(401, { message: 'Authentication required' }) };
+  }
+  return { user: authContext.user };
+}
 
 type FileType = typeof ALLOWED_EXTENSIONS[number];
 
@@ -47,12 +58,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // POST /reports/generate
     if ((normalizedPath === '/reports/generate' || normalizedPath === '/generate') && method === 'POST') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
       const projectId = body.project_id;
@@ -107,10 +115,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // GET /reports
     if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated) {
-        return json(401, { message: 'Authentication required' });
-      }
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
 
       const queryParams = event.queryStringParameters || {};
       const pageStr = queryParams.page as string | undefined;
@@ -168,12 +174,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     
     // GET /reports/upload-url
     if ((normalizedPath === '/reports/upload-url' || normalizedPath === '/upload-url') && method === 'GET') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       const queryParams = event.queryStringParameters || {};
       const { fileName, projectId: projectIdStr } = queryParams;
@@ -215,12 +218,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // POST /reports
     if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       let body: Record<string, unknown>;
       try {
@@ -265,18 +265,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
     
     // GET /reports/{id}
-    if ((/^\/reports\/\d+$/.test(normalizedPath) || /^\/\d+$/.test(normalizedPath)) && method === 'GET') {      const id = normalizedPath.split('/').pop() as string;
+    const getIdMatch = method === 'GET' ? normalizedPath.match(REPORT_ID_ROUTE) : null;
+    if (getIdMatch) {      
+      const id = getIdMatch[1];
 
-      if (!/^\d+$/.test(id)) {
-        return json(400, { message: 'id must be a positive integer' });
-      }
-
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
       if (!report) return json(404, { message: 'Report not found' });
@@ -286,36 +281,17 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(403, { message: 'You do not have access to this report' });
       }
 
-      return json(200, { 
-        ok: true, 
-        route: 'GET /reports/{id}', 
-        pathParams: { id }, 
-        body: { 
-          report_id: report.report_id,
-          project_id: report.project_id,
-          title: report.title,
-          object_url: report.object_url,
-          report_type: report.report_type,
-          date_created: report.date_created,
-        } 
-      });
+      return json(200, report);
     }
     
     // DELETE /reports/{id}
-    if ((/^\/reports\/\d+$/.test(normalizedPath) || /^\/\d+$/.test(normalizedPath)) && method === 'DELETE') {
-      const id = normalizedPath.split('/').pop() as string;
+    const deleteIdMatch = method === 'DELETE' ? normalizedPath.match(REPORT_ID_ROUTE) : null;
+    if (deleteIdMatch) {
+      const id = deleteIdMatch[1];
 
-      if (!/^\d+$/.test(id)) {
-        return json(400, { message: 'id must be a positive integer' });
-      }
-
-
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
       if (!report) return json(404, { message: 'Report not found' });
@@ -330,7 +306,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Report not found' });
       }
 
-      return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
+      return json(200, { ok: true });
     }
     // <<< ROUTES-END   
 
