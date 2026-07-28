@@ -1,0 +1,172 @@
+name: PR No-Review Opt-Out
+
+# Adding the `no-review` label opts a PR out of the review bot entirely.
+# pr-reviewer-assign.yml already refuses to assign a labelled PR, but the label
+# can also land *after* the bot assigned reviewers and posted to Slack. This
+# workflow undoes that: it drops the review requests, removes the Slack
+# message (and any thread replies), and deletes the per-PR state file so the
+# reminder cron and the status/closed workflows stop seeing the PR.
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  untrack:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.label.name == 'no-review' }}
+    steps:
+      - name: Checkout bot-state branch
+        uses: actions/checkout@v4
+        with:
+          ref: bot-state
+          path: bot-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Untrack PR and clean up Slack
+        uses: actions/github-script@v7
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const BOT_STATE_DIR = 'bot-state';
+            const configPath = path.join(BOT_STATE_DIR, 'config.json');
+            const prsDir = path.join(BOT_STATE_DIR, 'prs');
+
+            const prNumber = context.payload.pull_request.number;
+            const prFileKey = `${context.repo.owner}_${context.repo.repo}_${prNumber}`;
+            const prFilePath = path.join(prsDir, `${prFileKey}.json`);
+
+            if (!fs.existsSync(prFilePath)) {
+              console.log(`No per-PR file for #${prNumber}. Nothing to untrack.`);
+              return;
+            }
+            if (!fs.existsSync(configPath)) {
+              console.log('config.json not found. Skipping Slack cleanup.');
+              return;
+            }
+
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const prData = JSON.parse(fs.readFileSync(prFilePath, 'utf8'));
+
+            // ── Slack helper ─────────────────────────────────────────
+            // Read methods (conversations.replies) need GET with query-string
+            // params; write methods (chat.delete) use POST JSON.
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+            async function slackApi(method, params, verb = 'POST') {
+              for (let attempt = 0; attempt < 4; attempt++) {
+                try {
+                  let url = `https://slack.com/api/${method}`;
+                  const opts = {
+                    method: verb,
+                    headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
+                  };
+                  if (verb === 'GET') {
+                    url += '?' + new URLSearchParams(params).toString();
+                  } else {
+                    opts.headers['Content-Type'] = 'application/json; charset=utf-8';
+                    opts.body = JSON.stringify(params);
+                  }
+                  const resp = await fetch(url, opts);
+                  if (resp.status === 429) {
+                    const wait = (parseInt(resp.headers.get('retry-after') || '1', 10) || 1) * 1000;
+                    await sleep(wait);
+                    continue;
+                  }
+                  const data = await resp.json();
+                  if (!data.ok && data.error === 'ratelimited') { await sleep(1000); continue; }
+                  if (!data.ok) console.log(`Slack ${method} error: ${data.error}`);
+                  return data;
+                } catch (err) {
+                  console.log(`Slack ${method} failed: ${err.message}`);
+                  return { ok: false };
+                }
+              }
+              return { ok: false, error: 'rate_limit_retries_exhausted' };
+            }
+
+            // ── Drop the bot's review requests ───────────────────────
+            const reviewers = [prData.main_reviewer, prData.second_reviewer].filter(Boolean);
+            if (reviewers.length > 0) {
+              try {
+                await github.rest.pulls.removeRequestedReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  reviewers,
+                });
+                console.log(`Removed review requests: ${reviewers.join(', ')}`);
+              } catch (err) {
+                console.log(`Warning: could not remove reviewers: ${err.message}`);
+              }
+            }
+
+            // ── Delete the Slack message and its thread replies ──────
+            if (prData.slack_thread_ts) {
+              const channel = config.slack_channel_id;
+              const parentTs = prData.slack_thread_ts;
+              const tsList = [];
+
+              let cursor;
+              do {
+                const replies = await slackApi('conversations.replies', {
+                  channel, ts: parentTs, limit: 200, ...(cursor ? { cursor } : {}),
+                }, 'GET');
+                if (!replies.ok) {
+                  console.log(`Could not list thread replies: ${replies.error}`);
+                  break;
+                }
+                for (const r of replies.messages || []) {
+                  if (r.ts !== parentTs) tsList.push(r.ts);
+                }
+                cursor = replies.response_metadata && replies.response_metadata.next_cursor;
+              } while (cursor);
+
+              // Replies first so the parent is never left with orphans.
+              tsList.push(parentTs);
+              for (const ts of tsList) {
+                const res = await slackApi('chat.delete', { channel, ts });
+                if (!res.ok) console.log(`Could not delete message ${ts}: ${res.error}`);
+                // chat.delete is Tier 3 (~50/min); ~1.2s keeps us under it.
+                await sleep(1200);
+              }
+              console.log(`Deleted ${tsList.length} Slack message(s) for PR #${prNumber}`);
+            }
+
+            // ── Drop the per-PR state file ───────────────────────────
+            fs.unlinkSync(prFilePath);
+            console.log(`Untracked PR #${prNumber} (no-review label)`);
+
+      - name: Commit and push bot-state
+        working-directory: bot-state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "bot: untrack PR #${{ github.event.pull_request.number }} (no-review label)"
+
+          for attempt in 1 2 3; do
+            if git pull --rebase origin bot-state && git push origin bot-state; then
+              echo "Push succeeded (attempt $attempt)"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying in 2s…"
+            sleep 2
+          done
+
+          echo "::error::Failed to push bot-state after 3 attempts"
+          exit 1
