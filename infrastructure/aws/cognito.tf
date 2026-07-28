@@ -54,10 +54,25 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
     email_sending_account = "COGNITO_DEFAULT"
   }
 
-  # User pool add-ons
+  # AUDIT, not ENFORCED: every sign-in is proxied through the auth lambda, so all
+  # InitiateAuth calls arrive from a handful of Lambda ENI addresses. Under
+  # ENFORCED, adaptive authentication risk-scores that shared IP and can block or
+  # force MFA on legitimate users after unrelated failures by other users, and
+  # correct scoring needs client-side UserContextData the lambda cannot supply
+  # (enable_propagate_additional_user_context_data is false below). AUDIT keeps
+  # the risk telemetry without gating logins. ENFORCED also requires the Cognito
+  # Plus feature tier.
   user_pool_add_ons {
-    advanced_security_mode = "ENFORCED"
+    advanced_security_mode = "AUDIT"
   }
+
+  # MFA is off for now, stated explicitly rather than left to the default.
+  # Turning it on later is config-only on the backend: set "OPTIONAL" and add
+  # software_token_mfa_configuration { enabled = true }. POST
+  # /auth/respond-challenge already handles SOFTWARE_TOKEN_MFA / SMS_MFA /
+  # EMAIL_OTP / SELECT_MFA_TYPE, and POST /auth/login returns the challenge
+  # instead of hanging; only TOTP *enrollment* endpoints would need adding.
+  mfa_configuration = "OFF"
 
   # Prevent accidental deletion
   deletion_protection = "ACTIVE"
@@ -117,10 +132,26 @@ resource "aws_cognito_user_pool_client" "branch_client" {
   enable_propagate_additional_user_context_data = false
 }
 
-# NOTE: To use these in lambdas, manually create secrets in Infisical at /aws/cognito/:
-#   - user_pool_id: Copy from terraform output cognito_user_pool_id
-#   - client_id: Copy from terraform output cognito_client_id
-#   - region: us-east-2
+# The lambdas get these IDs from Terraform directly -- see the `environment`
+# block in lambda.tf. There is no manual console or Infisical step for the lambda
+# runtime any more.
+#
+# The Infisical /aws/cognito folder is still the source for the COGNITO_*
+# GitHub Actions secrets consumed by .github/workflows/lambda-tests.yml (see
+# infrastructure/github/secrets.tf). infrastructure/github is a separate root
+# module with separate state and cannot read this module's outputs without a
+# terraform_remote_state data source, so keep it in sync with the outputs below
+# if this pool is ever recreated.
+
+output "cognito_user_pool_id" {
+  value       = aws_cognito_user_pool.branch_user_pool.id
+  description = "Cognito User Pool ID (wired into the lambdas by lambda.tf)"
+}
+
+output "cognito_client_id" {
+  value       = aws_cognito_user_pool_client.branch_client.id
+  description = "Cognito User Pool Client ID (public client, generate_secret = false)"
+}
 
 output "cognito_user_pool_arn" {
   value       = aws_cognito_user_pool.branch_user_pool.arn

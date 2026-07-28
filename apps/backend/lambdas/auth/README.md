@@ -11,6 +11,9 @@ Lambda for auth handler.
 | GET | /health | Health check |
 | POST | /register |  |
 | POST | /login |  |
+| POST | /respond-challenge |  |
+| POST | /refresh |  |
+| GET | /me |  |
 | POST | /verify-email |  |
 | POST | /resend-code |  |
 | POST | /logout |  |

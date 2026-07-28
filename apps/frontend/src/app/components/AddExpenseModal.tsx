@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
 import DropdownSelector from './DropdownSelector';
-import { apiFetch } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 import FileUpload from './FileUpload';
 import { FiDollarSign } from 'react-icons/fi';
 import { Project } from '@/types';
@@ -11,7 +11,6 @@ interface AddExpenseModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  token: string;
   categories: string[];
   projects: Pick<Project, 'project_id' | 'name'>[];
 }
@@ -20,10 +19,11 @@ export default function AddExpenseModal({
   open,
   onClose,
   onSuccess,
-  token,
   categories,
   projects,
 }: AddExpenseModalProps) {
+  const api = useApi();
+
   const [newDate, setNewDate] = useState('');
   const [newType, setNewType] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -84,16 +84,12 @@ export default function AddExpenseModal({
     }
 
     try {
-      await apiFetch('/expenditures', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({
-          projectID: selectedProject.project_id,
-          amount: Number(newAmount),
-          category: newType,
-          description: newDescription,
-          spentOn: newDate,
-        }),
+      await api.post('/expenditures', {
+        projectID: selectedProject.project_id,
+        amount: Number(newAmount),
+        category: newType,
+        description: newDescription,
+        spentOn: newDate,
       });
 
       resetForm();
