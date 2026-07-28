@@ -553,3 +553,204 @@ describe('POST /reports unit tests', () => {
     });
   });
 });
+
+describe('GET /reports/{id} unit tests', () => {
+  function idEvent(method: 'GET' | 'DELETE', id: string) {
+    return {
+      rawPath: `/reports/${id}`,
+      requestContext: { http: { method } },
+      headers: { Authorization: 'Bearer fake-token' },
+    };
+  }
+
+  const fakeReport = {
+    report_id: 5,
+    project_id: 2,
+    title: 'Test Report',
+    object_url: 'https://s3.amazonaws.com/reports/test.pdf',
+    report_type: 'technical',
+    date_created: new Date('2025-01-01'),
+  };
+
+  function setupReportMock(report: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(report as any),
+        }),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockCheckProjectAccess.mockReturnValue(true as any);
+    setupReportMock(fakeReport);
+  });
+
+  describe('Validation', () => {
+    test('404: non-numeric id falls through to catch-all', async () => {
+      const res = await handler(idEvent('GET', 'abc'));
+      expect(res.statusCode).toBe(404);
+    });
+  
+    test('404: negative id falls through to catch-all', async () => {
+      const res = await handler(idEvent('GET', '-5'));
+      expect(res.statusCode).toBe(404);
+    });
+  
+    test('404: decimal id falls through to catch-all', async () => {
+      const res = await handler(idEvent('GET', '5.5'));
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toBe('Authentication required');
+    });
+  });
+
+  describe('Business logic', () => {
+    test('404: report does not exist', async () => {
+      setupReportMock(undefined);
+      const res = await handler(idEvent('GET', '999'));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Report not found');
+    });
+
+    test('403: user has no project access', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to this report');
+    });
+
+    test('200: returns report for user with project access', async () => {
+      const res = await handler(idEvent('GET', '5'));
+
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.ok).toBe(true);
+      expect(json.route).toBe('GET /reports/{id}');
+      expect(json.body.report_id).toBe(5);
+      expect(json.body.project_id).toBe(2);
+      expect(json.body.title).toBe('Test Report');
+    });
+
+    test('checkProjectAccess is called with the report\'s own project_id', async () => {
+      await handler(idEvent('GET', '5'));
+      expect(mockCheckProjectAccess).toHaveBeenCalledWith(1, 2, true);
+    });
+  });
+});
+
+describe('DELETE /reports/{id} unit tests', () => {
+  function idEvent(method: 'GET' | 'DELETE', id: string) {
+    return {
+      rawPath: `/reports/${id}`,
+      requestContext: { http: { method } },
+      headers: { Authorization: 'Bearer fake-token' },
+    };
+  }
+
+  const fakeReport = {
+    report_id: 5,
+    project_id: 2,
+    title: 'Test Report',
+    object_url: 'https://s3.amazonaws.com/reports/test.pdf',
+    report_type: 'technical',
+    date_created: new Date('2025-01-01'),
+  };
+
+  function setupReportMock(report: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(report as any),
+        }),
+      }),
+    });
+  }
+
+  function setupDeleteMock(numDeletedRows: bigint) {
+    mockDb.deleteFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        execute: jest.fn().mockReturnValue([{ numDeletedRows }]),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    mockCheckProjectAccess.mockReturnValue(true as any);
+    setupReportMock(fakeReport);
+    setupDeleteMock(1n);
+  });
+
+  describe('Validation', () => {
+    test('404: non-numeric id falls through to catch-all', async () => {
+      const res = await handler(idEvent('DELETE', 'abc'));
+      expect(res.statusCode).toBe(404);
+    });
+  
+    test('404: negative id falls through to catch-all', async () => {
+      const res = await handler(idEvent('DELETE', '-1'));
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('Business logic', () => {
+    test('404: report does not exist (checked before authorization)', async () => {
+      setupReportMock(undefined);
+      const res = await handler(idEvent('DELETE', '999'));
+
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Report not found');
+      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+    });
+
+    test('403: user has no project access', async () => {
+      mockCheckProjectAccess.mockReturnValue(false as any);
+      const res = await handler(idEvent('DELETE', '5'));
+
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('You do not have access to delete this report');
+      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+    });
+
+    test('404: row already gone by the time delete executes (race condition)', async () => {
+      setupDeleteMock(0n);
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('200: deletes report for user with project access', async () => {
+      const res = await handler(idEvent('DELETE', '5'));
+
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.ok).toBe(true);
+      expect(json.route).toBe('DELETE /reports/{id}');
+      expect(json.pathParams).toEqual({ id: '5' });
+    });
+
+    test('checkProjectAccess is called with the report\'s own project_id', async () => {
+      await handler(idEvent('DELETE', '5'));
+      expect(mockCheckProjectAccess).toHaveBeenCalledWith(1, 2, true);
+    });
+  });
+});

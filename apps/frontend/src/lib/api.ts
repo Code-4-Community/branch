@@ -15,10 +15,45 @@ function resolveBaseUrl(path: string): string {
   return `http://localhost:${port}`;
 }
 
+/**
+ * A failed HTTP response, carrying the status so callers can branch on it.
+ *
+ * This is what makes transparent token refresh possible: `authedFetch` needs to
+ * tell a 401 apart from a network failure or a 500, and a bare `Error` cannot
+ * express that.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 interface RequestOptions extends RequestInit {
   token?: string;
 }
 
+/** Reads a JSON body, tolerating empty ones (e.g. a 204 from POST /auth/logout). */
+async function readBody(res: Response): Promise<unknown> {
+  if (res.status === 204 || res.status === 205) return undefined;
+  try {
+    return await res.json();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Low-level fetch wrapper. Deliberately dependency-free — it knows nothing about
+ * sessions, storage or refresh, which is what keeps the import graph acyclic:
+ * `authClient` imports this, not the other way round. Use `useApi()` /
+ * `authedFetch` for anything that needs the caller's access token.
+ */
 export async function apiFetch<T>(
   path: string,
   { token, headers, ...options }: RequestOptions = {},
@@ -32,10 +67,15 @@ export async function apiFetch<T>(
     },
   });
 
+  const body = await readBody(res);
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? res.statusText);
+    const message =
+      (body as { message?: string } | undefined)?.message ??
+      res.statusText ??
+      'Request failed';
+    throw new ApiError(message, res.status, body);
   }
 
-  return res.json() as Promise<T>;
+  return body as T;
 }

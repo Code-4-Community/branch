@@ -5,6 +5,7 @@ import {
   authenticateRequest,
   canAccessProject,
   canCreateProject,
+  canDeleteProject,
   canEditProject,
 } from './auth';
 
@@ -263,11 +264,16 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     
     // DELETE /projects/{id}
     if (normalizedPath.startsWith('/') && normalizedPath.split('/').length === 2 && method === 'DELETE') {
-      // TODO: requireAuth needs to be added here once ticket #241 is completed
-
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
       if (!/^\d+$/.test(id)) return json(400, { message: 'id must be a valid number' });
+
+      // The gate at the top of this handler establishes authentication but not
+      // authorization; this route previously had neither check, so any
+      // authenticated user could delete any project.
+      if (!(await canDeleteProject(user.userId!))) {
+        return json(403, { message: 'Admin access required' });
+      }
 
       const deleted = await db.deleteFrom('branch.projects').where('project_id', '=', Number(id)).execute();
       if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
@@ -389,7 +395,7 @@ function json(statusCode: number, body: unknown): APIGatewayProxyResult {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
     },
     body: JSON.stringify(body)
   };

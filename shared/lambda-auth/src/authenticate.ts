@@ -7,21 +7,26 @@ interface QueryableDb {
   selectFrom(table: any): any;
 }
 
-const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
-const COGNITO_CLIENT_ID =
-  process.env.COGNITO_CLIENT_ID || process.env.COGNITO_APP_CLIENT_ID || '';
-
 let verifier: any = null;
 
+// env is read lazily rather than at module scope so that a missing
+// COGNITO_USER_POOL_ID does not poison import of this module, and so tests can
+// vary the environment with jest.resetModules().
 function getVerifier() {
   if (!verifier) {
-    if (!COGNITO_USER_POOL_ID) {
+    const userPoolId = process.env.COGNITO_USER_POOL_ID || '';
+    const clientId =
+      process.env.COGNITO_CLIENT_ID || process.env.COGNITO_APP_CLIENT_ID || '';
+    if (!userPoolId) {
       throw new Error('COGNITO_USER_POOL_ID environment variable is not set');
     }
     verifier = CognitoJwtVerifier.create({
-      userPoolId: COGNITO_USER_POOL_ID,
+      userPoolId,
       tokenUse: 'access',
-      clientId: COGNITO_CLIENT_ID || null,
+      // null disables the audience check. It is only reached when neither
+      // COGNITO_CLIENT_ID nor COGNITO_APP_CLIENT_ID is set, which Terraform now
+      // prevents in every deployed environment (infrastructure/aws/lambda.tf).
+      clientId: clientId || null,
     });
   }
   return verifier;
@@ -66,12 +71,13 @@ export async function authenticateRequest(
       userId: dbUser.user_id,
       email: payload.email as string | undefined,
       isAdmin: dbUser.is_admin === true,
+      // Informational only. We deliberately do NOT promote on a Cognito
+      // "Admins" group: branch.users.is_admin is the single source of truth.
+      // A second source would make demotion via PATCH /users/{userId} silently
+      // ineffective, nothing in this codebase writes group membership, and no
+      // aws_cognito_user_group is defined in infrastructure/aws/cognito.tf.
       cognitoGroups: payload['cognito:groups'] as string[] | undefined,
     };
-
-    if (user.cognitoGroups?.includes('Admins')) {
-      user.isAdmin = true;
-    }
 
     return { user, isAuthenticated: true };
   } catch (error) {

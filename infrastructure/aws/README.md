@@ -46,6 +46,7 @@ No modules.
 | [aws_iam_role.lambda_role](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.ci_plan_state_lock](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.ci_preview](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.lambda_cognito_admin](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.ci_apply_admin](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.ci_plan_readonly](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.lambda_basic](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
@@ -86,9 +87,11 @@ No modules.
 | <a name="output_ci_apply_role_arn"></a> [ci\_apply\_role\_arn](#output\_ci\_apply\_role\_arn) | OIDC role for terraform-apply / lambda-deploy (write, production env only) |
 | <a name="output_ci_plan_role_arn"></a> [ci\_plan\_role\_arn](#output\_ci\_plan\_role\_arn) | OIDC role for terraform-plan (read-only) |
 | <a name="output_ci_preview_role_arn"></a> [ci\_preview\_role\_arn](#output\_ci\_preview\_role\_arn) | OIDC role for preview-env.yml (scoped write, preview env only) |
+| <a name="output_cognito_client_id"></a> [cognito\_client\_id](#output\_cognito\_client\_id) | Cognito User Pool Client ID (public client, generate\_secret = false) |
 | <a name="output_cognito_region"></a> [cognito\_region](#output\_cognito\_region) | AWS Region for Cognito |
 | <a name="output_cognito_user_pool_arn"></a> [cognito\_user\_pool\_arn](#output\_cognito\_user\_pool\_arn) | Cognito User Pool ARN |
 | <a name="output_cognito_user_pool_endpoint"></a> [cognito\_user\_pool\_endpoint](#output\_cognito\_user\_pool\_endpoint) | Cognito User Pool Endpoint |
+| <a name="output_cognito_user_pool_id"></a> [cognito\_user\_pool\_id](#output\_cognito\_user\_pool\_id) | Cognito User Pool ID (wired into the lambdas by lambda.tf) |
 | <a name="output_frontend_bucket"></a> [frontend\_bucket](#output\_frontend\_bucket) | S3 bucket the frontend build is synced to |
 | <a name="output_frontend_cloudfront_distribution_id"></a> [frontend\_cloudfront\_distribution\_id](#output\_frontend\_cloudfront\_distribution\_id) | CloudFront distribution id (for cache invalidation in CI) |
 | <a name="output_frontend_cloudfront_domain"></a> [frontend\_cloudfront\_domain](#output\_frontend\_cloudfront\_domain) | Public URL of the frontend |

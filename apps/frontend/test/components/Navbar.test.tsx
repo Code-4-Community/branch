@@ -24,8 +24,16 @@ describe("NavBar", () => {
     expect(screen.getAllByAltText("Branch").length).toBeGreaterThan(0);
   });
 
+  it("does not link to routes that do not exist", () => {
+    // Regression guard: the Navbar used to link to /profile and /logout, and
+    // defaulted /dashboard and /projects to pages that had never been built.
+    render(<NavBar roleOverride="admin" activePath="/dashboard" />);
+    expect(screen.queryByText("Profile")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Log Out" })).not.toBeInTheDocument();
+  });
+
   it("renders all admin nav items by default", () => {
-    render(<NavBar role="admin" activePath="/dashboard" />);
+    render(<NavBar roleOverride="admin" activePath="/dashboard" />);
     const labels = [
       "Dashboard",
       "Projects",
@@ -34,7 +42,6 @@ describe("NavBar", () => {
       "Expenses",
       "Reports",
       "Accounts",
-      "Profile",
       "Log Out",
     ];
     labels.forEach((label) => {
@@ -45,25 +52,25 @@ describe("NavBar", () => {
   // ── Role-based visibility ─────────────────────────────────────────────────
 
   it("hides admin-only items for standard role", () => {
-    render(<NavBar role="standard" activePath="/dashboard" />);
+    render(<NavBar roleOverride="standard" activePath="/dashboard" />);
     expect(screen.queryByText("Expenses")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
   it("hides admin-only items for limited role", () => {
-    render(<NavBar role="limited" activePath="/dashboard" />);
+    render(<NavBar roleOverride="limited" activePath="/dashboard" />);
     expect(screen.queryByText("Expenses")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
   it("shows shared items for all roles", () => {
-    const sharedItems = ["Dashboard", "Projects", "Donors", "Donations", "Profile", "Log Out"];
+    const sharedItems = ["Dashboard", "Projects", "Donors", "Donations", "Log Out"];
     const roles: UserRole[] = ["admin", "standard", "limited"];
 
     roles.forEach((role) => {
-      const { unmount } = render(<NavBar role={role} activePath="/dashboard" />);
+      const { unmount } = render(<NavBar roleOverride={role} activePath="/dashboard" />);
       sharedItems.forEach((label) => {
         expect(screen.getAllByText(label).length).toBeGreaterThan(0);
       });
@@ -88,8 +95,8 @@ describe("NavBar", () => {
 
   it("does not mark non-active links with aria-current", () => {
     render(<NavBar activePath="/dashboard" />);
-    const profileLinks = screen.getAllByRole("link", { name: "Profile" });
-    profileLinks.forEach((link) => {
+    const donorLinks = screen.getAllByRole("link", { name: "Donors" });
+    donorLinks.forEach((link) => {
       expect(link.getAttribute("aria-current")).toBeNull();
     });
   });
@@ -128,7 +135,7 @@ describe("NavBar", () => {
   // ── Nav links ─────────────────────────────────────────────────────────────
 
   it("nav links point to correct hrefs", () => {
-    render(<NavBar role="admin" activePath="/dashboard" />);
+    render(<NavBar roleOverride="admin" activePath="/dashboard" />);
     const expectedHrefs: Record<string, string> = {
       Dashboard:  "/dashboard",
       Projects:   "/projects",
@@ -137,7 +144,6 @@ describe("NavBar", () => {
       Expenses:   "/expenses",
       Reports:    "/reports",
       Accounts:   "/accounts",
-      Profile:    "/profile",
     };
     Object.entries(expectedHrefs).forEach(([label, href]) => {
       const links = screen.getAllByRole("link", { name: label });
