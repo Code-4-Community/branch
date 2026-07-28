@@ -80,3 +80,25 @@ export async function canCreateProject(userId: number): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Admin-only, deliberately stricter than canEditProject.
+ *
+ * Deleting a project cascades to project_memberships, project_donations,
+ * expenditures and reports (ON DELETE CASCADE in db/db_setup.sql), destroying
+ * financial history. A PI may edit a project but must not be able to erase it.
+ */
+export async function canDeleteProject(userId: number): Promise<boolean> {
+  try {
+    const user = await db
+      .selectFrom('branch.users')
+      .where('user_id', '=', userId)
+      .select('is_admin')
+      .executeTakeFirst();
+
+    return user?.is_admin === true;
+  } catch (error) {
+    console.error('Error checking delete access:', error);
+    return false;
+  }
+}

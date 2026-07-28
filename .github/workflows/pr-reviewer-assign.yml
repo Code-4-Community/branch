@@ -2,7 +2,9 @@ name: PR Reviewer Assignment
 
 on:
   pull_request:
-    types: [opened, ready_for_review, reopened]
+    # `unlabeled` is here so that removing `no-review` assigns a reviewer after
+    # the fact; the job `if` below narrows it to that one label.
+    types: [opened, ready_for_review, reopened, unlabeled]
 
 permissions:
   contents: write
@@ -11,7 +13,13 @@ permissions:
 jobs:
   assign-reviewer:
     runs-on: ubuntu-latest
-    if: ${{ !github.event.pull_request.draft }}
+    # Skip drafts and any PR carrying the `no-review` opt-out label. On an
+    # `unlabeled` event the payload already reflects the post-removal label
+    # set, so a `no-review` removal passes the `contains` check.
+    if: >-
+      ${{ !github.event.pull_request.draft
+          && !contains(github.event.pull_request.labels.*.name, 'no-review')
+          && (github.event.action != 'unlabeled' || github.event.label.name == 'no-review') }}
     steps:
       - name: Checkout bot-state branch
         uses: actions/checkout@v4

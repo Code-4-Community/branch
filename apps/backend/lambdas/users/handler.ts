@@ -145,7 +145,17 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const isAdminResult = UserValidationUtils.validateIsAdmin(body.isAdmin);
       if (!isAdminResult.isValid) return json(400, { message: isAdminResult.error });
-      if (isAdminResult.value != null) updates.is_admin = isAdminResult.value;
+      if (isAdminResult.value != null) {
+        // is_admin is a privilege grant, not profile data. The ADMIN_OR_SELF
+        // check above intentionally lets a non-admin PATCH their own row, so
+        // without this gate any user could PATCH { isAdmin: true } to their own
+        // userId and self-promote. validateIsAdmin returns value: null when the
+        // field is absent, so ordinary self-service edits are unaffected.
+        if (!authContext.user?.isAdmin) {
+          return json(403, { message: 'Only an admin can change isAdmin' });
+        }
+        updates.is_admin = isAdminResult.value;
+      }
 
       const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
       if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
@@ -265,7 +275,7 @@ function json(statusCode: number, body: unknown): APIGatewayProxyResult {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
     },
     body: JSON.stringify(body)
   };

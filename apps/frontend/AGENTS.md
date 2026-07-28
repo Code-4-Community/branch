@@ -25,12 +25,18 @@ src/
     layout.tsx              # root layout (Server Component)
     providers.tsx           # 'use client' — ChakraProvider + AuthProvider
     globals.css             # Tailwind v4 import + @theme custom tokens
-    page.tsx login/ forgot-password/ reset-password/ donors/ donations/ expenses/
+    page.tsx                # routes by session; also absorbs the CloudFront SPA fallback
+    dashboard/ login/ forgot-password/ reset-password/ donors/ donations/ expenses/
+    projects/page.tsx       # projects index
     projects/[id]/page.tsx  # dynamic route
-    components/             # shared UI (Navbar, Header, ExpensesTable, Pagination, modals, form fields)
-  context/AuthContext.tsx   # useAuth() — login/register/verify/logout/reset; tokens in localStorage
+    components/             # shared UI (AuthGate, Navbar, Header, tables, modals, form fields)
+  context/AuthContext.tsx   # useAuth() — session, login/challenge/logout/reset
+  hooks/useApi.ts           # useApi() — authenticated HTTP, the one components should use
   hooks/useQueryParams.ts   # sync filter state <-> URL query string
-  lib/api.ts                # apiFetch<T>() — the single HTTP client
+  lib/api.ts                # apiFetch<T>() + ApiError — raw HTTP, no session awareness
+  lib/authTokens.ts         # the ONLY module that touches token storage
+  lib/authClient.ts         # authedFetch + single-flight refresh + session-expiry events
+  lib/routes.ts             # route access policy (protected-by-default)
 test/                       # jest + RTL mirror of src/ (custom render in test/utils.tsx)
 ```
 
@@ -40,11 +46,27 @@ test/                       # jest + RTL mirror of src/ (custom render in test/u
 
 No React Query / SWR / Redux. Pattern: `useState` + `useEffect` + `apiFetch`, local component state.
 
-`src/lib/api.ts` — `apiFetch<T>(path, { token?, ... })`. Routes by first path segment to a service port (auth→3006, projects→3002, donors→3003, expenditures→3004, reports→3005, users→3001), or to `NEXT_PUBLIC_API_BASE_URL` if set. Injects `Authorization: Bearer <token>`. Throws on non-2xx. In production `NEXT_PUBLIC_API_BASE_URL` (API Gateway) is set at build so every call goes there with its full prefixed path; the localhost port map is the dev fallback. (Static export has no server, so there are no `next.config` rewrites.) New backend calls go through `apiFetch` — don't hand-roll `fetch`.
+**Components should call `useApi()`, not `apiFetch`.** `useApi()` returns a stable `{ get, post, patch, put, del }` over `authedFetch`, which attaches the current access token, refreshes it when it is expiring or a 401 comes back, and ends the session cleanly when it cannot. Never read a token out of storage and thread it through props — that pattern is what previously sent unauthenticated requests, because `localStorage.getItem(...) ?? ''` yields an empty token and `apiFetch` then silently omits the header.
+
+`src/lib/api.ts` — `apiFetch<T>(path, { token?, ... })`, the raw client underneath. Routes by first path segment to a service port (auth→3006, projects→3002, donors→3003, expenditures→3004, reports→3005, users→3001), or to `NEXT_PUBLIC_API_BASE_URL` if set. Throws `ApiError` (carrying `status` and `body`) on non-2xx. In production `NEXT_PUBLIC_API_BASE_URL` (API Gateway) is set at build so every call goes there with its full prefixed path; the localhost port map is the dev fallback. (Static export has no server, so there are no `next.config` rewrites.) Use `apiFetch` directly only for genuinely unauthenticated endpoints (`/auth/login`, `/auth/refresh`, `/auth/forgot-password`).
+
+Import direction is one-way and must stay that way: `api.ts` ← `authClient.ts` ← `AuthContext.tsx` / `hooks/useApi.ts`.
 
 ## Auth
 
-`src/context/AuthContext.tsx` — custom JWT, **no Cognito SDK on the client**. Login POSTs `/auth/login`, stores `branch_access_token` / `branch_id_token` / `branch_refresh_token` in localStorage, decodes the ID token payload (base64) for user claims. `useAuth()` exposes `login, register, verifyEmail, logout, getAccessToken, forgotPassword, resetPassword`. Pass `getAccessToken()` result as the `token` option to `apiFetch` for protected calls. Navbar filters items by user role.
+**No Cognito SDK on the client.** The browser only ever talks to the backend's `/auth/*` routes; the auth lambda does the Cognito work.
+
+**Session.** Tokens (`branch_access_token` / `branch_id_token` / `branch_refresh_token`) live in localStorage, owned exclusively by `src/lib/authTokens.ts`. `grep -rn "branch_access_token" src/` must only ever match that file.
+
+**Identity comes from `GET /auth/me`, never from decoding a token.** `is_admin` lives only in Postgres and there is no pre-token-generation trigger, so it is not a JWT claim; a Cognito *access* token carries neither `email` nor `name` either. `AuthProvider` calls `/auth/me` on mount (skipping the call entirely when no tokens are stored) and exposes `user`, `isAuthenticated`, `isAdmin`, `isLoading`. Do not add a "fall back to decoding the ID token" path.
+
+**Refresh.** Access tokens last one hour. `AuthProvider` schedules a refresh ~2 minutes before expiry, and `authedFetch` refreshes reactively on a 401. Refresh is single-flight, so a burst of concurrent 401s produces one `POST /auth/refresh`. Cognito does not re-issue a refresh token, so `saveTokens` leaves the stored one alone when the response omits it.
+
+**Guarding.** `src/app/components/AuthGate.tsx`, mounted once in `providers.tsx`, is the app's only route guard — static export means `middleware.ts` would never run. `src/lib/routes.ts` classifies routes and is **protected-by-default**: a new page under `src/app/` is guarded without opting in. Public routes are `/login`, `/forgot-password`, `/reset-password` (authenticated users get bounced off them); `/expenses`, `/reports` and `/accounts` additionally require `isAdmin`. Always compare paths through `normalizePath` — `trailingSlash: true` means production sees `/login/` where dev and tests see `/login`.
+
+**Challenges.** `login()` returns `{ status: 'authenticated' }` or `{ status: 'challenge', ... }`. `NEW_PASSWORD_REQUIRED` is handled by the login page; the other challenge names are plumbed through `respondToChallenge` and become reachable if MFA is switched on in `infrastructure/aws/cognito.tf`, needing only a UI step.
+
+**No self-serve signup.** The backend still serves `/auth/register`, `/auth/verify-email` and `/auth/resend-code`, but the frontend deliberately does not expose them — see the comment in `AuthContext.tsx`. Onboarding is admin-invite.
 
 ## Styling
 

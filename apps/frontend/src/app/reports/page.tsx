@@ -2,6 +2,7 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useQueryParams } from '@/hooks/useQueryParams';
 import { useGenerateReport } from '@/hooks/useGenerateReport';
+import NavBar from '../components/Navbar';
 import Header from '../components/Header';
 import Pagination from '../components/Pagination';
 import {
@@ -14,7 +15,7 @@ import {
   Portal,
   VStack,
 } from '@chakra-ui/react';
-import { apiFetch } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 import { FaPlus } from 'react-icons/fa';
 import { LuClipboardPenLine } from 'react-icons/lu';
 import { RiDeleteBack2Line } from "react-icons/ri";
@@ -77,6 +78,8 @@ function ReportsPageContent() {
     // Data
     const [reports, setReports] = useState<Report[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
+    const api = useApi();
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -92,12 +95,11 @@ function ReportsPageContent() {
     });
     const currentPage = parseInt(filters.page, 10) || 1;
     
-    const token = typeof window !== 'undefined' ? localStorage.getItem('branch_access_token') ?? '' : '';
 
     // Fetch reports
     async function fetchReports() {
         try {
-        const json = await apiFetch<{ data: Report[] }>('/reports', { token });
+        const json = await api.get<{ data: Report[] }>('/reports');
         setReports(json.data ?? []);
         } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load reports');
@@ -109,7 +111,7 @@ function ReportsPageContent() {
     // Fetch projects (used to resolve project_id -> name if needed elsewhere)
     async function fetchProjects() {
         try {
-        const json = await apiFetch<Project[]>('/projects', { token });
+        const json = await api.get<Project[]>('/projects');
         const list = Array.isArray(json) ? json : [];
         setProjects(list);
         if (list.length > 0) {
@@ -130,7 +132,7 @@ function ReportsPageContent() {
       generating,
       error: generateError,
       handleGenerate,
-    } = useGenerateReport({ token, onSuccess: fetchReports });
+    } = useGenerateReport({ onSuccess: fetchReports });
     
 
     useEffect(() => {
@@ -189,6 +191,7 @@ function ReportsPageContent() {
     
     return (
         <div style={{ display: 'flex', minHeight: '100vh' }}>
+          <NavBar />
           <main style={{ flex: 1, backgroundColor: 'var(--color-core-white)' }}>
             <Header />
             <div style={{ margin: '2%', display: 'flex', flexDirection: 'column', minHeight: '85vh' }}>

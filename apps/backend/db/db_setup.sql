@@ -72,6 +72,15 @@ CREATE TABLE reports (
     date_created DATE NOT NULL DEFAULT CURRENT_DATE
 );
 
+-- These seeded admins intentionally have cognito_sub = NULL. A NULL cognito_sub
+-- means "pending invitation": POST /auth/register signs the email up in Cognito
+-- and CLAIMS this row (setting cognito_sub) rather than returning 409, which
+-- preserves user_id and is_admin. The same mechanism backs admin-created users
+-- (POST /users), which also insert without a cognito_sub.
+--
+-- To sign in as one of these locally you must control the mailbox to receive the
+-- Cognito verification code. Otherwise register your own email and run
+-- `make grant-admin EMAIL=you@example.com`.
 INSERT INTO users (name, email, is_admin) VALUES
 ('Ashley Duggan', 'ashley@branch.org', TRUE),
 ('Renee Reddy', 'renee@branch.org', TRUE),
