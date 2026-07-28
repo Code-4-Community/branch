@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
-import TextInputField from '@/app/components/TextInputField';
+import Link from 'next/link';
+import SetPasswordForm from '@/app/components/SetPasswordForm';
 import { Button } from '@chakra-ui/react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -14,45 +15,50 @@ function ResetPasswordContent() {
     const email = searchParams.get('email') ?? '';
     const code = searchParams.get('code') ?? '';
 
-    const [newPassword, setNewPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [newPasswordError, setNewPasswordError] = useState('');
-    const [confirmPasswordError, setConfirmPasswordError] = useState('');
+    const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
 
-    function validate(): boolean {
-        let valid = true;
-
-        const strongPassword = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
-        if (!newPassword || !strongPassword.test(newPassword)) {
-            setNewPasswordError('Password must be at least 8 characters with uppercase, lowercase, number, and symbol');
-            valid = false;
-        } else {
-            setNewPasswordError('');
-        }
-
-        if (newPassword !== confirmPassword) {
-            setConfirmPasswordError('Password does not match');
-            valid = false;
-        } else {
-            setConfirmPasswordError('');
-        }
-
-        return valid;
-    }
-
-    async function handleResetPassword() {
-        if (!validate()) return;
+    async function handleResetPassword(newPassword: string) {
         setIsLoading(true);
+        setError(null);
         try {
             await resetPassword(email, code, newPassword);
-        } catch {
-            // expected without backend
+            // Only on success. This used to live in `finally`, so the
+            // "Password Changed" screen appeared even when the request failed
+            // and users believed a password that had not changed.
+            setSubmitted(true);
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : 'Could not reset your password. Please try again.',
+            );
         } finally {
             setIsLoading(false);
-            setSubmitted(true);
         }
+    }
+
+    // Without both query params there is nothing to submit; posting empty
+    // strings would just produce a confusing server-side error.
+    if (!email || !code) {
+        return (
+            <div className="flex flex-col items-center text-center w-90 gap-6">
+                <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold">
+                    Link expired
+                </h1>
+                <h5 className="![font-family:var(--font-body)] !text-[16px] !text-core-black">
+                    This password reset link is invalid or has expired. Request a new one to
+                    continue.
+                </h5>
+                <Link
+                    href="/forgot-password"
+                    className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]"
+                >
+                    Request a new reset link
+                </Link>
+            </div>
+        );
     }
 
     if (submitted) {
@@ -75,34 +81,11 @@ function ResetPasswordContent() {
     }
 
     return (
-        <div className="flex flex-col items-center text-center w-80">
-            <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">Reset Password</h1>
-            <div className="flex flex-col gap-4 w-full !mb-10">
-                <TextInputField
-                    label="New Password *"
-                    placeholder="Enter new password"
-                    errorMessage={newPasswordError}
-                    isError={!!newPasswordError}
-                    value={newPassword}
-                    onChange={(value) => setNewPassword(value)}
-                />
-                <TextInputField
-                    label="Confirm Password *"
-                    placeholder="Retype password"
-                    errorMessage={confirmPasswordError}
-                    isError={!!confirmPasswordError}
-                    value={confirmPassword}
-                    onChange={(value) => setConfirmPassword(value)}
-                />
-            </div>
-            <Button
-                className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10"
-                onClick={handleResetPassword}
-                loading={isLoading}
-            >
-                Reset Password
-            </Button>
-        </div>
+        <SetPasswordForm
+            onSubmit={handleResetPassword}
+            error={error}
+            isLoading={isLoading}
+        />
     );
 }
 

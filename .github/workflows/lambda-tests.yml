@@ -68,9 +68,28 @@ jobs:
           COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
           AWS_REGION: us-east-2
   
+  # The discover job only globs apps/backend/lambdas/*/, so the shared auth
+  # package -- the single most security-critical module in the backend -- would
+  # never have its tests run without this job.
+  shared-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci --prefix shared/lambda-auth
+      - name: Run tests
+        run: npm test --prefix shared/lambda-auth
+
+  # NOTE: do not rename this job. infrastructure/github/main.tf lists
+  # "lambda-tests" as a required status check on main; renaming it here would
+  # silently disable the gate rather than fail loudly.
   lambda-tests:
     name: lambda-tests
-    needs: test
+    needs: [test, shared-auth]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -78,6 +97,10 @@ jobs:
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "Lambda tests failed or were cancelled"
+            exit 1
+          fi
+          if [ "${{ needs.shared-auth.result }}" != "success" ]; then
+            echo "shared/lambda-auth tests failed or were cancelled"
             exit 1
           fi
           echo "All lambda tests passed!"

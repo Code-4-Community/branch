@@ -81,7 +81,7 @@ export default function DonationsPage() {
 
     return (
         <div style={{ display: 'flex', minHeight: '100vh' }}>
-            <NavBar role="admin" />
+            <NavBar />
             <main style={{ flex: 1, backgroundColor: '#f9fafb' }}>
                 <div style={{ margin: '2%', display: 'flex', flexDirection: 'column', minHeight: '90vh' }}>
                     <h1 style={{ fontWeight: 600, fontFamily: 'var(--font-heading)', fontSize: 'var(--font-size-heading-1)' }}>Donations</h1>

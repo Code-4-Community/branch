@@ -7,7 +7,7 @@ import NavBar from '../../components/Navbar';
 import ExpensesTable from '../../components/ExpensesTable';
 import StaffCard from '../../components/StaffCard';
 import type { Expenditure } from '../../components/ExpensesTable';
-import { apiFetch } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 
 type Project = {
   project_id: number;
@@ -35,14 +35,11 @@ export default function ProjectPage() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
+  const api = useApi();
+
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const token =
-    typeof window !== 'undefined'
-      ? (localStorage.getItem('branch_access_token') ?? '')
-      : '';
 
   useEffect(() => {
     if (!id) return;
@@ -52,12 +49,9 @@ export default function ProjectPage() {
       setError(null);
       try {
         const [projectData, expenditureData, memberData] = await Promise.all([
-          apiFetch<Project>(`/projects/${id}`, { token }),
-          apiFetch<Expenditure[]>(`/projects/${id}/expenditures`, { token }),
-          apiFetch<{ ok: boolean; body: { users: Member[] } }>(
-            `/projects/${id}/members`,
-            { token },
-          ),
+          api.get<Project>(`/projects/${id}`),
+          api.get<Expenditure[]>(`/projects/${id}/expenditures`),
+          api.get<{ ok: boolean; body: { users: Member[] } }>(`/projects/${id}/members`),
         ]);
         setProject(projectData);
         setExpenditures(Array.isArray(expenditureData) ? expenditureData : []);
@@ -70,7 +64,8 @@ export default function ProjectPage() {
     }
 
     fetchAll();
-  }, [id, token]);
+    // `api` has a stable identity (useMemo in useApi), so this does not loop.
+  }, [id, api]);
 
   // financial info
   const totalBudget = project?.total_budget ? parseFloat(project.total_budget) : 0;
@@ -81,7 +76,7 @@ export default function ProjectPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen">
-        <NavBar role="admin" />
+        <NavBar />
         <div className="flex-1 flex items-center justify-center">
           <p>Loading project...</p>
         </div>
@@ -93,7 +88,7 @@ export default function ProjectPage() {
   if (error || !project) {
     return (
       <div className="flex min-h-screen">
-        <NavBar role="admin" />
+        <NavBar />
         <div className="flex-1 flex items-center justify-center">
           <p style={{ color: 'var(--color-error-red)' }}>
             {error ?? 'Project not found.'}
@@ -106,7 +101,7 @@ export default function ProjectPage() {
   // main page
   return (
     <div className="flex min-h-screen">
-      <NavBar role="admin" />
+      <NavBar />
 
       <div className="!flex-1 bg-core-white !px-6 !py-6 lg:!px-10 lg:!py-8">
 

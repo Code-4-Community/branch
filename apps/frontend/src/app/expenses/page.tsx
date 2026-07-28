@@ -11,7 +11,7 @@ import {
   Button,
 } from '@chakra-ui/react';
 import DropdownSelector from '../components/DropdownSelector';
-import { apiFetch } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 import { CiFilter } from 'react-icons/ci';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
@@ -57,6 +57,8 @@ export default function ExpensePage() {
 }
 
 function ExpensePageContent() {
+  const api = useApi();
+
   // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -89,12 +91,11 @@ function ExpensePageContent() {
   // Modal
   const [showNewExpense, setShowNewExpense] = useState(false);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('branch_access_token') ?? '' : '';
 
   // Fetch expenditures
   async function fetchExpenditures() {
     try {
-      const json = await apiFetch<{ data: Expenditure[] }>('/expenditures', { token });
+      const json = await api.get<{ data: Expenditure[] }>('/expenditures');
       setExpenditures(json.data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load expenditures');
@@ -106,7 +107,7 @@ function ExpensePageContent() {
   // Fetch projects
   async function fetchProjects() {
     try {
-      const json = await apiFetch<Project[]>('/projects', { token });
+      const json = await api.get<Project[]>('/projects');
       setProjects(Array.isArray(json) ? json : []);
     } catch {
       // Projects fetch failure is non-critical
@@ -173,7 +174,7 @@ function ExpensePageContent() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <NavBar role="admin" />
+      <NavBar />
       <main style={{ flex: 1, backgroundColor: '#f9fafb' }}>
         <Header />
         <div style={{ margin: '2%', display: 'flex', flexDirection: 'column', minHeight: '85vh' }}>
@@ -355,7 +356,6 @@ function ExpensePageContent() {
           open={showNewExpense}
           onClose={() => setShowNewExpense(false)}
           onSuccess={handleExpenseAdded}
-          token={token}
           categories={uniqueCategories}
           projects={projects}
         />

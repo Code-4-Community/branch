@@ -75,6 +75,17 @@ clean:
 db-shell:
 	docker compose exec postgres psql -U branch_dev -d branch_db
 
+# Promote a locally-registered user to admin. LOCAL DEV ONLY.
+# There is deliberately no API for this: branch.users.is_admin can only be set by
+# an existing admin (PATCH /users/{userId}), so the first admin in any fresh
+# environment has to be bootstrapped in SQL. The same chicken-and-egg exists in
+# production -- see apps/backend/AGENTS.md.
+# usage: make grant-admin EMAIL=you@example.com
+grant-admin:
+	@test -n "$(EMAIL)" || (echo "usage: make grant-admin EMAIL=you@example.com" && exit 1)
+	docker compose exec -T postgres psql -U branch_dev -d branch_db \
+	  -c "UPDATE branch.users SET is_admin = TRUE WHERE email = lower('$(EMAIL)');"
+
 # Reset database (WARNING: destroys all data)
 db-reset:
 	@echo "WARNING: This will destroy all data in the database!"
@@ -97,5 +108,6 @@ help:
 	@echo "  make health      - Check health of all services"
 	@echo "  make clean       - Clean up Docker resources"
 	@echo "  make db-shell    - Open PostgreSQL shell"
+	@echo "  make grant-admin EMAIL=<email> - Promote a local user to admin"
 	@echo "  make db-reset    - Reset database (WARNING: destroys data)"
 	@echo "  make help        - Show this help message"

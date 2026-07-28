@@ -6,14 +6,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { PT_Sans } from "next/font/google";
 import { useAuth } from "@/context/AuthContext";
 import { assetPath } from "@/lib/asset";
+import { normalizePath } from "@/lib/routes";
 
 const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400", "700"] });
 
 // ─── Types & Definitions ──────────────────────────────────────────────────────
 
 export type UserRole = "admin" | "standard" | "limited";
-interface NavItem { label: string; href: string; roles?: UserRole[]; }
+interface NavItem { label: string; href?: string; action?: "logout"; roles?: UserRole[]; }
 
+// Every href here must resolve to a real route. "Profile" was removed because
+// no /profile page exists, and "Log Out" is an action rather than a route —
+// keying the special case on `action` means a future /logout page couldn't
+// silently turn the button back into a dead link.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Projects", href: "/projects" },
@@ -22,8 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Expenses", href: "/expenses", roles: ["admin"] },
   { label: "Reports", href: "/reports", roles: ["admin"] },
   { label: "Accounts", href: "/accounts", roles: ["admin"] },
-  { label: "Profile", href: "/profile" },
-  { label: "Log Out", href: "/logout" },
+  { label: "Log Out", action: "logout" },
 ];
 
 const COLORS = {
@@ -33,20 +37,36 @@ const COLORS = {
   hoverBg: "rgba(255, 255, 255, 0.2)",
 };
 
-export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
-  role = "admin",
+/**
+ * `roleOverride` exists for tests only — it is named that way so nobody mistakes
+ * it for the source of truth again. The role comes from the session, which comes
+ * from GET /auth/me; it used to default to "admin", which made the role-based
+ * filtering below purely decorative. Hiding a link was never a security control
+ * anyway — AuthGate enforces admin routes.
+ */
+export const NavBar: React.FC<{ roleOverride?: UserRole; activePath?: string }> = ({
+  roleOverride,
   activePath
 }) => {
-  const pathname = usePathname?.() ?? "/dashboard";
-  const currentPath = activePath ?? pathname;
+  const pathname = usePathname?.() ?? "/";
+  const currentPath = normalizePath(activePath ?? pathname);
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
+  const role: UserRole = roleOverride ?? (isAdmin ? "admin" : "standard");
   const visibleItems = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(role));
-  const isActive = (href: string) => currentPath === href || (href !== "/" && currentPath.startsWith(href));
+
+  // Compare normalized paths: trailingSlash: true means production sees
+  // "/expenses/" where dev and tests see "/expenses". The boundary check stops
+  // "/projects" from highlighting for "/projects-archive".
+  const isActive = (href: string) => {
+    const target = normalizePath(href);
+    if (currentPath === target) return true;
+    return target !== "/" && currentPath.startsWith(`${target}/`);
+  };
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -54,7 +74,8 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
     try {
       await logout();
     } finally {
-      router.push("/login");
+      // replace, not push: Back should not return to an authenticated page.
+      router.replace("/login");
     }
   };
 
@@ -113,9 +134,9 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
       }}>
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {visibleItems.map((item, index) => {
-            const active = isActive(item.href);
+            const isLogout = item.action === "logout";
+            const active = item.href ? isActive(item.href) : false;
             const isHovered = hoveredIndex === index;
-            const isLogout = item.href === "/logout";
 
             const sharedStyle: React.CSSProperties = {
               display: "block",
@@ -137,11 +158,11 @@ export const NavBar: React.FC<{ role?: UserRole; activePath?: string }> = ({
 
             return (
               <li
-                key={item.href}
+                key={item.label}
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
               >
-                {isLogout ? (
+                {isLogout || !item.href ? (
                   <button
                     type="button"
                     onClick={handleLogout}

@@ -64,4 +64,18 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 
 ## Env vars (lambdas)
 
-`DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` (or `COGNITO_APP_CLIENT_ID`), `AWS_REGION` (default `us-east-2`).
+`DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` (or `COGNITO_APP_CLIENT_ID`), `REPORTS_BUCKET_NAME` (reports only), `AWS_REGION` (default `us-east-2`, Lambda-reserved — never set it in Terraform).
+
+**Anything a lambda reads from `process.env` must be declared in the `environment` block of `infrastructure/aws/lambda.tf`.** That block is authoritative and is deliberately not in `lifecycle.ignore_changes`, so a value set by hand in the console is deleted on the next apply. Locally the Cognito values must be the real shared dev-pool IDs (`apps/backend/.env`) — auth talks to the real pool for JWKS and `InitiateAuth` — but no AWS credentials are needed, because every Cognito API on the sign-in path is unsigned.
+
+## Auth
+
+`shared/lambda-auth` verifies the Bearer **access** token with `aws-jwt-verify`, then looks the caller up in `branch.users` by `cognito_sub`. A valid Cognito token whose sub has no DB row is treated as unauthenticated.
+
+**`branch.users.is_admin` is the single source of truth for admin.** There is no promotion from a Cognito group, and no pre-token-generation trigger, so `is_admin` is not a JWT claim — `GET /auth/me` is the only way a client can learn it.
+
+**A `branch.users` row with `cognito_sub IS NULL` is a pending invitation**, created by the `db_setup.sql` seeds or by admin `POST /users`. `POST /auth/register` claims such a row (setting `cognito_sub`, never touching `is_admin`) instead of returning 409. Registration only 409s when the row is already claimed.
+
+**Bootstrapping the first admin** is a manual SQL statement in every environment, because `is_admin` can only be set by an existing admin: `make grant-admin EMAIL=…` locally, or the equivalent `UPDATE` against RDS in production.
+
+The auth lambda uses `USER_PASSWORD_AUTH` via the AWS SDK, not the SRP library. `POST /auth/login` returns either a token set or `{ ChallengeName, Session }`; `POST /auth/respond-challenge` completes it. Adding a challenge type is a row in `CHALLENGE_SPECS` — enabling MFA is a Terraform change, not a code change.

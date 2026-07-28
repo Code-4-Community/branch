@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { apiFetch } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 
 type FileType = 'pdf' | 'docx';
 
 interface UseGenerateReportParams {
-  token: string;
   onSuccess: () => Promise<void> | void;
 }
 
-export function useGenerateReport({ token, onSuccess }: UseGenerateReportParams) {
+export function useGenerateReport({ onSuccess }: UseGenerateReportParams) {
+  const api = useApi();
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generateProjectId, setGenerateProjectId] = useState<string>('');
   const [generateFileType, setGenerateFileType] = useState<FileType>('pdf');
@@ -23,18 +23,16 @@ export function useGenerateReport({ token, onSuccess }: UseGenerateReportParams)
     setGenerating(true);
     setError(null);
     try {
-      await apiFetch('/reports/generate', {
-        token,
-        method: 'POST',
-        body: JSON.stringify({
-          project_id: parseInt(generateProjectId, 10),
-          file_type: generateFileType,
-        }),
+      await api.post('/reports/generate', {
+        project_id: parseInt(generateProjectId, 10),
+        file_type: generateFileType,
       });
       await onSuccess();
       setShowGenerateModal(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate report');
+      setError(
+        err instanceof Error ? err.message : 'Failed to generate report',
+      );
     } finally {
       setGenerating(false);
     }
