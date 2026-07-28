@@ -21,8 +21,13 @@ paths:
 
   /register:
     post:
-      summary: Register a new user
-      description: Creates a new user account in Cognito and the database
+      summary: Claim an invitation and activate an account
+      description: >
+        INVITATION-ONLY. This endpoint is public and unauthenticated, so it
+        cannot mint new accounts: it only activates a branch.users row that an
+        admin already created via the ADMIN-gated POST /users (such a row has a
+        NULL cognito_sub). An email with no pending invitation gets 403.
+        is_admin is never written here.
       requestBody:
         required: true
         content:
@@ -87,8 +92,24 @@ paths:
                   message:
                     type: string
                     example: Invalid email format
+        '403':
+          description: >
+            No pending invitation for this email. Deliberately indistinguishable
+            from the response for an address that is not in the system at all,
+            so this endpoint cannot be used to enumerate staff emails.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Registration is by invitation only. Ask an administrator to create your account.
+                  code:
+                    type: string
+                    example: INVITATION_REQUIRED
         '409':
-          description: User already exists
+          description: The invitation has already been claimed
           content:
             application/json:
               schema:
