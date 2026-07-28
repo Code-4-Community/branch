@@ -281,7 +281,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(403, { message: 'You do not have access to this report' });
       }
 
-      return json(200, report);
+      return json(200, { ok: true, route: 'GET /reports/{id}', pathParams: { id }, body: report });
     }
     
     // DELETE /reports/{id}
@@ -306,7 +306,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Report not found' });
       }
 
-      return json(200, { ok: true });
+      return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
     }
     // <<< ROUTES-END   
 
