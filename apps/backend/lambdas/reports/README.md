@@ -13,6 +13,8 @@ TODO: Add a description of the reports lambda.
 | GET | /reports |  |
 | GET | /reports/upload-url |  |
 | POST | /reports |  |
+| GET | /reports/{id} |  |
+| DELETE | /reports/{id} |  |
 
 ## Setup
 
