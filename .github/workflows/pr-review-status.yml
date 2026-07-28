@@ -11,10 +11,12 @@ permissions:
 jobs:
   update-status:
     runs-on: ubuntu-latest
-    # Only act on real reviews, not PENDING (draft reviews)
+    # Only act on real reviews, not PENDING (draft reviews), and never on a
+    # PR that opted out with `no-review`.
     if: >-
-      github.event.review.state == 'approved' ||
-      github.event.review.state == 'changes_requested'
+      (github.event.review.state == 'approved' ||
+       github.event.review.state == 'changes_requested') &&
+      !contains(github.event.pull_request.labels.*.name, 'no-review')
     steps:
       - name: Checkout bot-state branch
         uses: actions/checkout@v4
