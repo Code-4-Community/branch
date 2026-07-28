@@ -78,6 +78,9 @@ CREATE TABLE reports (
 -- preserves user_id and is_admin. The same mechanism backs admin-created users
 -- (POST /users), which also insert without a cognito_sub.
 --
+-- Registration is invitation-only: /auth/register cannot create a row, only
+-- claim one, so an email with no row here (or created by an admin) gets 403.
+--
 -- To sign in as one of these locally you must control the mailbox to receive the
 -- Cognito verification code. Otherwise register your own email and run
 -- `make grant-admin EMAIL=you@example.com`.
