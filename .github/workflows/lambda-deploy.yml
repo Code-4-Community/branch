@@ -254,12 +254,17 @@ jobs:
           { echo "Pending before this run:"; cat status.log; echo; \
             npm run migrate --prefix apps/backend/db; } 2>&1 | tee migrate.log
 
-      - name: Prune old pre-migration snapshots (keep 10)
+      # Manual snapshots never expire on their own and survive instance deletion,
+      # so without this every deploy would leave one behind forever. Five is
+      # plenty: anything older than the last few migrations is better served by
+      # point-in-time recovery (backup_retention_period = 7 in
+      # infrastructure/aws/main.tf).
+      - name: Prune old pre-migration snapshots (keep 5)
         if: always()
         continue-on-error: true
         run: |
           aws rds describe-db-snapshots --snapshot-type manual \
-            --query "reverse(sort_by(DBSnapshots[?starts_with(DBSnapshotIdentifier,'branch-premigrate-')],&SnapshotCreateTime))[10:].DBSnapshotIdentifier" \
+            --query "reverse(sort_by(DBSnapshots[?starts_with(DBSnapshotIdentifier,'branch-premigrate-')],&SnapshotCreateTime))[5:].DBSnapshotIdentifier" \
             --output text | tr '\t' '\n' | while read -r s; do
               [ -n "$s" ] && aws rds delete-db-snapshot --db-snapshot-identifier "$s"
             done

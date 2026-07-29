@@ -95,8 +95,16 @@ migrations` and can only be unblocked by hand-editing `kysely_migration` in RDS.
 | Preview environments | Migrations are **never** applied there — previews share the production database. A PR that adds a migration cannot be fully previewed; endpoints using the new columns will fail until it merges. |
 
 If a migration fails in CI, production is left on the old schema **and** the old
-code. Fix it forward with a new commit. A `branch-premigrate-*` snapshot is taken
-before every run, and the instance keeps 7 days of point-in-time recovery.
+code. Fix it forward with a new commit.
+
+Two rollback levers exist, both free at this database's size and both a ~20-minute
+manual restore-into-a-new-instance procedure, not a button:
+
+- a `branch-premigrate-<utc>-<sha>` snapshot taken before every migration run, tagged
+  with the commit. The five most recent are kept — manual snapshots never expire on
+  their own, so the job prunes older ones.
+- 7 days of point-in-time recovery (`backup_retention_period` in
+  `infrastructure/aws/main.tf`), which can restore to any second in the window.
 
 ## One-time: adopting an existing database
 
