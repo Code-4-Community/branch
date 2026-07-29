@@ -1,7 +1,6 @@
-import { describe, test, expect, beforeEach, afterAll, jest } from '@jest/globals';
-import fs from 'fs';
-import path from 'path';
+import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
+import { ensureSchema, resetData } from '../../../db/testkit';
 
 jest.mock('../auth');
 jest.mock('@aws-sdk/client-s3', () => ({
@@ -28,8 +27,17 @@ const pool = new Pool({
   ssl: false,
 });
 
-const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
-const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+// Build schema "branch" from db/migrations if it isn't already current. Cheap
+// (one SELECT) unless a migration was added since the schema was last built.
+beforeAll(async () => {
+  const client = await pool.connect();
+  try {
+    await ensureSchema(client);
+  } finally {
+    client.release();
+  }
+});
+
 
 function getEvent(queryStringParameters?: Record<string, string>) {
   return {
@@ -57,7 +65,7 @@ describe('Reports e2e tests', () => {
 
     const client = await pool.connect();
     try {
-      await client.query(seedSql);
+      await resetData(client);
     } finally {
       client.release();
     }
@@ -331,6 +339,111 @@ describe('Reports e2e tests', () => {
       });
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.body).message).toBe('Invalid JSON in request body');
+    });
+  });
+
+  describe('GET /reports/{id}', () => {
+    function idEvent(method: 'GET' | 'DELETE', id: string | number) {
+      return {
+        rawPath: `/reports/${id}`,
+        requestContext: { http: { method } },
+        headers: { Authorization: 'Bearer fake-token' },
+      };
+    }
+
+    test('200: returns report by id', async () => {
+      // seed report 1 belongs to project 1
+      const res = await handler(idEvent('GET', 1));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.body.report_id).toBe(1);
+      expect(body.body.project_id).toBe(1);
+    });
+
+    test('404: non-numeric id falls through to catch-all', async () => {
+      const res = await handler(idEvent('GET', 'abc'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('404: unknown id returns 404', async () => {
+      const res = await handler(idEvent('GET', 99999));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Report not found');
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(idEvent('GET', 1));
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('DELETE /reports/{id}', () => {
+    function idEvent(method: 'GET' | 'DELETE', id: string | number) {
+      return {
+        rawPath: `/reports/${id}`,
+        requestContext: { http: { method } },
+        headers: { Authorization: 'Bearer fake-token' },
+      };
+    }
+
+    test('200: admin can delete a report, removed from db', async () => {
+      const res = await handler(idEvent('DELETE', 4));
+      expect(res.statusCode).toBe(200);
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query('SELECT * FROM branch.reports WHERE report_id = 4');
+        expect(result.rows.length).toBe(0);
+      } finally {
+        client.release();
+      }
+    });
+
+    test('404: non-numeric id falls through to catch-all', async () => {
+      const res = await handler(idEvent('DELETE', 'abc'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('404: unknown id returns 404', async () => {
+      const res = await handler(idEvent('DELETE', 99999));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(idEvent('DELETE', 1));
+      expect(res.statusCode).toBe(401);
+    });
+
+    test('404: deleting the same report twice returns 404 the second time', async () => {
+      const first = await handler(idEvent('DELETE', 5));
+      expect(first.statusCode).toBe(200);
+
+      const second = await handler(idEvent('DELETE', 5));
+      expect(second.statusCode).toBe(404);
+    });
+
+    test('deleting one report does not affect other rows', async () => {
+      const client = await pool.connect();
+      let totalBefore: number;
+      try {
+        const result = await client.query('SELECT COUNT(*)::int AS count FROM branch.reports');
+        totalBefore = result.rows[0].count;
+      } finally {
+        client.release();
+      }
+
+      const res = await handler(idEvent('DELETE', 3));
+      expect(res.statusCode).toBe(200);
+
+      const client2 = await pool.connect();
+      try {
+        const result = await client2.query('SELECT COUNT(*)::int AS count FROM branch.reports');
+        expect(result.rows[0].count).toBe(totalBefore - 1);
+      } finally {
+        client2.release();
+      }
     });
   });
 });

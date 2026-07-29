@@ -1,6 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { Pool } from 'pg';
+import { ensureSchema, resetData } from '../../../db/testkit';
 
 const pool = new Pool({
   host: 'localhost',
@@ -11,15 +10,23 @@ const pool = new Pool({
   ssl: false,
 });
 
-const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
-const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+// Build schema "branch" from db/migrations if it isn't already current. Cheap
+// (one SELECT) unless a migration was added since the schema was last built.
+beforeAll(async () => {
+  const client = await pool.connect();
+  try {
+    await ensureSchema(client);
+  } finally {
+    client.release();
+  }
+});
 
 beforeEach(async () => {
   const testName = expect.getState().currentTestName;
   if (testName && (testName.includes('duplicate') || testName.includes('normalization') || testName.includes('uninvited') || testName.includes('seeded admins'))) {
     const client = await pool.connect();
     try {
-      await client.query(seedSql);
+      await resetData(client);
     } finally {
       client.release();
     }

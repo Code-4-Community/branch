@@ -8,7 +8,10 @@ variable "pr_number" {
 # shared RDS endpoint. Passing it in keeps prod as the single source of truth
 # for DB creds / Cognito ids / reports bucket rather than duplicating them here.
 # Preview envs deliberately reuse the shared RDS + Cognito pool (data risk is
-# accepted); migrations are NEVER run from this module.
+# accepted); migrations are NEVER run from this module -- the generated DB types
+# hardcode the `branch.` schema prefix, so a per-PR schema would require per-PR
+# type regeneration and rebuilding every lambda. A PR that adds a migration
+# therefore cannot be fully previewed.
 variable "lambda_env" {
   description = "Environment variables applied to every preview lambda (superset across services)."
   type        = map(string)

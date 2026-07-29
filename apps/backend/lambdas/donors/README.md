@@ -12,6 +12,8 @@ Lambda for managing donors.
 | GET | /donors |  |
 | POST | /donations |  |
 | POST | /donors |  |
+| DELETE | /donors/{id} |  |
+| DELETE | /donations/{id} |  |
 
 ## Setup
 

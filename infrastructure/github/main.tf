@@ -57,6 +57,26 @@ resource "github_repository_environment" "preview" {
   environment = "preview"
 }
 
+# Deployment environment for the `migrate` job in
+# .github/workflows/lambda-deploy.yml, which applies apps/backend/db/migrations to
+# the production database.
+#
+# It exists ONLY to give that job its own OIDC subject
+# (repo:...:environment:production-db) so it can assume the narrowly-scoped
+# branch-ci-migrate role instead of the AdministratorAccess branch-ci-apply role.
+#
+# Intentionally has NO required reviewers, for the same reason as `preview` but a
+# sharper one: `deploy` depends on `migrate`, so a pending approval would leave
+# main merged with its schema applied and its lambda code undeployed — silently,
+# until someone noticed. The PR already passed 2 approvals and code-owner review,
+# and the mechanical gates (migrations-fresh, migrations-guard) plus the
+# pre-migration snapshot are what actually catch bad migrations. Add
+# `reviewers { users = [...] }` HERE, not to `production`, if that changes.
+resource "github_repository_environment" "production_db" {
+  repository  = github_repository.branch.name
+  environment = "production-db"
+}
+
 resource "github_repository_collaborator" "collaborators" {
   for_each   = { for c in var.repository_collaborators : c.username => c }
   repository = github_repository.branch.name

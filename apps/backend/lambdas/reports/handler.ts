@@ -21,6 +21,17 @@ const MIME_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
+const REPORT_ID_ROUTE = /^\/(\d+)$/;
+
+async function requireAuth(
+  event: any
+): Promise<{ user: NonNullable<Awaited<ReturnType<typeof authenticateRequest>>['user']> } | { errorResponse: APIGatewayProxyResult }> {
+  const authContext = await authenticateRequest(event);
+  if (!authContext.isAuthenticated || !authContext.user) {
+    return { errorResponse: json(401, { message: 'Authentication required' }) };
+  }
+  return { user: authContext.user };
+}
 
 type FileType = typeof ALLOWED_EXTENSIONS[number];
 
@@ -47,12 +58,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // POST /reports/generate
     if ((normalizedPath === '/reports/generate' || normalizedPath === '/generate') && method === 'POST') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
       const projectId = body.project_id;
@@ -107,10 +115,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // GET /reports
     if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated) {
-        return json(401, { message: 'Authentication required' });
-      }
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
 
       const queryParams = event.queryStringParameters || {};
       const pageStr = queryParams.page as string | undefined;
@@ -168,12 +174,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     
     // GET /reports/upload-url
     if ((normalizedPath === '/reports/upload-url' || normalizedPath === '/upload-url') && method === 'GET') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       const queryParams = event.queryStringParameters || {};
       const { fileName, projectId: projectIdStr } = queryParams;
@@ -215,12 +218,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // POST /reports
     if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'POST') {
-      const authContext = await authenticateRequest(event);
-      if (!authContext.isAuthenticated || !authContext.user) {
-        return json(401, { message: 'Authentication required' });
-      }
-
-      const { user } = authContext;
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       let body: Record<string, unknown>;
       try {
@@ -263,7 +263,52 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       return json(201, report);
     }
-    // <<< ROUTES-END 
+    
+    // GET /reports/{id}
+    const getIdMatch = method === 'GET' ? normalizedPath.match(REPORT_ID_ROUTE) : null;
+    if (getIdMatch) {      
+      const id = getIdMatch[1];
+
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
+
+      const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+      if (!report) return json(404, { message: 'Report not found' });
+
+      const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to this report' });
+      }
+
+      return json(200, { ok: true, route: 'GET /reports/{id}', pathParams: { id }, body: report });
+    }
+    
+    // DELETE /reports/{id}
+    const deleteIdMatch = method === 'DELETE' ? normalizedPath.match(REPORT_ID_ROUTE) : null;
+    if (deleteIdMatch) {
+      const id = deleteIdMatch[1];
+
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
+
+      const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+      if (!report) return json(404, { message: 'Report not found' });
+
+      const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to delete this report' });
+      }
+
+      const deleted = await db.deleteFrom('branch.reports').where('report_id', '=', Number(id)).execute();
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Report not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
+    }
+    // <<< ROUTES-END   
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {

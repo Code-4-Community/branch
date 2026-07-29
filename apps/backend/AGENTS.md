@@ -8,7 +8,7 @@ See `lambdas/AGENTS.md` for the per-lambda code conventions and the `lambda-cli`
 
 | Service | Port | Domain |
 |---------|------|--------|
-| postgres | 5432 | DB (schema auto-init from `db/db_setup.sql`) |
+| postgres | 5432 | DB (schema applied by the one-shot `migrator` service from `db/migrations`) |
 | users | 3001 | user management |
 | projects | 3002 | projects, memberships, dashboard |
 | donors | 3003 | donors + donations |
@@ -42,10 +42,10 @@ http://localhost:3000/<service>/health
 
 ## Database
 
-- Schema in `db/db_setup.sql` (schema `branch`, with seed data). Tables: `users`, `projects`, `project_memberships` (roles: PI/Accountant/Staff/Admin), `donors`, `project_donations`, `expenditures` (status: approved/pending/denied/needs_more_info), `reports` (report_type: technical/narrative).
+- Schema built from `db/migrations/*.sql` (Postgres schema `branch`); dev/test rows in `db/seed.sql`. Tables: `users`, `projects`, `project_memberships` (roles: PI/Accountant/Staff/Admin), `donors`, `project_donations`, `expenditures` (status: approved/pending/denied/needs_more_info), `reports` (report_type: technical/narrative).
 - Kysely connects via `db.ts` in each lambda (`Kysely<DB>` + `pg.Pool`, env `DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME`). Query with the `branch.` schema prefix: `db.selectFrom('branch.users')`.
-- **Changing the schema:** edit `db_setup.sql`. The `regenerate-db-types` workflow regenerates `shared/types/db-types.d.ts` (via `kysely-codegen`) on push. Never hand-edit `db-types.d.ts`.
-- Root `package.json` has TypeORM migration scripts (`migration:generate` etc.) — legacy NestJS scaffolding, **not** used by the lambdas. Lambdas use Kysely + the raw SQL setup file.
+- **Changing the schema:** `make new-migration NAME=add_thing` → write SQL → `make migrate` (applies it and regenerates `shared/types/db-types.d.ts`). `make show-migrations` shows applied vs pending; the ledger is `branch.kysely_migration`. Forward-only — never edit a merged migration, and never hand-edit `db-types.d.ts`. Migrations apply to prod automatically on merge **before** the lambda deploy, so a single PR may only contain additive changes; see `db/README.md` for expand/contract.
+- The migration runner is kysely's `Migrator` over plain `.sql` files (`db/src/`). Root `package.json` still carries NestJS/TypeORM **dependencies** from the original scaffold, but nothing uses them; its dead `migration:*` scripts have been removed.
 
 ## Shared packages
 
@@ -74,7 +74,7 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 
 **`branch.users.is_admin` is the single source of truth for admin.** There is no promotion from a Cognito group, and no pre-token-generation trigger, so `is_admin` is not a JWT claim — `GET /auth/me` is the only way a client can learn it.
 
-**Account provisioning is invitation-only.** A `branch.users` row with `cognito_sub IS NULL` is a pending invitation, created by the `db_setup.sql` seeds or by admin `POST /users` (ADMIN-gated). `POST /auth/register` is public, so it deliberately **cannot create a row** — it only claims an existing invitation, setting `cognito_sub` and never touching `is_admin`. An email with no pending invitation gets 403 `INVITATION_REQUIRED`; an already-claimed one gets 409.
+**Account provisioning is invitation-only.** A `branch.users` row with `cognito_sub IS NULL` is a pending invitation, created by `db/seed.sql` or by admin `POST /users` (ADMIN-gated). `POST /auth/register` is public, so it deliberately **cannot create a row** — it only claims an existing invitation, setting `cognito_sub` and never touching `is_admin`. An email with no pending invitation gets 403 `INVITATION_REQUIRED`; an already-claimed one gets 409.
 
 The 403 is intentionally identical whether or not the address exists, so registration cannot be used to enumerate staff emails.
 

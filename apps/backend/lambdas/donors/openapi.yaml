@@ -1,11 +1,11 @@
-openapi: 3.0.3
+﻿openapi: 3.0.3
 info:
   title: donors (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000/
+  - url: http://localhost:3000/donors
 paths:
-  /donors/health:
+  /health:
     get:
       summary: Health check
       responses:
@@ -18,15 +18,12 @@ paths:
                 properties:
                   ok:
                     type: boolean
-
   /donors:
     get:
       summary: GET /donors
       responses:
         '200':
           description: OK
-
-  /donors:
     post:
       summary: POST /donors
       requestBody:
@@ -45,7 +42,6 @@ paths:
       responses:
         '201':
           description: Success
-
   /donations:
     post:
       summary: POST /donations
@@ -65,3 +61,27 @@ paths:
       responses:
         '201':
           description: Success
+  /donors/{id}:
+    delete:
+      summary: DELETE /donors/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /donations/{id}:
+    delete:
+      summary: DELETE /donations/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK

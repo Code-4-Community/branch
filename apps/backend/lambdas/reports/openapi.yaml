@@ -25,7 +25,7 @@ paths:
 
   /reports:
     get:
-      summary: GET /reports — paginated list
+      summary: GET /reports � paginated list
       parameters:
         - in: query
           name: page
@@ -86,7 +86,7 @@ paths:
         '401':
           description: Unauthorized
     post:
-      summary: POST /reports — save a manually uploaded report
+      summary: POST /reports � save a manually uploaded report
       description: >
         Creates a report record using the S3 object URL obtained from
         GET /reports/upload-url after the client has uploaded the file directly
@@ -213,6 +213,30 @@ paths:
           description: Project not found
         '500':
           description: Internal server error
+
+  /reports/{id}:
+    get:
+      summary: GET /reports/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: DELETE /reports/{id}
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
 
 components:
   securitySchemes:
