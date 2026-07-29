@@ -213,11 +213,19 @@ jobs:
           echo "DB_SSL=true" >> "$GITHUB_ENV"
           echo "DB_SSL_CA=$RUNNER_TEMP/rds-ca.pem" >> "$GITHUB_ENV"
 
+      # This job runs whenever a push touched db/migrations/** or on any manual
+      # dispatch -- neither of which means anything is actually pending. Count what
+      # is, so the snapshot and the apply can be skipped when there is nothing to do.
       - name: Pending migrations (read-only preflight)
         id: status
         run: |
           set -o pipefail
           npm run migrate:status --prefix apps/backend/db 2>&1 | tee status.log
+          pending=$(grep -oE '[0-9]+ pending' status.log | tail -1 | cut -d' ' -f1)
+          # Unknown (unexpected output) falls through as "1" so we take the safe
+          # path and snapshot before touching anything.
+          echo "pending=${pending:-1}" >> "$GITHUB_OUTPUT"
+          echo "$pending migration(s) pending"
 
       # 0000_baseline_schema is idempotent, but "idempotent" is one typo away from
       # DROP SCHEMA. It is adopted once by hand against production (see
@@ -230,8 +238,11 @@ jobs:
             exit 1
           fi
 
+      # Only when something will actually change. Snapshotting a no-op wasted 1-2
+      # minutes per deploy and churned the 5-snapshot retention with junk.
       - name: Snapshot production before migrating
         id: snapshot
+        if: steps.status.outputs.pending != '0'
         run: |
           set -euo pipefail
           INSTANCE=$(aws rds describe-db-instances \
@@ -249,10 +260,15 @@ jobs:
 
       - name: Apply migrations
         id: up
+        if: steps.status.outputs.pending != '0'
         run: |
           set -o pipefail
           { echo "Pending before this run:"; cat status.log; echo; \
             npm run migrate --prefix apps/backend/db; } 2>&1 | tee migrate.log
+
+      - name: Nothing to apply
+        if: steps.status.outputs.pending == '0'
+        run: echo "Database is already up to date; skipped the snapshot and the apply."
 
       # Manual snapshots never expire on their own and survive instance deletion,
       # so without this every deploy would leave one behind forever. Five is
@@ -260,7 +276,7 @@ jobs:
       # point-in-time recovery (backup_retention_period = 7 in
       # infrastructure/aws/main.tf).
       - name: Prune old pre-migration snapshots (keep 5)
-        if: always()
+        if: always() && steps.snapshot.outcome == 'success'
         continue-on-error: true
         run: |
           aws rds describe-db-snapshots --snapshot-type manual \
@@ -271,11 +287,17 @@ jobs:
 
       - name: Summarize
         if: always()
+        env:
+          PENDING: ${{ steps.status.outputs.pending }}
         run: |
           {
             echo "### Database migration"
             echo ""
-            echo "Snapshot: \`${{ steps.snapshot.outputs.id || 'not taken' }}\`"
+            if [ "$PENDING" = "0" ]; then
+              echo "Nothing pending -- no snapshot taken, nothing applied."
+            else
+              echo "Snapshot: \`${{ steps.snapshot.outputs.id || 'not taken' }}\`"
+            fi
             echo ""
             echo '```'
             cat status.log 2>/dev/null || echo '(no status captured)'
@@ -289,7 +311,12 @@ jobs:
         if: always()
         run: |
           mkdir -p lambda-results
-          echo "migrate|${{ steps.up.outcome }}" > lambda-results/migrate.meta
+          # `up` is skipped only when nothing was pending, which is a success as
+          # far as the deploy is concerned. Reporting the raw 'skipped' would make
+          # slack-deploy's finalize mark the whole run failed.
+          RESULT="${{ steps.up.outcome }}"
+          [ "$RESULT" = "skipped" ] && RESULT=success
+          echo "migrate|$RESULT" > lambda-results/migrate.meta
           cp migrate.log lambda-results/migrate.log 2>/dev/null \
             || cp status.log lambda-results/migrate.log 2>/dev/null \
             || echo "(no migrate output captured)" > lambda-results/migrate.log
@@ -310,8 +337,8 @@ jobs:
           component: backend
           total-steps: ${{ needs.prep.outputs.total }}
           job-name: migrate
-          step-name: Applied DB migrations
-          step-status: ${{ steps.up.outcome }}
+          step-name: ${{ steps.status.outputs.pending == '0' && 'DB migrations (nothing pending)' || 'Applied DB migrations' }}
+          step-status: ${{ steps.up.outcome == 'skipped' && 'success' || steps.up.outcome }}
           details-file: migrate.log
           ts: ${{ needs.prep.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
