@@ -19,6 +19,10 @@ inputs:
     description: 'Completed step count so far (for step/complete)'
     required: false
     default: '0'
+  bar-offset:
+    description: '(step mode) steps already finished by non-matrix jobs, e.g. migrate'
+    required: false
+    default: '0'
   step-name:
     description: 'Past-tense label for a step, e.g. "Applied infrastructure/aws"'
     required: false
@@ -91,6 +95,7 @@ runs:
         COMPONENT: ${{ inputs.component }}
         TOTAL: ${{ inputs.total-steps }}
         STEP_INDEX: ${{ inputs.step-index }}
+        BAR_OFFSET: ${{ inputs.bar-offset }}
         STEP_NAME: ${{ inputs.step-name }}
         STEP_STATUS: ${{ inputs.step-status }}
         DETAILS: ${{ inputs.details }}
@@ -112,6 +117,10 @@ runs:
           const component = process.env.COMPONENT || 'app';
           const total     = parseInt(process.env.TOTAL || '1', 10) || 1;
           const done      = parseInt(process.env.STEP_INDEX || '0', 10) || 0;
+          // liveDone() only counts jobs matching the given name, so legs finished
+          // by a differently-named job (the `migrate` job) have to be added back
+          // or the bar stalls one step behind for the whole run.
+          const barOffset = parseInt(process.env.BAR_OFFSET || '0', 10) || 0;
           const stepName  = process.env.STEP_NAME || '';
           const stepOk    = (process.env.STEP_STATUS || 'success').toLowerCase() === 'success';
           let rawDetails  = process.env.DETAILS || '';
@@ -287,7 +296,7 @@ runs:
             const jobName = process.env.JOB_NAME || '';
             let d = done;
             // +1 for this leg, which is finishing now but not yet marked completed.
-            if (jobName) { try { d = Math.min(total, (await liveDone(jobName)) + 1); } catch (err) { d = done; } }
+            if (jobName) { try { d = Math.min(total, barOffset + (await liveDone(jobName)) + 1); } catch (err) { d = done; } }
             await threadStep(d, stepName, stepOk, rawDetails);
             return;
           }
