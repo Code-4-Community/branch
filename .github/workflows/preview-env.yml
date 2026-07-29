@@ -9,7 +9,12 @@ name: PR Preview Environment
 # Cost: ~$0. Per-PR lambdas + one REST API Gateway (all serverless-at-rest);
 # the frontend is a path prefix on the ONE shared CloudFront distribution
 # (infrastructure/preview-shared). Shared RDS + Cognito are reused as-is;
-# migrations are never run here. See infrastructure/preview/*.
+# migrations are never run here -- structurally, not just to save money: the
+# generated DB types hardcode the `branch.` schema prefix
+# (shared/types/db-types.d.ts), so a per-PR schema would need per-PR type
+# regeneration and a rebuild of every lambda. The consequence is that a PR adding
+# a migration CANNOT be fully previewed: its new columns don't exist yet, so
+# endpoints touching them fail until the PR merges. See infrastructure/preview/*.
 on:
   pull_request:
     types: [labeled, synchronize, unlabeled, closed]
@@ -232,7 +237,7 @@ jobs:
                 `**Open:** ${url}`,
                 `**API:** \`${process.env.API_URL}\``,
                 '',
-                '_Shared RDS + Cognito (prod data); DB migrations are **not** applied here. New commits update this environment in place — a note is posted here on each update. Remove the `test-environment` label or close the PR to tear it down._',
+                '_Shared RDS + Cognito (prod data); DB migrations are **not** applied here — if this PR adds a migration, endpoints using the new columns will fail until it merges. New commits update this environment in place — a note is posted here on each update. Remove the `test-environment` label or close the PR to tear it down._',
               ].join('\n');
             } else {
               body = `🌿 **Test environment updated in place** ✅ — Click [here](${url}) to open. <sub>updated for ${sha} · [logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})</sub>`;

@@ -1,17 +1,27 @@
 {
-  "name": "db",
+  "name": "@branch/db",
   "version": "1.0.0",
-  "main": "kysely-codegen.config.js",
+  "private": true,
+  "description": "Database migrations, seed data and type generation for BRANCH.",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "db": "ts-node --transpile-only src/cli.ts",
+    "migrate": "npm run db -- up",
+    "migrate:status": "npm run db -- status",
+    "migrate:new": "npm run db -- new",
+    "seed": "npm run db -- seed",
+    "reset": "npm run db -- reset",
+    "types": "ts-node --transpile-only src/generate-types.ts"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "kysely": "^0.28.8",
-    "kysely-codegen": "^0.19.0",
     "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.15.6",
+    "kysely-codegen": "^0.19.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }

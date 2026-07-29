@@ -652,7 +652,7 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
     }
 
     // A branch.users row with cognito_sub IS NULL is a PENDING INVITATION, not a
-    // conflict. Two paths create them: the db_setup.sql seeds and admin
+    // conflict. Two paths create them: the db/seed.sql rows and admin
     // POST /users. Before claim-on-register both were permanently unable to sign
     // in -- registration 409'd on the email, and lambda-auth's authenticateRequest
     // can never match a NULL cognito_sub.

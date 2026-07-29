@@ -1,7 +1,6 @@
-import { describe, test, expect, beforeEach, afterAll, jest } from '@jest/globals';
-import fs from 'fs';
-import path from 'path';
+import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
+import { ensureSchema, resetData } from '../../../db/testkit';
 
 jest.mock('../auth', () => ({
   ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -34,8 +33,17 @@ const pool = new Pool({
   ssl: false,
 });
 
-const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
-const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
+// Build schema "branch" from db/migrations if it isn't already current. Cheap
+// (one SELECT) unless a migration was added since the schema was last built.
+beforeAll(async () => {
+  const client = await pool.connect();
+  try {
+    await ensureSchema(client);
+  } finally {
+    client.release();
+  }
+});
+
 
 // Non-admin users inserted by the Authorization block after each reseed.
 // The seed creates users 1-3, so these deterministically become 4 and 5.
@@ -55,7 +63,7 @@ beforeEach(async () => {
 
   const client = await pool.connect();
   try {
-    await client.query(seedSql);
+    await resetData(client);
   } finally {
     client.release();
   }
@@ -308,7 +316,7 @@ describe('GET /dashboard (e2e)', () => {
 
     const client = await pool.connect();
     try {
-      await client.query(seedSql);
+      await resetData(client);
     } finally {
       client.release();
     }

@@ -6,7 +6,7 @@ Shared type definitions for the Branch lambdas. This replaces the per-lambda cop
 
 | File | Contents |
 |------|----------|
-| `db-types.d.ts` | Kysely row types generated from `apps/backend/db/db_setup.sql` (`DB`, `BranchUsers`, `BranchProjects`, ...) |
+| `db-types.d.ts` | Kysely row types generated from `apps/backend/db/migrations/**` (`DB`, `BranchUsers`, `BranchProjects`, ...) |
 | `auth-types.d.ts` | Auth DTOs (`AuthenticatedUser`, `AuthContext`, `AccessLevel`, `AuthorizationCheck`) |
 
 ## How it works
@@ -32,7 +32,7 @@ Note: `db-types.d.ts` defines a local `ColumnType` that is structurally identica
 
 ## Regenerating DB types
 
-`db-types.d.ts` is regenerated automatically by the `regenerate-db-types` GitHub workflow whenever `apps/backend/db/db_setup.sql` changes. Do not edit it manually.
+`db-types.d.ts` is regenerated automatically by the `Schema Change Checks` GitHub workflow whenever `apps/backend/db/migrations/**` changes, and locally by `make migrate` / `make types` in `apps/backend`. Do not edit it manually.
 
 ## New lambdas
 
