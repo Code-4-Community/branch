@@ -6,7 +6,13 @@ on:
     paths:
       - 'apps/backend/lambdas/**'
       - 'shared/types/**'
+      - 'apps/backend/db/migrations/**'
   workflow_dispatch:
+    inputs:
+      migrations_only:
+        description: 'Apply pending DB migrations without redeploying lambdas'
+        type: boolean
+        default: false
 
 jobs:
   detect-changes:
@@ -14,46 +20,66 @@ jobs:
     outputs:
       lambdas: ${{ steps.detect.outputs.lambdas }}
       has-changes: ${{ steps.detect.outputs.has-changes }}
+      migrate: ${{ steps.detect.outputs.migrate }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect changed lambdas
+      - name: Detect changed lambdas and migrations
         id: detect
+        env:
+          EVENT: ${{ github.event_name }}
+          MIGRATIONS_ONLY: ${{ inputs.migrations_only }}
         run: |
-          BASE_COMMIT="${{ github.event.before }}"
+          set -euo pipefail
 
           all_lambdas=$(ls -d apps/backend/lambdas/*/ | grep -Ev "(tools)/" | sed 's#/$##' | jq -R -s -c 'split("\n") | map(select(. != ""))')
-          
+
           changed_files=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
-          
-          changed_lambdas=()
-          for lambda_path in apps/backend/lambdas/*/; do
-            lambda_name=$(basename "$lambda_path")
-            if [[ "$lambda_name" != "tools" ]]; then
-              if echo "$changed_files" | grep -q "^apps/backend/lambdas/$lambda_name/"; then
+
+          migrate=false
+          code=false
+          grep -q '^apps/backend/db/migrations/' <<<"$changed_files" && migrate=true
+          grep -qE '^(apps/backend/lambdas/|shared/types/)' <<<"$changed_files" && code=true
+
+          # workflow_dispatch has no meaningful diff: apply everything, or
+          # migrations only when explicitly asked (recovery / manual re-run).
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            migrate=true
+            if [[ "$MIGRATIONS_ONLY" == "true" ]]; then code=false; else code=true; fi
+          fi
+
+          lambdas='[]'
+          if [[ "$code" == "true" ]]; then
+            changed_lambdas=()
+            for lambda_path in apps/backend/lambdas/*/; do
+              lambda_name=$(basename "$lambda_path")
+              [[ "$lambda_name" == "tools" ]] && continue
+              if grep -q "^apps/backend/lambdas/$lambda_name/" <<<"$changed_files"; then
                 changed_lambdas+=("$lambda_path")
               fi
+            done
+
+            if [[ ${#changed_lambdas[@]} -eq 0 ]]; then
+              # shared/types/** (or a dispatch) touched nothing lambda-specific:
+              # deploy all. Gated on `code` so a migrations-only push does NOT
+              # redeploy all six functions.
+              echo "No specific lambda changes detected, deploying all lambdas"
+              lambdas=$all_lambdas
+            else
+              lambdas=$(printf '%s\n' "${changed_lambdas[@]}" | sed 's#/$##' | jq -R -s -c 'split("\n") | map(select(. != ""))')
             fi
-          done
-          
-          if [[ ${#changed_lambdas[@]} -eq 0 ]]; then
-            echo "No specific lambda changes detected, deploying all lambdas"
-            lambdas=$all_lambdas
-            has_changes="true"
-          else
-            lambdas=$(printf '%s\n' "${changed_lambdas[@]}" | sed 's#/$##' | jq -R -s -c 'split("\n") | map(select(. != ""))')
-            has_changes="true"
           fi
-          
+
           echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
-          echo "has-changes=$has_changes" >> $GITHUB_OUTPUT
+          echo "has-changes=$code" >> $GITHUB_OUTPUT
+          echo "migrate=$migrate" >> $GITHUB_OUTPUT
 
   # Post the initial "Deploying backend" Slack message before builds run.
   prep:
     needs: detect-changes
-    if: needs.detect-changes.outputs.has-changes == 'true'
+    if: needs.detect-changes.outputs.has-changes == 'true' || needs.detect-changes.outputs.migrate == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,11 +89,16 @@ jobs:
       total: ${{ steps.count.outputs.total }}
     steps:
       - uses: actions/checkout@v4
-      - name: Count lambdas
+      - name: Count steps
         id: count
         env:
           LAMBDAS: ${{ needs.detect-changes.outputs.lambdas }}
-        run: echo "total=$(echo "$LAMBDAS" | jq 'length')" >> "$GITHUB_OUTPUT"
+          MIGRATE: ${{ needs.detect-changes.outputs.migrate }}
+        run: |
+          total=$(echo "$LAMBDAS" | jq 'length')
+          # The migrate job is its own leg in the Slack status bar.
+          [ "$MIGRATE" = "true" ] && total=$((total + 1))
+          echo "total=$total" >> "$GITHUB_OUTPUT"
       - name: Start deploy notification
         id: slack
         uses: ./.github/actions/slack-deploy
@@ -115,9 +146,187 @@ jobs:
           path: ${{ matrix.lambda }}/lambda.zip
           if-no-files-found: error
 
+  # Schema lands BEFORE the zip swap: `deploy` needs this job, so a failed
+  # migration leaves production running the OLD code against the OLD schema.
+  # The consequence for contributors is that only additive migrations are safe in
+  # a single PR -- see the expand/contract rules in apps/backend/db/README.md.
+  migrate:
+    needs: [detect-changes, prep]
+    if: needs.detect-changes.outputs.migrate == 'true'
+    runs-on: ubuntu-latest
+    # Separate from `production` purely so this job gets its own OIDC subject and
+    # can use the narrowly-scoped branch-ci-migrate role instead of the
+    # AdministratorAccess branch-ci-apply role. Intentionally has no required
+    # reviewers: a pending approval here would strand a merged PR with its schema
+    # applied and its lambda code undeployed.
+    environment: production-db
+    # kysely takes a pg advisory lock, but serialize anyway so two merges in a row
+    # queue instead of racing -- and never cancel a half-run migration.
+    concurrency:
+      group: db-migrate-prod
+      cancel-in-progress: false
+    permissions:
+      id-token: write # assume the OIDC migrate role
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install db tooling
+        run: npm ci --prefix apps/backend/db --no-audit --no-fund
+
+      - name: Configure AWS credentials (scoped migrate role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-migrate
+          aws-region: us-east-2
+
+      # Read the connection from the same place the lambdas read it, so CI can
+      # never migrate a database the code isn't talking to. Terraform is the
+      # authoritative writer of that env block (infrastructure/aws/lambda.tf).
+      - name: Resolve DB connection from the deployed lambda config
+        run: |
+          set -euo pipefail
+          cfg=$(aws lambda get-function-configuration \
+                  --function-name branch-auth \
+                  --query 'Environment.Variables' --output json)
+          for k in DB_HOST DB_PORT DB_USER DB_NAME; do
+            v=$(jq -er --arg k "$k" '.[$k]' <<<"$cfg") \
+              || { echo "::error::$k missing from branch-auth config"; exit 1; }
+            echo "$k=$v" >> "$GITHUB_ENV"
+          done
+          pw=$(jq -er '.DB_PASSWORD' <<<"$cfg")
+          echo "::add-mask::$pw"
+          echo "DB_PASSWORD=$pw" >> "$GITHUB_ENV"
+
+      # The runner reaches RDS over the public internet, so TLS is mandatory here
+      # even though the lambdas currently use ssl:false (they at least stay inside
+      # AWS). AWS publishes the CA bundle, so verification is free.
+      - name: Fetch RDS CA bundle
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/rds-ca.pem" \
+            https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          echo "DB_SSL=true" >> "$GITHUB_ENV"
+          echo "DB_SSL_CA=$RUNNER_TEMP/rds-ca.pem" >> "$GITHUB_ENV"
+
+      - name: Pending migrations (read-only preflight)
+        id: status
+        run: |
+          set -o pipefail
+          npm run migrate:status --prefix apps/backend/db 2>&1 | tee status.log
+
+      # 0000_baseline_schema is idempotent, but "idempotent" is one typo away from
+      # DROP SCHEMA. It is adopted once by hand against production (see
+      # apps/backend/db/README.md); if it still shows as pending here, we are
+      # pointed at a database we did not expect -- refuse rather than guess.
+      - name: Refuse to execute the baseline against production
+        run: |
+          if grep -E '0000_baseline_schema' status.log | grep -q 'PENDING'; then
+            echo "::error::0000_baseline_schema is PENDING on the target database. It was never adopted (or DB_HOST is wrong). Refusing to run -- see apps/backend/db/README.md."
+            exit 1
+          fi
+
+      - name: Snapshot production before migrating
+        id: snapshot
+        run: |
+          set -euo pipefail
+          INSTANCE=$(aws rds describe-db-instances \
+            --query "DBInstances[?Endpoint.Address=='${DB_HOST}'].DBInstanceIdentifier | [0]" \
+            --output text)
+          [ "$INSTANCE" != "None" ] || { echo "::error::no RDS instance matches DB_HOST"; exit 1; }
+          SNAP="branch-premigrate-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::7}"
+          aws rds create-db-snapshot \
+            --db-instance-identifier "$INSTANCE" --db-snapshot-identifier "$SNAP" \
+            --tags Key=source,Value=github-actions Key=commit,Value="$GITHUB_SHA"
+          aws rds wait db-snapshot-available --db-snapshot-identifier "$SNAP"
+          echo "instance=$INSTANCE" >> "$GITHUB_OUTPUT"
+          echo "id=$SNAP" >> "$GITHUB_OUTPUT"
+          echo "Snapshot $SNAP is available"
+
+      - name: Apply migrations
+        id: up
+        run: |
+          set -o pipefail
+          { echo "Pending before this run:"; cat status.log; echo; \
+            npm run migrate --prefix apps/backend/db; } 2>&1 | tee migrate.log
+
+      # Manual snapshots never expire on their own and survive instance deletion,
+      # so without this every deploy would leave one behind forever. Five is
+      # plenty: anything older than the last few migrations is better served by
+      # point-in-time recovery (backup_retention_period = 7 in
+      # infrastructure/aws/main.tf).
+      - name: Prune old pre-migration snapshots (keep 5)
+        if: always()
+        continue-on-error: true
+        run: |
+          aws rds describe-db-snapshots --snapshot-type manual \
+            --query "reverse(sort_by(DBSnapshots[?starts_with(DBSnapshotIdentifier,'branch-premigrate-')],&SnapshotCreateTime))[5:].DBSnapshotIdentifier" \
+            --output text | tr '\t' '\n' | while read -r s; do
+              [ -n "$s" ] && aws rds delete-db-snapshot --db-snapshot-identifier "$s"
+            done
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "### Database migration"
+            echo ""
+            echo "Snapshot: \`${{ steps.snapshot.outputs.id || 'not taken' }}\`"
+            echo ""
+            echo '```'
+            cat status.log 2>/dev/null || echo '(no status captured)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Reuses the lambda-result-* artifact pattern so `notify` picks the
+      # migration up with no changes and fails the Slack bar even when `deploy`
+      # never ran.
+      - name: Save migrate result
+        if: always()
+        run: |
+          mkdir -p lambda-results
+          echo "migrate|${{ steps.up.outcome }}" > lambda-results/migrate.meta
+          cp migrate.log lambda-results/migrate.log 2>/dev/null \
+            || cp status.log lambda-results/migrate.log 2>/dev/null \
+            || echo "(no migrate output captured)" > lambda-results/migrate.log
+
+      - name: Upload migrate result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-result-migrate
+          path: lambda-results/
+          if-no-files-found: warn
+
+      - name: Thread step (live)
+        if: always()
+        uses: ./.github/actions/slack-deploy
+        with:
+          mode: step
+          component: backend
+          total-steps: ${{ needs.prep.outputs.total }}
+          job-name: migrate
+          step-name: Applied DB migrations
+          step-status: ${{ steps.up.outcome }}
+          details-file: migrate.log
+          ts: ${{ needs.prep.outputs.ts }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
   deploy:
-    needs: [detect-changes, prep, build]
-    if: needs.detect-changes.outputs.has-changes == 'true'
+    needs: [detect-changes, prep, build, migrate]
+    # A skipped `needs` skips the dependent job unless the condition is explicit.
+    # Enumerate results rather than using always(), so a FAILED migration still
+    # blocks the zip swap while a SKIPPED one (code-only push) does not.
+    if: >-
+      !cancelled()
+      && needs.detect-changes.outputs.has-changes == 'true'
+      && needs.build.result == 'success'
+      && (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -189,6 +398,9 @@ jobs:
           component: backend
           total-steps: ${{ needs.prep.outputs.total }}
           job-name: deploy
+          # The migrate job already reported one completed leg under a different
+          # job name, so add it back or the bar stalls a step behind.
+          bar-offset: ${{ needs.detect-changes.outputs.migrate == 'true' && '1' || '0' }}
           step-name: Deployed branch-${{ steps.rname.outputs.name }}
           step-status: ${{ steps.deploy.outcome }}
           details-file: deploy.log
@@ -198,8 +410,10 @@ jobs:
 
   notify:
     name: Deployment Notify
-    needs: [detect-changes, prep, deploy]
-    if: always() && needs.detect-changes.outputs.has-changes == 'true'
+    needs: [detect-changes, prep, migrate, deploy]
+    if: >-
+      always() && (needs.detect-changes.outputs.has-changes == 'true'
+                   || needs.detect-changes.outputs.migrate == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read

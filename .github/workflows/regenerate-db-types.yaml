@@ -1,9 +1,9 @@
-name: Generate Database Types For Schema Changes
+name: Schema Change Checks
 
 on:
   pull_request:
     paths:
-      - apps/backend/db/db_setup.sql
+      - apps/backend/db/migrations/**
   workflow_dispatch:
 
 
@@ -12,7 +12,8 @@ permissions:
   pull-requests: write
 
 env:
-  NODE_VERSION: '23'
+  # Matches the lambda runtime (nodejs20.x) and every other workflow.
+  NODE_VERSION: '20'
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/testdb
 
 jobs:
@@ -31,12 +32,73 @@ jobs:
             token: ${{ secrets.GITHUB_TOKEN }}
             fetch-depth: 0
         
+        # Posted before anything can fail, so the guidance is on the PR even if a
+        # later step breaks. Sticky: updated in place on every push rather than
+        # re-commented, which would get the bot muted.
+        - name: Comment migration checklist on the PR
+          if: github.event_name == 'pull_request'
+          uses: actions/github-script@v7
+          with:
+            script: |
+              const { execSync } = require('child_process');
+              const base = context.payload.pull_request.base.sha;
+              const mergeBase = execSync(`git merge-base ${base} HEAD`).toString().trim();
+              const added = execSync(
+                `git diff --diff-filter=A --name-only ${mergeBase} HEAD -- apps/backend/db/migrations`,
+              ).toString().trim().split('\n').filter(Boolean);
+
+              const outside = execSync(
+                `git diff --name-only ${mergeBase} HEAD -- . ':(exclude)apps/backend/db'`,
+              ).toString().trim().split('\n').filter(Boolean);
+
+              const MARKER = '<!-- branch-migration-notice -->';
+              const list = added.length
+                ? added.map((f) => `- \`${f}\``).join('\n')
+                : '_(no newly added migration files in this PR)_';
+
+              let body = `${MARKER}
+              ### This PR contains a database migration
+
+              ${list}
+
+              **It will be applied to the production database automatically when this PR merges**, before the new lambda code is deployed. Please confirm before requesting review:
+
+              - [ ] **Applied and tested locally.** \`cd apps/backend && make migrate\`, then run the affected lambda's tests (\`cd apps/backend/lambdas/<name> && npm test\`). \`make show-migrations\` shows what applied.
+              - [ ] **Safe for the code that is live right now.** During the deploy window -- and indefinitely if the deploy fails -- the currently deployed lambdas run against your new schema. Additive changes (\`CREATE TABLE\`, nullable \`ADD COLUMN\`, \`CREATE INDEX\`) are fine in one PR. \`DROP COLUMN\`, renames, \`ADD COLUMN NOT NULL\` with no default, and new \`UNIQUE\`/\`CHECK\`/\`FOREIGN KEY\` constraints need two merged PRs -- see the expand/contract rules in \`apps/backend/db/README.md\`.
+              - [ ] **Kept separate from unrelated changes.** A migration PR should ideally contain the migration, the code that needs it, and nothing else. It changes production state, it is the one thing here that redeploying cannot roll back, and a reviewer should be able to see the whole schema change without scrolling past unrelated work.
+              - [ ] **No already-merged migration was edited.** Fix an old migration by adding a new one; there is no \`down\`.
+
+              \`shared/types/db-types.d.ts\` is regenerated and pushed to this branch automatically -- don't hand-edit it. Expect one red \`migrations-fresh\` check before that commit lands.`;
+
+              if (outside.length > 15) {
+                body += `\n\nThis PR also changes ${outside.length} files outside \`apps/backend/db/\`. If any are unrelated to this schema change, consider splitting them into a separate PR.`;
+              }
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              const existing = comments.find((c) => c.body?.includes(MARKER));
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  comment_id: existing.id, body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  issue_number: context.issue.number, body,
+                });
+              }
+
         - name: Setup Node.js
           uses: actions/setup-node@v4
           with:
             node-version: ${{ env.NODE_VERSION }}
             cache: 'npm'
-        
+
         - name: Cache npm dependencies
           uses: actions/cache@v4
           with:
@@ -49,14 +111,12 @@ jobs:
           run: |
             echo "Installing project dependencies"
             npm ci --legacy-peer-deps
-            
-            echo "Installing kysely-codegen, typescript, and pg globally"
-            npm install -g kysely-codegen typescript pg
 
-            echo "Verifying installations"
-            which kysely-codegen || { echo "Error: kysely-codegen not found"; exit 1; }
-            tsc --version || { echo "Error: typescript not found"; exit 1; }
-            node -e "require('pg')" || { echo "Error: pg not found"; exit 1; }
+            # apps/backend/db pins kysely-codegen. Installing it globally instead
+            # would let CI generate types with a different version than a
+            # contributor's `make types` run.
+            echo "Installing db tooling"
+            npm ci --prefix apps/backend/db --no-audit --no-fund
         
         - name: Setup PostgreSQL
           uses: ikalnytskyi/action-setup-postgres@v6
@@ -74,78 +134,24 @@ jobs:
           env:
             PGPASSWORD: postgres
 
-        - name: Initialize database schema
+        - name: Build schema from migrations
           run: |
-            echo "Applying database schema"
-            psql -h localhost -U postgres -d testdb -f apps/backend/db/db_setup.sql
-            
+            echo "Applying db/migrations"
+            npm run migrate --prefix apps/backend/db
+
             echo "Verifying schema application"
-            psql -h localhost -U postgres -d testdb -c "\dt"
+            psql -h localhost -U postgres -d testdb -c "\dt branch.*"
           env:
             PGPASSWORD: postgres
+            DATABASE_URL: ${{ env.DATABASE_URL }}
 
-        - name: Generate types with kysely-codegen
-          run: |
-            echo "Starting type generation..."
-            cd apps/backend/db
-        
-            # Run kysely-codegen
-             kysely-codegen \
-              --url "$DATABASE_URL" \
-              --out-file db-types.d.ts \
-              --dialect postgres || {
-                echo "Error: kysely-codegen failed to generate types"
-                exit 1
-              }
-
-            # Verify the output file was created
-            if [ ! -f "db-types.d.ts" ]; then
-              echo "Error: db-types.d.ts was not generated"
-              exit 1
-            fi
-
-            echo "Type generation successful"
-        
-        - name: Copy generated types to shared DTOs package
-          run: |
-            echo "Copying generated types to shared/types"
-
-            SOURCE_FILE="apps/backend/db/db-types.d.ts"
-            TARGET_FILE="shared/types/db-types.d.ts"
-
-            # verify the source file exists and is not empty
-            if [ ! -s "$SOURCE_FILE" ]; then
-              echo "Error: Generated types file not found or empty at $SOURCE_FILE"
-              exit 1
-            fi
-
-            # Replace the kysely import with a local, structurally identical
-            # ColumnType so the shared package stays dependency-free and the
-            # lambdas stay fully self contained.
-            node -e '
-              const fs = require("fs");
-              const [src, target] = process.argv.slice(1);
-              const kyselyImport = `import type { ColumnType } from "kysely";`;
-              const localColumnType = [
-                "/**",
-                " * Structurally identical to kysely'"'"'s ColumnType, defined locally so this",
-                " * package has no dependencies and lambdas stay fully self contained.",
-                " */",
-                "type ColumnType<SelectType, InsertType = SelectType, UpdateType = SelectType> = {",
-                "  readonly __select__: SelectType;",
-                "  readonly __insert__: InsertType;",
-                "  readonly __update__: UpdateType;",
-                "};",
-              ].join("\n");
-              const contents = fs.readFileSync(src, "utf8");
-              if (!contents.includes(kyselyImport)) {
-                console.error("Error: expected kysely ColumnType import not found in " + src);
-                process.exit(1);
-              }
-              fs.writeFileSync(target, contents.replace(kyselyImport, localColumnType));
-            ' "$SOURCE_FILE" "$TARGET_FILE"
-
-            echo "Wrote $TARGET_FILE"
+        # Both the codegen invocation and the kysely-ColumnType rewrite live in
+        # apps/backend/db/src/, so this produces byte-identical output to a
+        # contributor's `make types` -- rather than two copies kept in sync by hand.
+        - name: Generate types
+          run: npm run types --prefix apps/backend/db
+          env:
+            DATABASE_URL: ${{ env.DATABASE_URL }}
 
         - name: Verify TypeScript compilation
           run: |
@@ -295,7 +301,7 @@ jobs:
             echo "---" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Workflow Trigger:** Schema change detected in:" >> $GITHUB_STEP_SUMMARY
-            echo "- \`apps/backend/db/db_setup.sql\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`apps/backend/db/migrations/**\`" >> $GITHUB_STEP_SUMMARY
         
 
 

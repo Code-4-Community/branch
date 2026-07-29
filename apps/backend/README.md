@@ -53,7 +53,7 @@ The backend consists of microservices, each running as a separate container:
 | --------------------------------- | ------------------------------------------------------ |
 | `make up`                         | Start all services (builds if needed)                  |
 | `make down`                       | Stop all services                                      |
-| `make down-v`                     | Stop all services and remove volumes (resets database) |
+| `make down-v`                     | Stop all services and remove volumes (destroys the DB) |
 | `make logs`                       | View logs for all services                             |
 | `make logs-service SERVICE=users` | View logs for a specific service                       |
 | `make build`                      | Build all images without starting                      |
@@ -62,8 +62,21 @@ The backend consists of microservices, each running as a separate container:
 | `make health`                     | Check health of all services                           |
 | `make clean`                      | Clean up Docker resources                              |
 | `make db-shell`                   | Open PostgreSQL shell                                  |
-| `make db-reset`                   | Reset database (destroys all data)                     |
 | `make help`                       | Show all available commands                            |
+
+### Schema migrations
+
+See [`db/README.md`](db/README.md) for the rules — migrations are applied to
+production automatically on merge, so a single PR may only contain additive changes.
+
+| Command                                | Description                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `make new-migration NAME=add_thing`    | Create an empty timestamped migration in `db/migrations/`                |
+| `make migrate`                         | Apply pending migrations, seed if empty, regenerate DB types, show status |
+| `make show-migrations`                 | Show which migrations are applied and which are pending                  |
+| `make seed`                            | Truncate every table and re-apply `db/seed.sql`                          |
+| `make types`                           | Regenerate `shared/types/db-types.d.ts` from the local database          |
+| `make db-reset`                        | Rebuild schema `branch` from migrations and reseed (destroys all data)   |
 
 ## Environment Variables
 
@@ -187,7 +200,10 @@ apps/backend/
 ├── .env.example          # Example environment file
 ├── README.md             # This file
 ├── db/
-│   └── db_setup.sql      # Database schema and seed data
+│   ├── migrations/       # Schema migrations (applied in filename order)
+│   ├── seed.sql          # Dev/test seed data (never applied to prod)
+│   ├── testkit.ts        # ensureSchema()/resetData() for lambda tests
+│   └── src/              # Migration runner + type generator CLI
 └── lambdas/
     ├── auth/             # Authentication service
     ├── donors/           # Donors service
