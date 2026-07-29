@@ -13,14 +13,11 @@ resource "aws_db_instance" "branch_rds" {
   password                   = data.infisical_secrets.rds_folder.secrets["password"].value
   skip_final_snapshot        = true
 
-  # Set explicitly because CI now applies schema migrations to this instance
-  # automatically (the `migrate` job in .github/workflows/lambda-deploy.yml). That
-  # job takes a named pre-migration snapshot, but point-in-time recovery is the
-  # backstop for everything else, and this was previously left to whatever the API
-  # defaulted to. Backup storage up to allocated_storage (10 GB) is free, so 7
-  # days of PITR costs nothing.
+  # Was 0 -- no point-in-time recovery at all. Free at this size, and the backstop
+  # for CI-applied migrations. backup_window is deliberately unset: AWS rejects a
+  # backup window that overlaps the maintenance window, and neither is managed here,
+  # so pinning one guesses against the other. Pin both or neither.
   backup_retention_period = 7
-  backup_window           = "07:00-08:00" # UTC — off-hours for a US-based club
 
   # The lambdas in lambda.tf have no vpc_config, so they run outside any VPC and
   # had no route to this instance while it was private -- every DB-backed request
