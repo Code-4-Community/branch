@@ -16,22 +16,7 @@ import { CiFilter } from 'react-icons/ci';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
 import ExpensesTable from '../components/ExpensesTable';
-
-type Expenditure = {
-  expenditure_id: number;
-  project_id: number;
-  entered_by: number | null;
-  amount: string;
-  category: string | null;
-  description: string | null;
-  spent_on: string;
-  created_at: string | null;
-};
-
-type Project = {
-  project_id: number;
-  name: string;
-};
+import { Expenditure, Project } from '@/types';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -61,7 +46,7 @@ function ExpensePageContent() {
 
   // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Pick<Project, 'project_id' | 'name'>[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
