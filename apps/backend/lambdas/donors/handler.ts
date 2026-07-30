@@ -56,30 +56,102 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       if (page && limit) {
         const offset = (page - 1) * limit;
+        // Apply scoping: admins see all donors; members see donors for their projects
+        const user = authContext.user;
+        if (!user) return json(401, { message: 'Authentication required' });
 
-        const totalCount = await db
-          .selectFrom('branch.donors')
-          .select(db.fn.count('donor_id').as('count'))
-          .executeTakeFirst();
+        let donorIds: { donor_id: number }[] = [];
+        if (user.isAdmin) {
+          const totalCount = await db
+            .selectFrom('branch.donors')
+            .select(db.fn.count('donor_id').as('count'))
+            .executeTakeFirst();
 
-        const totalItems = Number(totalCount?.count || 0);
-        const totalPages = Math.ceil(totalItems / limit);
+          const totalItems = Number(totalCount?.count || 0);
+          const totalPages = Math.ceil(totalItems / limit);
 
-        const donors = await db
-          .selectFrom('branch.donors')
-          .selectAll()
+          const donors = await db
+            .selectFrom('branch.donors')
+            .selectAll()
+            .orderBy('donor_id', 'asc')
+            .limit(limit)
+            .offset(offset)
+            .execute();
+
+          return json(200, {
+            data: donors,
+            pagination: { page, limit, totalItems, totalPages },
+          });
+        }
+
+        // Non-admin: find projects user is a member of
+        const memberships = await db
+          .selectFrom('branch.project_memberships')
+          .where('user_id', '=', user.userId!)
+          .select('project_id')
+          .execute();
+
+        const projectIds = memberships.map((m) => m.project_id);
+        if (projectIds.length === 0) {
+          return json(200, { data: [], pagination: { page, limit, totalItems: 0, totalPages: 0 } });
+        }
+
+        donorIds = await db
+          .selectFrom('branch.project_donations')
+          .where('project_id', 'in', projectIds)
+          .select('donor_id')
+          .distinct()
           .orderBy('donor_id', 'asc')
           .limit(limit)
           .offset(offset)
           .execute();
 
-        return json(200, {
-          data: donors,
-          pagination: { page, limit, totalItems, totalPages },
-        });
+        // compute distinct donor count for these projects
+        const donorIdsAllForCount = await db
+          .selectFrom('branch.project_donations')
+          .where('project_id', 'in', projectIds)
+          .select('donor_id')
+          .distinct()
+          .execute();
+
+        const totalItems = donorIdsAllForCount.length;
+        const totalPages = Math.ceil(totalItems / limit);
+
+        const donors = donorIds.length > 0
+          ? await db.selectFrom('branch.donors').where('donor_id', 'in', donorIds.map((d) => d.donor_id)).selectAll().execute()
+          : [];
+
+        return json(200, { data: donors, pagination: { page, limit, totalItems, totalPages } });
+      }
+      // Non-paginated: apply scoping similarly
+      const user = authContext.user;
+      if (!user) return json(401, { message: 'Authentication required' });
+
+      if (user.isAdmin) {
+        const donors = await db.selectFrom('branch.donors').selectAll().execute();
+        return json(200, { data: donors });
       }
 
-      const donors = await db.selectFrom('branch.donors').selectAll().execute();
+      const memberships = await db
+        .selectFrom('branch.project_memberships')
+        .where('user_id', '=', user.userId!)
+        .select('project_id')
+        .execute();
+
+      const projectIds = memberships.map((m) => m.project_id);
+      if (projectIds.length === 0) return json(200, { data: [] });
+
+      const donorIdsAll = await db
+        .selectFrom('branch.project_donations')
+        .where('project_id', 'in', projectIds)
+        .select('donor_id')
+        .distinct()
+        .execute();
+
+      const donors = donorIdsAll.length > 0
+        ? await db.selectFrom('branch.donors').where('donor_id', 'in', donorIdsAll.map((d) => d.donor_id)).selectAll().execute()
+        : [];
+
       return json(200, { data: donors });
     }
 
@@ -104,11 +176,47 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const page = pageStr ? parseInt(pageStr, 10) : null;
       const limit = limitStr ? parseInt(limitStr, 10) : null;
 
+      const user = authContext.user;
+      if (!user) return json(401, { message: 'Authentication required' });
+
       if (page && limit) {
         const offset = (page - 1) * limit;
 
+        if (user.isAdmin) {
+          const totalCount = await db
+            .selectFrom('branch.project_donations')
+            .select(db.fn.count('donation_id').as('count'))
+            .executeTakeFirst();
+
+          const totalItems = Number(totalCount?.count || 0);
+          const totalPages = Math.ceil(totalItems / limit);
+
+          const donations = await db
+            .selectFrom('branch.project_donations')
+            .selectAll()
+            .orderBy('donation_id', 'asc')
+            .limit(limit)
+            .offset(offset)
+            .execute();
+
+          return json(200, {
+            data: donations,
+            pagination: { page, limit, totalItems, totalPages },
+          });
+        }
+
+        const memberships = await db
+          .selectFrom('branch.project_memberships')
+          .where('user_id', '=', user.userId!)
+          .select('project_id')
+          .execute();
+
+        const projectIds = memberships.map((m) => m.project_id);
+        if (projectIds.length === 0) return json(200, { data: [], pagination: { page, limit, totalItems: 0, totalPages: 0 } });
+
         const totalCount = await db
           .selectFrom('branch.project_donations')
+          .where('project_id', 'in', projectIds)
           .select(db.fn.count('donation_id').as('count'))
           .executeTakeFirst();
 
@@ -117,6 +225,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
         const donations = await db
           .selectFrom('branch.project_donations')
+          .where('project_id', 'in', projectIds)
           .selectAll()
           .orderBy('donation_id', 'asc')
           .limit(limit)
@@ -129,8 +238,26 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         });
       }
 
+      if (user.isAdmin) {
+        const donations = await db
+          .selectFrom('branch.project_donations')
+          .selectAll()
+          .execute();
+        return json(200, { data: donations });
+      }
+
+      const membershipsAll = await db
+        .selectFrom('branch.project_memberships')
+        .where('user_id', '=', user.userId!)
+        .select('project_id')
+        .execute();
+
+      const projectIdsAll = membershipsAll.map((m) => m.project_id);
+      if (projectIdsAll.length === 0) return json(200, { data: [] });
+
       const donations = await db
         .selectFrom('branch.project_donations')
+        .where('project_id', 'in', projectIdsAll)
         .selectAll()
         .execute();
       return json(200, { data: donations });

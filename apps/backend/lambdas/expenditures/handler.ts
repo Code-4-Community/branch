@@ -3,6 +3,31 @@ import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
 
+
+async function canAccessProjectLocal(userId: number, projectId: number): Promise<boolean> {
+  try {
+    const user = await db
+      .selectFrom('branch.users')
+      .where('user_id', '=', userId)
+      .select('is_admin')
+      .executeTakeFirst();
+
+    if (user?.is_admin) return true;
+
+    const membership = await db
+      .selectFrom('branch.project_memberships')
+      .where('user_id', '=', userId)
+      .where('project_id', '=', projectId)
+      .selectAll()
+      .executeTakeFirst();
+
+    return !!membership;
+  } catch (error) {
+    console.error('Error checking project access (local):', error);
+    return false;
+  }
+}
+
 function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
   const authCheck = checkAuthorization(authContext, level, resourceUserId);
   if (!authCheck.allowed) {
@@ -44,6 +69,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(401, { message: 'Authentication required' });
       }
 
+      const user = authContext.user;
+      if (!user) return json(401, { message: 'Authentication required' });
+
       const queryParams = event.queryStringParameters || {};
       const pageStr = queryParams.page as string | undefined;
       const limitStr = queryParams.limit as string | undefined;
@@ -74,27 +102,81 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (page && limit) {
         const offset = (page - 1) * limit;
 
-        const totalCount = projectId !== null
-          ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).select(db.fn.count('expenditure_id').as('count')).executeTakeFirst()
-          : await db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
+          if (projectId !== null) {
+          // Access check for specific project
+          if (!user.isAdmin) {
+            const ok = await canAccessProjectLocal(user.userId!, projectId);
+            if (!ok) return json(403, { message: 'You do not have access to this project' });
+          }
 
+          const totalCount = await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
+          const totalItems = Number(totalCount?.count || 0);
+          const totalPages = Math.ceil(totalItems / limit);
+
+          const expenditures = await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute();
+
+          return json(200, {
+            data: expenditures,
+            pagination: { page, limit, totalItems, totalPages },
+          });
+        }
+
+        // No projectId: admins see all, others see expenditures for projects they belong to
+        if (user.isAdmin) {
+          const totalCount = await db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
+          const totalItems = Number(totalCount?.count || 0);
+          const totalPages = Math.ceil(totalItems / limit);
+
+          const expenditures = await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute();
+
+          return json(200, {
+            data: expenditures,
+            pagination: { page, limit, totalItems, totalPages },
+          });
+        }
+
+        const memberships = await db
+          .selectFrom('branch.project_memberships')
+          .where('user_id', '=', user.userId!)
+          .select('project_id')
+          .execute();
+        const projectIds = memberships.map((m: { project_id: number }) => m.project_id);
+        if (projectIds.length === 0) return json(200, { data: [], pagination: { page, limit, totalItems: 0, totalPages: 0 } });
+
+        const totalCount = await db.selectFrom('branch.expenditures').where('project_id', 'in', projectIds).select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
         const totalItems = Number(totalCount?.count || 0);
         const totalPages = Math.ceil(totalItems / limit);
 
-        const expenditures = projectId !== null
-          ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute()
-          : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute();
+        const expenditures = await db.selectFrom('branch.expenditures').where('project_id', 'in', projectIds).selectAll().orderBy('spent_on', 'desc').limit(limit).offset(offset).execute();
 
-        return json(200, {
-          data: expenditures,
-          pagination: { page, limit, totalItems, totalPages },
-        });
+        return json(200, { data: expenditures, pagination: { page, limit, totalItems, totalPages } });
       }
 
-      const expenditures = projectId !== null
-        ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').execute()
-        : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').execute();
+      // Non-paginated
+        if (projectId !== null) {
+        if (!user.isAdmin) {
+            const ok = await canAccessProjectLocal(user.userId!, projectId);
+          if (!ok) return json(403, { message: 'You do not have access to this project' });
+        }
 
+        const expenditures = await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').execute();
+        return json(200, { data: expenditures });
+      }
+
+      if (user.isAdmin) {
+        const expenditures = await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').execute();
+        return json(200, { data: expenditures });
+      }
+
+      const membershipsAll = await db
+        .selectFrom('branch.project_memberships')
+        .where('user_id', '=', user.userId!)
+        .select('project_id')
+        .execute();
+      const projectIdsAll = membershipsAll.map((m: { project_id: number }) => m.project_id);
+      if (projectIdsAll.length === 0) return json(200, { data: [] });
+
+      const expenditures = await db.selectFrom('branch.expenditures').where('project_id', 'in', projectIdsAll).selectAll().orderBy('spent_on', 'desc').execute();
       return json(200, { data: expenditures });
     }
 
