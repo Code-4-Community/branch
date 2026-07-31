@@ -666,7 +666,27 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
       return json(409, { message: 'User with this email already exists' });
     }
 
-    const claimingUserId: number | null = existingUser ? existingUser.user_id : null;
+    // REGISTRATION IS INVITATION-ONLY. This endpoint is public and
+    // unauthenticated, so without this gate anyone could create a working
+    // account for themselves. An account is only meaningful once a branch.users
+    // row exists -- authenticateRequest rejects any Cognito identity whose sub
+    // has no row -- so refusing to create that row here is the control.
+    //
+    // The invitation must be created first by an admin via the ADMIN-gated
+    // POST /users, which inserts a row with a NULL cognito_sub.
+    //
+    // 403 rather than 404: this endpoint must not become an oracle for which
+    // email addresses have been invited, so the response is deliberately the
+    // same whether or not the address is known.
+    if (!existingUser) {
+      return json(403, {
+        message:
+          'Registration is by invitation only. Ask an administrator to create your account.',
+        code: 'INVITATION_REQUIRED',
+      });
+    }
+
+    const claimingUserId: number = existingUser.user_id;
 
     // Prepare Cognito SignUp parameters
     const signUpParams: SignUpCommandInput = {
@@ -700,7 +720,7 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
         // SignUp can never hand us a sub. Happens routinely in local dev: `make
         // down-v` wipes Postgres while the shared dev pool keeps the user. Link
         // the existing Cognito identity instead of dead-ending on a 409.
-        if (claimingUserId !== null) {
+        {
           try {
             // AdminGetUser is SigV4-signed and needs cognito-idp:AdminGetUser
             // (granted in infrastructure/aws/lambda.tf). With no AWS credentials
@@ -746,29 +766,19 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
 
     // Create user in database, or claim the pending invitation
     try {
-      if (claimingUserId !== null) {
-        // is_admin is deliberately NOT touched: it was set by whoever created the
-        // invitation (a seed, or an admin via POST /users) and must not be
-        // settable from a public, unauthenticated endpoint. The cognito_sub IS
-        // NULL predicate makes a concurrent claim a no-op rather than an
-        // overwrite; UNIQUE(cognito_sub) is the backstop.
-        await db
-          .updateTable('branch.users')
-          .set({ cognito_sub: cognitoUserSub, name: name.trim() })
-          .where('user_id', '=', claimingUserId)
-          .where('cognito_sub', 'is', null)
-          .execute();
-      } else {
-        await db
-          .insertInto('branch.users')
-          .values({
-            cognito_sub: cognitoUserSub,
-            email: email.toLowerCase(),
-            name: name.trim(),
-            is_admin: false,
-          })
-          .execute();
-      }
+      // Claim the invitation. is_admin is deliberately NOT touched: it was set
+      // by whoever created the invitation (a seed, or an admin via POST /users)
+      // and must never be settable from a public, unauthenticated endpoint.
+      // There is no insert path here -- registration cannot mint a new row, only
+      // claim one an admin already approved. The cognito_sub IS NULL predicate
+      // makes a concurrent claim a no-op rather than an overwrite;
+      // UNIQUE(cognito_sub) is the backstop.
+      await db
+        .updateTable('branch.users')
+        .set({ cognito_sub: cognitoUserSub, name: name.trim() })
+        .where('user_id', '=', claimingUserId)
+        .where('cognito_sub', 'is', null)
+        .execute();
     } catch (dbError: any) {
       console.error('Database insert error:', dbError);
 
@@ -795,7 +805,7 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
       name: name.trim(),
       emailVerificationRequired: true,
       details: 'Please check your email for verification code',
-      ...(claimingUserId !== null ? { claimed: true } : {}),
+      claimed: true,
     });
   } catch (error: any) {
     console.error('Registration error:', error);

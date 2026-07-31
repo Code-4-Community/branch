@@ -474,6 +474,14 @@ describe('GET /me', () => {
 describe('POST /register — claim-on-register', () => {
   const validBody = { email: 'Ashley@branch.org', password: 'Password123', name: 'Ashley' };
 
+  /** An admin-created invitation: the row exists, but no Cognito identity yet. */
+  const invitation = {
+    user_id: 1,
+    email: 'ashley@branch.org',
+    cognito_sub: null,
+    is_admin: true,
+  };
+
   it('claims a pending invitation (cognito_sub IS NULL) instead of returning 409', async () => {
     mockExecuteTakeFirst.mockResolvedValue({
       user_id: 1,
@@ -521,22 +529,37 @@ describe('POST /register — claim-on-register', () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
-  it('inserts a new row when no invitation exists', async () => {
+  it('refuses to create an account for an uninvited email', async () => {
+    // Registration is invitation-only. This endpoint is public, so without the
+    // gate anyone on the internet could mint themselves a working account --
+    // and several list endpoints authorize on `isAuthenticated` alone.
     mockExecuteTakeFirst.mockResolvedValue(undefined);
-    mockSend.mockResolvedValue({ UserSub: 'new-sub' });
-    mockExecute.mockResolvedValue(undefined);
 
     const res = await handler(event('/register', 'POST', validBody));
 
-    expect(res.statusCode).toBe(201);
-    expect(JSON.parse(res.body).claimed).toBeUndefined();
-    expect(mockValues).toHaveBeenCalledWith(
-      expect.objectContaining({ cognito_sub: 'new-sub', is_admin: false }),
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).code).toBe('INVITATION_REQUIRED');
+    // No Cognito user and no DB row: nothing is created at all.
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(mockValues).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('does not reveal whether an uninvited email is known', async () => {
+    // Same response shape for an unknown address as for a known-but-uninvited
+    // one, so /register cannot be used to enumerate staff email addresses.
+    mockExecuteTakeFirst.mockResolvedValue(undefined);
+
+    const unknown = await handler(
+      event('/register', 'POST', { ...validBody, email: 'stranger@example.com' }),
     );
+
+    expect(unknown.statusCode).toBe(403);
+    expect(JSON.parse(unknown.body).message).not.toMatch(/not found|no such|unknown/i);
   });
 
   it('rolls back the Cognito user when the database write fails', async () => {
-    mockExecuteTakeFirst.mockResolvedValue(undefined);
+    mockExecuteTakeFirst.mockResolvedValue(invitation);
     mockSend
       .mockResolvedValueOnce({ UserSub: 'new-sub' }) // SignUp
       .mockResolvedValueOnce({}); // AdminDeleteUser

@@ -23,7 +23,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   const testName = expect.getState().currentTestName;
-  if (testName && (testName.includes('duplicate') || testName.includes('normalization') || testName.includes('register with valid'))) {
+  if (testName && (testName.includes('duplicate') || testName.includes('normalization') || testName.includes('uninvited') || testName.includes('seeded admins'))) {
     const client = await pool.connect();
     try {
       await resetData(client);
@@ -38,12 +38,13 @@ afterAll(async () => {
 });
 
 test("duplicate email returns 409", async () => {
-  // Insert a user with lowercase email directly in DB
+  // A CLAIMED row (cognito_sub set) is a genuine conflict. A row without one is
+  // a pending invitation and would be claimed instead -- see the test below.
   const client = await pool.connect();
   try {
     await client.query(
-      'INSERT INTO branch.users (email, name, is_admin) VALUES ($1, $2, $3)',
-      ['existing@example.com', 'Existing User', false]
+      'INSERT INTO branch.users (email, name, is_admin, cognito_sub) VALUES ($1, $2, $3, $4)',
+      ['existing@example.com', 'Existing User', false, 'existing-sub-123']
     );
   } finally {
     client.release();
@@ -69,8 +70,8 @@ test("email normalization uppercase matches lowercase in DB", async () => {
   const client = await pool.connect();
   try {
     await client.query(
-      'INSERT INTO branch.users (email, name, is_admin) VALUES ($1, $2, $3)',
-      ['lowercase@example.com', 'Existing User', false]
+      'INSERT INTO branch.users (email, name, is_admin, cognito_sub) VALUES ($1, $2, $3, $4)',
+      ['lowercase@example.com', 'Existing User', false, 'lowercase-sub-123']
     );
   } finally {
     client.release();
@@ -91,9 +92,12 @@ test("email normalization uppercase matches lowercase in DB", async () => {
   expect(body.message).toContain("already exists");
 });
 
-test("register with valid data (requires Cognito)", async () => {
+test("uninvited email is refused before Cognito is ever called", async () => {
+  // Registration is invitation-only: with no branch.users row for this address
+  // the request must be rejected outright. Previously this created a working
+  // account for any caller.
   const uniqueEmail = `test${Date.now()}${Math.random().toString(36).substring(7)}@example.com`;
-  
+
   const res = await fetch("http://localhost:3000/auth/register", {
     method: "POST",
     body: JSON.stringify({
@@ -103,30 +107,44 @@ test("register with valid data (requires Cognito)", async () => {
     })
   });
 
-  if (res.status === 201) {
-    const body = await res.json();
-    expect(body.message).toBe("User registered successfully");
-    expect(body.userId).toBeDefined();
-    expect(body.email).toBe(uniqueEmail);
-    expect(body.name).toBe("Test User");
-    expect(body.emailVerificationRequired).toBe(true);
+  expect(res.status).toBe(403);
+  const body = await res.json();
+  expect(body.code).toBe("INVITATION_REQUIRED");
 
-    const client = await pool.connect();
-    try {
-      const result = await client.query(
-        'SELECT * FROM branch.users WHERE email = $1',
-        [uniqueEmail]
-      );
-      expect(result.rows.length).toBe(1);
-      expect(result.rows[0].cognito_sub).toBe(body.userId);
-      expect(result.rows[0].is_admin).toBe(false);
-    } finally {
-      client.release();
+  // And nothing was written.
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      'SELECT 1 FROM branch.users WHERE email = $1',
+      [uniqueEmail]
+    );
+    expect(rows).toHaveLength(0);
+  } finally {
+    client.release();
+  }
+});
+
+test("seeded admins are pending invitations, not claimed accounts", async () => {
+  // The claim path depends on this contract: a seeded admin has a row but no
+  // Cognito identity, so /auth/register activates it instead of 409ing. Before
+  // claim-on-register these three could never sign in at all.
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      'SELECT email, user_id, is_admin, cognito_sub FROM branch.users ORDER BY user_id'
+    );
+
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.cognito_sub).toBeNull();
+      expect(row.is_admin).toBe(true);
     }
-  } else if (res.status === 500) {
-    console.log('Skipping Cognito test - Cognito not configured');
-    expect(res.status).toBe(500);
-  } else {
-    throw new Error(`Unexpected status code: ${res.status}`);
+    expect(rows.map((r: { email: string }) => r.email)).toEqual([
+      'ashley@branch.org',
+      'renee@branch.org',
+      'nour@branch.org',
+    ]);
+  } finally {
+    client.release();
   }
 });
