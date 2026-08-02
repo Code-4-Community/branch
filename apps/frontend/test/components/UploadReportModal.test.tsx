@@ -44,7 +44,6 @@ const baseProps = {
   open: true,
   onClose: jest.fn(),
   onSuccess: jest.fn(),
-  token: 'test-token',
   projects: mockProjects,
 };
 
@@ -125,7 +124,6 @@ describe('UploadReportModal', () => {
         'Q1 Report',
         1,
         'technical',
-        'test-token',
       );
     });
   });
