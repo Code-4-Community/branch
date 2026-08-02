@@ -370,7 +370,6 @@ function ReportsPageContent() {
               open={isUploadModalOpen}
               onClose={() => setIsUploadModalOpen(false)}
               onSuccess={() => { setIsUploadModalOpen(false); fetchReports(); }}
-              token={token}
               projects={projects}
             />
 

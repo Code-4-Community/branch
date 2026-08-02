@@ -1,4 +1,4 @@
-import { apiFetch } from './api';
+import { authedFetch } from './authClient';
 
 export interface Report {
   report_id: number;
@@ -14,18 +14,17 @@ export interface Project {
   name: string;
 }
 
-export async function getReports(token: string, projectId?: number): Promise<Report[]> {
+export async function getReports(projectId?: number): Promise<Report[]> {
   const query = projectId ? `?projectId=${projectId}` : '';
-  const res = await apiFetch<{ data: Report[] }>(`/reports${query}`, { token });
+  const res = await authedFetch<{ data: Report[] }>(`/reports${query}`);
   return res.data ?? [];
 }
 
 export async function getUploadUrl(
   fileName: string,
   projectId: number,
-  token: string,
 ): Promise<{ uploadUrl: string; objectUrl: string }> {
-  return apiFetch(`/reports/upload-url?fileName=${encodeURIComponent(fileName)}&projectId=${projectId}`, { token });
+  return authedFetch(`/reports/upload-url?fileName=${encodeURIComponent(fileName)}&projectId=${projectId}`);
 }
 
 export async function uploadFileToS3(uploadUrl: string, file: File): Promise<void> {
@@ -42,11 +41,9 @@ export async function createReport(
   projectId: number,
   objectUrl: string,
   reportType: 'technical' | 'narrative',
-  token: string,
 ): Promise<Report> {
-  return apiFetch('/reports', {
+  return authedFetch('/reports', {
     method: 'POST',
-    token,
     body: JSON.stringify({ title, projectId, objectUrl, reportType }),
   });
 }
@@ -56,9 +53,8 @@ export async function uploadReport(
   title: string,
   projectId: number,
   reportType: 'technical' | 'narrative',
-  token: string,
 ): Promise<Report> {
-  const { uploadUrl, objectUrl } = await getUploadUrl(file.name, projectId, token);
+  const { uploadUrl, objectUrl } = await getUploadUrl(file.name, projectId);
   await uploadFileToS3(uploadUrl, file);
-  return createReport(title, projectId, objectUrl, reportType, token);
+  return createReport(title, projectId, objectUrl, reportType);
 }

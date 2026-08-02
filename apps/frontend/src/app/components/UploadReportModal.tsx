@@ -12,7 +12,6 @@ interface UploadReportModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  token: string;
   projects: Project[];
 }
 
@@ -20,7 +19,6 @@ export default function UploadReportModal({
   open,
   onClose,
   onSuccess,
-  token,
   projects,
 }: UploadReportModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,7 +95,6 @@ export default function UploadReportModal({
         title.trim(),
         selectedProject.project_id,
         reportType.toLowerCase() as 'technical' | 'narrative',
-        token,
       );
       resetForm();
       onSuccess();
