@@ -3,9 +3,9 @@
 import React, { useState } from 'react';
 import StaffCard from '../components/StaffCard';
 import AddUserModal from '../components/AddUserModal';
-import { useAuth } from '@/context/AuthContext';
 import { Button } from '@chakra-ui/react';
 import { User } from '@/types';
+import { getAccessToken } from '@/lib/authTokens';
 
 const mockUsers: User[] = [
     { user_id: 1,  name: 'Mehana Nagarur',   email: 'nagarur.m@northeastern.edu', is_admin: true  },
@@ -31,7 +31,6 @@ export const teamMembers = mockUsers.filter(u => !u.is_admin);
 
 
 export default function AccountsPage() {
-    const { getAccessToken } = useAuth();
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     return (
