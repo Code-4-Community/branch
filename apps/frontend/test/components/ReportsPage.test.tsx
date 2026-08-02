@@ -1,10 +1,11 @@
 import { render, screen, waitFor, within } from '../utils';
 import userEvent from '@testing-library/user-event';
 import ReportsPage from '@/app/reports/page';
-import { apiFetch } from '@/lib/api';
+import { authedFetch as apiFetch } from '@/lib/authClient';
 
-jest.mock('../../src/lib/api', () => ({
-    apiFetch: jest.fn(),
+jest.mock('../../src/lib/authClient', () => ({
+    ...jest.requireActual('../../src/lib/authClient'),
+    authedFetch: jest.fn(),
 }));
 
 jest.mock('../../src/hooks/useQueryParams', () => ({

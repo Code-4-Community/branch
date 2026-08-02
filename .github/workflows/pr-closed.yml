@@ -11,6 +11,9 @@ permissions:
 jobs:
   update-status:
     runs-on: ubuntu-latest
+    # PRs labelled `no-review` are untracked by pr-no-review-label.yml, so
+    # there is no Slack message or state file left to update.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'no-review') }}
     steps:
       - name: Checkout bot-state branch
         uses: actions/checkout@v4

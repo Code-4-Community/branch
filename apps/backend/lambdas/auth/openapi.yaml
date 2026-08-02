@@ -21,8 +21,13 @@ paths:
 
   /register:
     post:
-      summary: Register a new user
-      description: Creates a new user account in Cognito and the database
+      summary: Claim an invitation and activate an account
+      description: >
+        INVITATION-ONLY. This endpoint is public and unauthenticated, so it
+        cannot mint new accounts: it only activates a branch.users row that an
+        admin already created via the ADMIN-gated POST /users (such a row has a
+        NULL cognito_sub). An email with no pending invitation gets 403.
+        is_admin is never written here.
       requestBody:
         required: true
         content:
@@ -87,8 +92,24 @@ paths:
                   message:
                     type: string
                     example: Invalid email format
+        '403':
+          description: >
+            No pending invitation for this email. Deliberately indistinguishable
+            from the response for an address that is not in the system at all,
+            so this endpoint cannot be used to enumerate staff emails.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Registration is by invitation only. Ask an administrator to create your account.
+                  code:
+                    type: string
+                    example: INVITATION_REQUIRED
         '409':
-          description: User already exists
+          description: The invitation has already been claimed
           content:
             application/json:
               schema:
@@ -111,7 +132,11 @@ paths:
   /login:
     post:
       summary: Log in a user
-      description: Authenticates a user with email and password via Cognito SRP
+      description: >
+        Authenticates with email and password via Cognito USER_PASSWORD_AUTH.
+        A 200 is either a token set OR an auth challenge -- branch on the
+        presence of ChallengeName. Complete challenges at
+        POST /auth/respond-challenge using the returned Session.
       requestBody:
         required: true
         content:
@@ -132,18 +157,15 @@ paths:
                   example: Password123
       responses:
         '200':
-          description: Login successful
+          description: Tokens, or the next auth challenge
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  AccessToken:
-                    type: string
-                  IdToken:
-                    type: string
-                  RefreshToken:
-                    type: string
+                oneOf:
+                  - $ref: '#/components/schemas/TokenSet'
+                  - $ref: '#/components/schemas/AuthChallenge'
+        '400':
+          description: email and password are required
         '401':
           description: Invalid credentials
           content:
@@ -155,7 +177,10 @@ paths:
                     type: string
                     example: Invalid email or password
         '403':
-          description: Email not verified or password change required
+          description: >
+            Email not verified, password reset required, or MFA enrollment
+            required (MFA_SETUP, which returns a Session but is not yet
+            answerable)
           content:
             application/json:
               schema:
@@ -164,6 +189,157 @@ paths:
                   message:
                     type: string
                     example: Email not verified
+        '429':
+          description: Too many attempts
+        '500':
+          description: Authentication failed
+
+  /respond-challenge:
+    post:
+      summary: Complete a Cognito auth challenge
+      description: >
+        Answers the challenge returned by POST /auth/login using the opaque
+        Session string. NEW_PASSWORD_REQUIRED is reachable today;
+        SOFTWARE_TOKEN_MFA, SMS_MFA, EMAIL_OTP and SELECT_MFA_TYPE are already
+        wired and become reachable as soon as mfa_configuration is enabled on
+        the user pool -- no code change. The response is itself either a token
+        set or a further challenge, because challenges chain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - challengeName
+                - session
+                - email
+              properties:
+                challengeName:
+                  type: string
+                  enum:
+                    - NEW_PASSWORD_REQUIRED
+                    - SOFTWARE_TOKEN_MFA
+                    - SMS_MFA
+                    - EMAIL_OTP
+                    - SELECT_MFA_TYPE
+                session:
+                  type: string
+                  description: Opaque Session from the /auth/login response
+                email:
+                  type: string
+                  format: email
+                newPassword:
+                  type: string
+                  format: password
+                  description: Required for NEW_PASSWORD_REQUIRED
+                name:
+                  type: string
+                  description: >
+                    Optional, only for NEW_PASSWORD_REQUIRED when the pool
+                    requires the name attribute to be supplied
+                code:
+                  type: string
+                  description: Required for SOFTWARE_TOKEN_MFA / SMS_MFA / EMAIL_OTP
+                mfaType:
+                  type: string
+                  description: Required for SELECT_MFA_TYPE
+      responses:
+        '200':
+          description: Tokens, or the next challenge
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TokenSet'
+                  - $ref: '#/components/schemas/AuthChallenge'
+        '400':
+          description: Missing/invalid field, unsupported challengeName, or bad code
+        '401':
+          description: Challenge session is invalid or expired
+        '429':
+          description: Too many attempts
+
+  /refresh:
+    post:
+      summary: Exchange a refresh token for new access and ID tokens
+      description: >
+        Cognito REFRESH_TOKEN_AUTH. No client secret is configured
+        (generate_secret = false) so no SECRET_HASH is required. NOTE: no new
+        RefreshToken is returned -- keep using the stored one until it expires
+        (30 days, see infrastructure/aws/cognito.tf).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New access and ID tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  AccessToken:
+                    type: string
+                  IdToken:
+                    type: string
+                  ExpiresIn:
+                    type: integer
+                    example: 3600
+                  TokenType:
+                    type: string
+                    example: Bearer
+        '400':
+          description: refreshToken is required
+        '401':
+          description: Refresh token is invalid or expired
+        '429':
+          description: Too many requests
+
+  /me:
+    get:
+      summary: Current session (canonical session bootstrap)
+      description: >
+        Verifies the Bearer access token and returns the caller's Postgres
+        branch.users row. This is the ONLY way the frontend can learn isAdmin:
+        it lives solely in Postgres and there is no pre-token-generation
+        trigger, so it is not a JWT claim. email and name also come from the DB
+        because a Cognito access token does not carry them.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: integer
+                    example: 1
+                  cognitoSub:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  name:
+                    type: string
+                  isAdmin:
+                    type: boolean
+                  profileImage:
+                    type: string
+                    nullable: true
+        '401':
+          description: Authentication required
 
   /verify-email:
     post:
@@ -201,10 +377,26 @@ paths:
 
   /logout:
     post:
-      summary: POST /logout
+      summary: Sign out everywhere
+      description: >
+        Cognito GlobalSignOut on the Bearer access token. This revokes the
+        refresh token pool-wide for that user, so every other session for the
+        same account also stops being renewable.
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: OK
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Logged out successfully
+        '401':
+          description: Missing Authorization header, or invalid/expired token
 
   /forgot-password:
     post:
@@ -319,3 +511,52 @@ paths:
                   message:
                     type: string
                     example: Too many attempts, please try again later
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito access token, as returned by POST /auth/login
+  schemas:
+    TokenSet:
+      type: object
+      properties:
+        AccessToken:
+          type: string
+        IdToken:
+          type: string
+        RefreshToken:
+          type: string
+          description: Absent on POST /auth/refresh -- Cognito does not re-issue it
+        ExpiresIn:
+          type: integer
+          example: 3600
+        TokenType:
+          type: string
+          example: Bearer
+    AuthChallenge:
+      type: object
+      required:
+        - ChallengeName
+        - Session
+      properties:
+        ChallengeName:
+          type: string
+          enum:
+            - NEW_PASSWORD_REQUIRED
+            - SOFTWARE_TOKEN_MFA
+            - SMS_MFA
+            - EMAIL_OTP
+            - SELECT_MFA_TYPE
+            - MFA_SETUP
+        Session:
+          type: string
+          description: Opaque; pass back to POST /auth/respond-challenge
+        ChallengeParameters:
+          type: object
+          additionalProperties:
+            type: string
+        message:
+          type: string

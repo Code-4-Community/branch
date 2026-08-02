@@ -26,7 +26,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.978.0",
-    "amazon-cognito-identity-js": "^6.3.16",
+    "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
+    "aws-jwt-verify": "^5.1.1",
     "dotenv": "^17.2.3",
     "kysely": "^0.28.10",
     "pg": "^8.17.2"

@@ -84,7 +84,7 @@ Convention: optional `page` + `limit` query params → `offset = (page-1)*limit`
 ## Testing
 
 - `*.unit.test.ts` — mock `../auth` and (sometimes) `../db`; test routing/validation/authz branches. No DB needed.
-- `*.e2e.test.ts` — seed Postgres from `db_setup.sql`, mock only `authenticateRequest` to inject an auth context, hit the real handler against the real DB.
+- `*.e2e.test.ts` — `ensureSchema()` in `beforeAll` builds schema `branch` from `db/migrations` if stale; `resetData()` in `beforeEach` truncates with `RESTART IDENTITY` and re-applies `db/seed.sql` (so seeded ids stay 1-3 and created rows land on 4+). Both from `db/testkit.ts`. Mock only `authenticateRequest` to inject an auth context, hit the real handler against the real DB.
 - Pattern: `jest.mock('../auth')` then `mockAuthenticateRequest.mockResolvedValueOnce(adminCtx)`. Build events with a `createEvent(method, path, body?, query?)` helper.
 - Per-lambda scripts: `npm test` runs jest (some use `--forceExit`); `npm run test:e2e` / the `test` script use `start-server-and-test` against `/<service>/health` on port 3000. CI: `.github/workflows/lambda-tests.yml` spins up Postgres per lambda matrix.
 

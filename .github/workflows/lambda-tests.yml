@@ -47,8 +47,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Setup database schema
-        run: psql postgres://branch_dev:password@localhost:5432/branch_db -f apps/backend/db/db_setup.sql
+      # Build the schema the same way production does -- by applying
+      # db/migrations -- then load the dev seed rows the tests expect. The tests
+      # also call ensureSchema()/resetData() from db/testkit.ts themselves, so
+      # this doubles as a per-PR smoke test that migrations apply to a virgin DB.
+      - name: Apply migrations and seed
+        working-directory: apps/backend/db
+        run: npm ci --no-audit --no-fund && npm run migrate && npm run seed
+        env:
+          DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
       - name: Build shared lambda-auth package
         run: npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
       - name: Install dependencies
@@ -63,14 +70,189 @@ jobs:
           curl --fail --retry 5 --retry-delay 2 http://localhost:3000/${LAMBDA_NAME}/health
           npm test
         env:
-          DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db?options=-csearch_path%3Dbranch
+          # No ?options=-csearch_path: the lambdas schema-qualify every query via
+          # the generated "branch.*" DB keys, and the migrator sets search_path on
+          # its own connections.
+          DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
           COGNITO_USER_POOL_ID: ${{ secrets.COGNITO_USER_POOL_ID }}
           COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
           AWS_REGION: us-east-2
-  
+
+  # Migrations must apply cleanly to an empty database, be idempotent, and agree
+  # with the committed types.
+  migrations-fresh:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: branch_dev
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: branch_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install db tooling
+        run: npm ci --prefix apps/backend/db --no-audit --no-fund
+
+      - name: Apply every migration from scratch
+        run: npm run migrate --prefix apps/backend/db
+
+      - name: Ledger must be clean afterwards
+        run: |
+          set -o pipefail
+          npm run migrate:status --prefix apps/backend/db | tee status.log
+          if grep -q 'PENDING' status.log; then
+            echo "::error::migrations still pending after a successful migrate run"
+            exit 1
+          fi
+
+      - name: Re-running migrations must be a no-op
+        run: npm run migrate --prefix apps/backend/db
+
+      - name: Seeds must apply on top of the migrated schema
+        run: npm run seed --prefix apps/backend/db
+
+      # Drift check: the committed types must be what these migrations produce.
+      - name: Committed types must match the migrations
+        run: |
+          cp shared/types/db-types.d.ts /tmp/committed.d.ts
+          npm run types --prefix apps/backend/db
+          if ! diff -u /tmp/committed.d.ts shared/types/db-types.d.ts; then
+            echo "::error::shared/types/db-types.d.ts is stale. The Schema Change Checks workflow pushes a fix to this PR automatically -- wait for its commit, then this check goes green. Or run 'make types' in apps/backend and commit the result."
+            exit 1
+          fi
+
+  # Guards that need no database: migration files are append-only, correctly
+  # named, and free of statements that would break the currently deployed code.
+  migrations-guard:
+    runs-on: ubuntu-latest
+    env:
+      DIR: apps/backend/db/migrations
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # push-to-main has nothing meaningful to compare against; resolving to ""
+      # makes the guards no-op WITHOUT skipping the job, so the lambda-tests gate
+      # (which requires result == 'success') still passes.
+      - name: Resolve base sha
+        id: base
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request) base='${{ github.event.pull_request.base.sha }}' ;;
+            merge_group)  base='${{ github.event.merge_group.base_sha }}'  ;;
+            *)            base='' ;;
+          esac
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Applied migrations are immutable
+        if: steps.base.outputs.sha != ''
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          MB=$(git merge-base "$BASE" HEAD)
+          # Anything but A(dded) under migrations/ is a violation: M modified,
+          # D deleted, R renamed, C copied, T typechange. --find-renames is
+          # explicit so a rename reports R (not D+A) regardless of the runner's
+          # diff.renames default.
+          violations=$(git diff --name-status --find-renames "$MB" HEAD -- "$DIR" | grep -vE '^A[[:space:]]' || true)
+          if [ -n "$violations" ]; then
+            echo "::error::Migrations already on main can never be modified, renamed or deleted -- someone has already run them. Add a NEW migration that fixes the old one."
+            printf '%s\n' "$violations"
+            exit 1
+          fi
+
+      - name: New migrations must be named correctly
+        if: steps.base.outputs.sha != ''
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          MB=$(git merge-base "$BASE" HEAD)
+          added=$(git diff --diff-filter=A --name-only "$MB" HEAD -- "$DIR" | xargs -r -n1 basename | sort || true)
+          last=$(git ls-tree -r --name-only "$MB" -- "$DIR" | xargs -r -n1 basename | sort | tail -1 || true)
+          fail=0
+          for f in $added; do
+            if ! echo "$f" | grep -qE '^(0000_baseline_schema|[0-9]{14}_[a-z0-9_]+)\.sql$'; then
+              echo "::error file=$DIR/$f::name must be YYYYMMDDHHMMSS_lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
+              fail=1
+            fi
+            # Out-of-order merges are allowed at runtime (the migrator sets
+            # allowUnorderedMigrations), so this is advice, not a failure.
+            if [ -n "${last:-}" ] && [ "$f" \< "$last" ]; then
+              echo "::warning file=$DIR/$f::sorts before $last, which is already on main, so it will be applied out of order. Harmless, but renaming it to a current timestamp keeps the history readable."
+            fi
+          done
+          exit $fail
+
+      - name: No statements that would break the deployed code
+        if: steps.base.outputs.sha != ''
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          MB=$(git merge-base "$BASE" HEAD)
+          files=$(git diff --diff-filter=A --name-only "$MB" HEAD -- "$DIR" || true)
+          fail=0
+          for f in $files; do
+            [ -f "$f" ] || continue
+            # '-- allow-destructive: <reason>' opts a file out, deliberately loudly.
+            if grep -qi '^-- allow-destructive:' "$f"; then
+              echo "::warning file=$f::opted out of the destructive-SQL check"
+              continue
+            fi
+            if grep -inE '\b(DROP[[:space:]]+SCHEMA|DROP[[:space:]]+DATABASE|TRUNCATE|DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN)\b' "$f"; then
+              echo "::error file=$f::destructive statement. Migrations run against production BEFORE the new lambda code deploys, so the currently deployed code would hit the changed schema. See the expand/contract rules in apps/backend/db/README.md. Add '-- allow-destructive: <reason>' only for a contract-phase migration whose expand phase is already live."
+              fail=1
+            fi
+            if grep -inE 'CONCURRENTLY' "$f"; then
+              echo "::error file=$f::CONCURRENTLY cannot run inside a transaction, and the migrator wraps the run in one. This database is tiny -- use a plain CREATE INDEX."
+              fail=1
+            fi
+            if grep -inE '^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+(branch\.)?users\b' "$f"; then
+              echo "::warning file=$f::inserting users in a migration puts rows in PRODUCTION. Seeded users with a NULL cognito_sub are claimable by POST /auth/register, so this can hand someone an account. Dev seed rows belong in apps/backend/db/seed.sql."
+            fi
+          done
+          exit $fail
+
+  # The discover job only globs apps/backend/lambdas/*/, so the shared auth
+  # package -- the single most security-critical module in the backend -- would
+  # never have its tests run without this job.
+  shared-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci --prefix shared/lambda-auth
+      - name: Run tests
+        run: npm test --prefix shared/lambda-auth
+
+  # NOTE: do not rename this job. infrastructure/github/main.tf lists
+  # "lambda-tests" as a required status check on main; renaming it here would
+  # silently disable the gate rather than fail loudly.
   lambda-tests:
     name: lambda-tests
-    needs: test
+    needs: [test, shared-auth, migrations-fresh, migrations-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -80,4 +262,19 @@ jobs:
             echo "Lambda tests failed or were cancelled"
             exit 1
           fi
-          echo "All lambda tests passed!"
+          if [ "${{ needs.shared-auth.result }}" != "success" ]; then
+            echo "shared/lambda-auth tests failed or were cancelled"
+            exit 1
+          fi
+          # Folded into this gate rather than added to branch protection, so
+          # infrastructure/github/main.tf needs no change and there is no risk of
+          # wedging the merge queue on a mistyped required-check context.
+          if [ "${{ needs.migrations-fresh.result }}" != "success" ]; then
+            echo "Migrations do not apply cleanly from scratch, or the committed DB types are stale"
+            exit 1
+          fi
+          if [ "${{ needs.migrations-guard.result }}" != "success" ]; then
+            echo "Migration guard failed (edited an applied migration, bad name, or unsafe SQL)"
+            exit 1
+          fi
+          echo "All lambda and migration checks passed!"
