@@ -3,8 +3,9 @@ import { render, screen, waitFor } from '../utils';
 import ProjectPage from '@/app/projects/[id]/page';
 
 const mockApiFetch = jest.fn();
-jest.mock('../../src/lib/api', () => ({
-    apiFetch: (...args: Parameters<typeof mockApiFetch>) => mockApiFetch(...args),
+jest.mock('../../src/lib/authClient', () => ({
+    ...jest.requireActual('../../src/lib/authClient'),
+    authedFetch: (...args: Parameters<typeof mockApiFetch>) => mockApiFetch(...args),
 }));
 
 jest.mock('next/navigation', () => ({

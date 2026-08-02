@@ -5,14 +5,7 @@ import StaffCard from '../components/StaffCard';
 import AddUserModal from '../components/AddUserModal';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@chakra-ui/react';
-
-interface User {
-    user_id: number;
-    name: string;
-    email: string;
-    is_admin: boolean;
-    created_at?: string;
-}
+import { User } from '@/types';
 
 const mockUsers: User[] = [
     { user_id: 1,  name: 'Mehana Nagarur',   email: 'nagarur.m@northeastern.edu', is_admin: true  },

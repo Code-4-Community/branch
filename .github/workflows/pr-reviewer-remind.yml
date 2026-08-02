@@ -118,6 +118,15 @@ jobs:
                 continue;
               }
 
+              // ── Respect the `no-review` opt-out label ──────────────
+              // pr-no-review-label.yml normally deletes the per-PR file when
+              // the label goes on, but this cron is the backstop for a PR that
+              // was labelled while that workflow was failing or disabled.
+              if ((ghPr.labels || []).some(l => l.name === 'no-review')) {
+                console.log(`PR #${prData.pr_number} is labelled no-review. Skipping reminder.`);
+                continue;
+              }
+
               // ── Check if reviewers have submitted reviews ──────────
               let reviews = [];
               try {

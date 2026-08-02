@@ -17,14 +17,28 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# Cognito admin permissions for the users lambda (AdminCreateUser / AdminDeleteUser)
-resource "aws_iam_role_policy" "lambda_cognito" {
-  name = "branch-lambda-cognito-policy"
+# The auth lambda's registration-rollback path calls AdminDeleteUser when the
+# branch.users write fails after a successful Cognito SignUp. Without this it
+# fails AccessDeniedException and orphans a Cognito user with no DB row: that
+# user can never log in (authenticate.ts finds no row) and re-registering
+# returns 409 from Cognito.
+#
+# Every other Cognito API the auth lambda uses (SignUp, InitiateAuth,
+# RespondToAuthChallenge, ConfirmSignUp, ResendConfirmationCode,
+# ForgotPassword, ConfirmForgotPassword, GlobalSignOut) is modelled
+# smithy.api#noAuth in the AWS SDK and needs no IAM at all -- which is also why
+# local docker-compose auth works with no AWS credentials.
+#
+# AdminCreateUser is additionally needed by the users lambda (POST /users) to
+# provision new Cognito accounts at invitation time.
+resource "aws_iam_role_policy" "lambda_cognito_admin" {
+  name = "branch-lambda-cognito-admin"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
+      Sid    = "AuthLambdaUserPoolAdmin"
       Effect = "Allow"
       Action = [
         "cognito-idp:AdminCreateUser",
@@ -114,16 +128,34 @@ resource "aws_lambda_function" "functions" {
     ignore_changes = [s3_key]
   }
 
+  # This block is AUTHORITATIVE, and is deliberately NOT in ignore_changes.
+  # The Cognito IDs used to exist only as hand-set console values outside
+  # Terraform state, so any `terraform apply` of this module deleted them and
+  # shared/lambda-auth/src/authenticate.ts then failed to build a verifier on
+  # every authenticated request in all six lambdas -- surfacing as blanket 401s
+  # rather than a loud error, because the throw happens inside a try block.
+  # Anything a lambda reads from process.env must be listed here.
+  #
+  # AWS_REGION is intentionally absent: it is a Lambda reserved key that the
+  # runtime provides, and the handlers already default to us-east-2.
   environment {
     variables = {
-      NODE_ENV             = "production"
-      DB_HOST              = aws_db_instance.branch_rds.address
-      DB_USER              = data.infisical_secrets.rds_folder.secrets["username"].value
-      DB_PASSWORD          = data.infisical_secrets.rds_folder.secrets["password"].value
-      DB_PORT              = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
-      DB_NAME              = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
+      NODE_ENV    = "production"
+      DB_HOST     = aws_db_instance.branch_rds.address
+      DB_USER     = data.infisical_secrets.rds_folder.secrets["username"].value
+      DB_PASSWORD = data.infisical_secrets.rds_folder.secrets["password"].value
+      DB_PORT     = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
+      DB_NAME     = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
+
+      # Not secrets: the user pool ID is public, and the app client is created
+      # with generate_secret = false, so there is no SECRET_HASH to protect.
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.branch_user_pool.id
       COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.branch_client.id
+
+      # Read by lambdas/reports/{handler,report-service}.ts. Previously hand-set
+      # on branch-reports only; listed here so this authoritative block does not
+      # wipe it. Harmless on the other five functions.
+      REPORTS_BUCKET_NAME = aws_s3_bucket.reports_bucket.id
     }
   }
 }

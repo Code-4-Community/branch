@@ -15,6 +15,9 @@ Lambda for managing projects.
 | GET | /projects/{id}/donors |  |
 | GET | /projects/{id} |  |
 | PUT | /projects/{id} |  |
+| DELETE | /projects/{id} |  |
+| POST | /projects |  |
+| GET | /projects/{id}/expenditures |  |
 
 ## Setup
 

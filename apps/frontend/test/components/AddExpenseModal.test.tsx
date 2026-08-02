@@ -1,9 +1,10 @@
 import { render, screen, fireEvent, waitFor } from '../utils';
 import AddExpenseModal from '@/app/components/AddExpenseModal';
-import { apiFetch } from '@/lib/api';
+import { authedFetch as apiFetch } from '@/lib/authClient';
 
-jest.mock('../../src/lib/api', () => ({
-  apiFetch: jest.fn(),
+jest.mock('../../src/lib/authClient', () => ({
+  ...jest.requireActual('../../src/lib/authClient'),
+  authedFetch: jest.fn(),
 }));
 
 // Mock DropdownSelector — render a simple native select so we can drive it
@@ -60,7 +61,6 @@ const baseProps = {
   open: true,
   onClose: jest.fn(),
   onSuccess: jest.fn(),
-  token: 'test-token',
   categories: ['Travel Foreign', 'Supplies'],
   projects: [
     { project_id: 1, name: 'Project Name 1' },
@@ -149,7 +149,6 @@ describe('AddExpenseModal Component', () => {
         '/expenditures',
         expect.objectContaining({
           method: 'POST',
-          token: 'test-token',
           body: JSON.stringify({
             projectID: 2,
             amount: 12000,

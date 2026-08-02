@@ -226,6 +226,88 @@ resource "aws_iam_role_policy" "ci_preview" {
   })
 }
 
+# ---------------------------------------------------------------------------
+# Migrate role — assumable ONLY from the `production-db` environment.
+# Powers the `migrate` job in .github/workflows/lambda-deploy.yml, which applies
+# apps/backend/db/migrations to the production RDS instance before the new lambda
+# code is deployed.
+#
+# Deliberately NOT branch-ci-apply: applying schema needs to read one lambda's
+# config and snapshot one database, nothing else. The job reads the DB connection
+# off the deployed branch-auth function rather than holding a copy of the
+# credentials, so there is no second place for the prod password to live and
+# rotating it in Infisical needs no CI change.
+# ---------------------------------------------------------------------------
+data "aws_iam_policy_document" "ci_migrate_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${local.github_repo}:environment:production-db"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ci_migrate" {
+  name               = "branch-ci-migrate"
+  assume_role_policy = data.aws_iam_policy_document.ci_migrate_assume.json
+}
+
+resource "aws_iam_role_policy" "ci_migrate" {
+  name = "db-migrate"
+  role = aws_iam_role.ci_migrate.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      # The single source of truth for DB_HOST/USER/PASSWORD/NAME, written by
+      # lambda.tf. Reading it means CI can never migrate a database the code is
+      # not talking to.
+      {
+        Sid      = "ReadDbConnectionFromDeployedLambda"
+        Effect   = "Allow"
+        Action   = ["lambda:GetFunctionConfiguration"]
+        Resource = aws_lambda_function.functions["auth"].arn
+      },
+      # DescribeDBInstances is on "*" because branch_rds has no explicit
+      # `identifier`, so its id is an AWS-generated terraform-<hex> string that
+      # cannot be written down here; the job resolves it by matching DB_HOST.
+      {
+        Sid      = "ResolveInstanceAndSnapshots"
+        Effect   = "Allow"
+        Action   = ["rds:DescribeDBInstances", "rds:DescribeDBSnapshots"]
+        Resource = "*"
+      },
+      # Pre-migration snapshot, plus pruning old ones. Backup storage under the
+      # instance's allocated_storage is free, so this costs nothing and is the
+      # only rollback lever that does not require reasoning about timestamps.
+      {
+        Sid    = "PreMigrationSnapshots"
+        Effect = "Allow"
+        Action = [
+          "rds:CreateDBSnapshot",
+          "rds:DeleteDBSnapshot",
+          "rds:AddTagsToResource",
+        ]
+        Resource = [
+          aws_db_instance.branch_rds.arn,
+          "arn:aws:rds:us-east-2:${data.aws_caller_identity.current.account_id}:snapshot:branch-premigrate-*",
+        ]
+      },
+    ]
+  })
+}
+
 output "ci_plan_role_arn" {
   description = "OIDC role for terraform-plan (read-only)"
   value       = aws_iam_role.ci_plan.arn
@@ -239,4 +321,9 @@ output "ci_apply_role_arn" {
 output "ci_preview_role_arn" {
   description = "OIDC role for preview-env.yml (scoped write, preview env only)"
   value       = aws_iam_role.ci_preview.arn
+}
+
+output "ci_migrate_role_arn" {
+  description = "OIDC role for the db migrate job (production-db env only)"
+  value       = aws_iam_role.ci_migrate.arn
 }

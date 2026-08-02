@@ -1,6 +1,7 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { authenticateRequest } from './auth';
+import { DonorValidationUtils, DonationValidationUtils } from './validation-utils';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -188,12 +189,113 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     }
 
     // POST /donors
-    if ((normalizedPath === '/' || normalizedPath === '/donors') && method === 'POST') {
-      const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
-      // TODO: Add your business logic here
-      return json(201, { ok: true, route: 'POST /donors', body });
+    if ((normalizedPath === '/' || normalizedPath === '' || normalizedPath === '/donors') && method === 'POST') {
+        // Authenticate the request
+        const { user } = authContext;
+
+        if (!user) {
+          return json(401, { message: 'Authentication required' });
+        }
+        if (!user.isAdmin) {
+          return json(403, { message: 'Only admins can create donors' });
+        }
+  
+        const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+  
+        // Validate input
+        const validationResult = DonorValidationUtils.validateDonorInput(body);
+        if (validationResult instanceof Error) {
+          return json(400, { message: validationResult.message });
+        }
+
+        const { organization, contactName, contactEmail } = validationResult;  
+        
+        // Insert donor with authenticated user as entered_by
+        try {
+          await db
+            .insertInto('branch.donors')
+            .values({
+              organization,
+              contact_name: contactName ?? null,
+              contact_email: contactEmail ?? null,
+            })
+            .executeTakeFirst();
+        } catch (err) {
+          console.error('Database insert error:', err);
+          return json(500, { message: 'Failed to create donor' });
+        }
+  
+        return json(201, {
+          ok: true,
+          route: 'POST /donors',
+          body: {
+            organization,
+            contactName: contactName ?? null,
+            contactEmail: contactEmail ?? null,
+          },
+        });
     }
-    // <<< ROUTES-END
+    
+    // DELETE /donors/{id}
+    if (/^\/[^\/]+$/.test(normalizedPath) && method === 'DELETE') {
+      const id = normalizedPath.split('/')[1];
+      if (!id || !/^\d+$/.test(id)) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      if (!authContext.user?.isAdmin) {
+        return json(403, { message: 'Only admins can delete donors' });
+      }
+
+      const deleted = await db.deleteFrom('branch.donors').where('donor_id', '=', Number(id)).execute();
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Donor not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /donors/{id}', pathParams: { id } });
+      
+    }
+    
+    // DELETE /donations/{id}
+    if (normalizedPath.startsWith('/donations/') && normalizedPath.split('/').length === 3 && method === 'DELETE') {
+      const id = normalizedPath.split('/')[2];
+      if (!id || !/^\d+$/.test(id)) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      const donation = await db
+        .selectFrom('branch.project_donations')
+        .where('donation_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+      if (!donation) {
+        return json(404, { message: 'Donation not found' });
+      }
+
+      if (!authContext.user?.isAdmin) {
+        const userId = authContext.user!.userId as number;
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .select('membership_id')
+          .where('project_id', '=', donation.project_id)
+          .where('user_id', '=', userId)
+          .executeTakeFirst();
+    
+        if (!membership) {
+          return json(403, { message: 'You must be a member of this project to delete this donation' });
+        }
+      }
+
+      const deleted = await db.deleteFrom('branch.project_donations').where('donation_id', '=', Number(id)).execute();
+      if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+        return json(404, { message: 'Donation not found' });
+      }
+
+      return json(200, { ok: true, route: 'DELETE /donations/{id}', pathParams: { id } });
+    }
+
+    // <<< ROUTES-END   
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
@@ -209,7 +311,7 @@ function json(statusCode: number, body: unknown): APIGatewayProxyResult {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
     },
     body: JSON.stringify(body)
   };

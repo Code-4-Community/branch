@@ -30,7 +30,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 Two `file:`-linked packages dedupe code across lambdas:
 
-- **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). `db-types.d.ts` is **generated** from `apps/backend/db/db_setup.sql` by the `regenerate-db-types` workflow — never hand-edit it.
+- **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
 - **`@branch/lambda-auth`** (`shared/lambda-auth/`) — runtime auth: `authenticateRequest(db, event)`, `extractToken(event)`, `checkAuthorization(ctx, level, resourceUserId?)`. Lambdas wrap it in their local `auth.ts`.
 
 ## Root commands
@@ -49,5 +49,5 @@ Per-app build/test/dev commands live in each app's `package.json` and AGENTS.md.
 
 - TypeScript strict everywhere. Prettier + ESLint enforced on push (husky + lint-staged).
 - Squash-merge only; 2 approvals required; PR merge queue. Branch protection requires `frontend-ci`, `lambda-tests`, `terraform-plan-summary` checks to pass.
-- Schema changes go in `apps/backend/db/db_setup.sql`; DB types regenerate automatically via workflow.
+- Schema changes are migrations: `make new-migration NAME=x` in `apps/backend`, write SQL, `make migrate`. Applied to prod automatically on merge, before the lambda deploy — so additive changes only in a single PR. See `apps/backend/db/README.md`.
 - Don't commit secrets — all secrets flow through Infisical → GitHub Actions / Terraform.

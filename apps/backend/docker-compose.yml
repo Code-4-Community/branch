@@ -12,7 +12,6 @@ services:
       - '${DB_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/db_setup.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test:
         [
@@ -22,6 +21,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Applies every pending migration, then seeds only if the database is empty.
+  #
+  # Runs on every `make up`, unlike the old /docker-entrypoint-initdb.d mount of
+  # db_setup.sql, which only fired on a brand new volume -- so a schema change
+  # used to need `make down-v`.
+  #
+  # One-shot: it exits when done, and the lambdas wait for that via
+  # service_completed_successfully. That is also why the Makefile passes
+  # --abort-on-container-failure rather than --abort-on-container-exit; the
+  # latter would tear the whole stack down the moment this succeeds.
+  migrator:
+    build:
+      context: ../..
+      dockerfile: apps/backend/db/Dockerfile
+    container_name: branch-migrator
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-branch_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-branch_db}
+    command: sh -c "npm run migrate && npm run seed -- --if-empty"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # Users Service
   users:
@@ -43,6 +68,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
   # Projects Service
   projects:
@@ -64,6 +91,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
   # Donors Service
   donors:
@@ -79,12 +108,14 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_NAME: ${DB_NAME:-branch_db}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
-      COGNITO_APP_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
     ports:
       - '3003:3000'
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
   # Expenditures Service
   expenditures:
@@ -106,6 +137,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
   # Reports Service
   reports:
@@ -131,6 +164,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
   # Auth Service
   auth:
@@ -145,7 +180,6 @@ services:
       DB_USER: ${DB_USER:-branch_dev}
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_NAME: ${DB_NAME:-branch_db}
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
     ports:
@@ -153,6 +187,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

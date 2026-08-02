@@ -43,7 +43,8 @@ apps/backend/
 ├── docker-compose.yml          # Orchestrates all services
 ├── Makefile                    # Developer convenience commands
 ├── db/
-│   └── db_setup.sql            # Schema + seed data (single file)
+│   ├── migrations/             # Schema migrations, applied in filename order
+│   └── seed.sql                # Dev/test seed data
 └── lambdas/
     ├── auth/                   # Authentication (Cognito + DB)
     ├── donors/                 # Donor management (read-only)
@@ -324,17 +325,19 @@ This file is labeled as a "unit test" but doesn't mock the database — it conne
 
 ## Database & Schema Issues
 
-### 20. Destructive Schema Reset on Every Init
+### 20. Destructive Schema Reset on Every Init — RESOLVED
 
-**File:** `db/db_setup.sql`, line 1:
+`db/db_setup.sql` opened with `DROP SCHEMA IF EXISTS branch CASCADE;`, there was no
+migration system, and nothing applied the schema to production at all (RDS was built
+by hand).
 
-```sql
-DROP SCHEMA IF EXISTS branch CASCADE;
-```
-
-This drops the entire schema and recreates it. There is no migration system in place. This is dangerous if accidentally run against a production database.
-
-**Recommendation:** Implement a proper migration system (e.g., Kysely migrations, Flyway, or a simple numbered migration approach).
+**Resolved:** migrations are now plain `.sql` files in `db/migrations/`, applied by
+kysely's `Migrator` and tracked in `branch.kysely_migration`. Locally:
+`make new-migration NAME=x` → `make migrate`. In CI, the `migrate` job in
+`lambda-deploy.yml` snapshots RDS and applies pending migrations on merge to main,
+**before** the lambda zips deploy, so a failed migration blocks the code deploy. PR
+gates (`migrations-fresh`, `migrations-guard`) reject destructive statements, edits to
+already-merged migrations, and stale generated types. See `db/README.md`.
 
 ### 21. Missing Database Indexes
 
@@ -446,6 +449,6 @@ This is likely a mistake. The `aws-lambda` npm package is a deprecated Lambda ru
 | 17 | Use environment variables in test database connections | Small |
 | 18 | Add tests for donors service and expand coverage | Medium |
 | 19 | Mock database in projects "unit" tests | Small |
-| 20 | Implement database migration system | Medium-Large |
+| 20 | ~~Implement database migration system~~ (done — `db/migrations/`, `db/README.md`) | Medium-Large |
 | 24-25 | Fix Dockerfile for production use | Medium |
 | 26 | Align dependency versions across services | Small |

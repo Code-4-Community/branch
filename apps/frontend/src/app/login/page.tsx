@@ -1,26 +1,39 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import TextInputField from '../components/TextInputField';
+import SetPasswordForm from '../components/SetPasswordForm';
 import Link from 'next/link';
 import { Button } from '@chakra-ui/react';
-import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useAuth, type LoginResult } from '@/context/AuthContext';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ApiError } from '@/lib/api';
+import { safeNextPath } from '@/lib/routes';
 
-export default function LoginPage() {
-    const { login, setPassword } = useAuth();
+type Challenge = Extract<LoginResult, { status: 'challenge' }>;
+
+function LoginPageContent() {
+    const { login, respondToChallenge } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // Where to land after signing in. AuthGate sets ?next= when it bounces an
+    // unauthenticated user off a protected page; safeNextPath rejects anything
+    // that isn't a same-origin path, so a crafted link can't redirect offsite.
+    const next = safeNextPath(searchParams.get('next'));
 
     const [email, setEmail] = useState('');
     const [password, setPasswordValue] = useState('');
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
+    const [formError, setFormError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    // NEW_PASSWORD_REQUIRED challenge state
-    const [challenge, setChallenge] = useState<{ session: string; email: string } | null>(null);
-    const [newPassword, setNewPassword] = useState('');
-    const [newPasswordError, setNewPasswordError] = useState('');
+    // 'credentials' -> optionally 'newPassword'. Adding a TOTP step later is one
+    // more value here and one more case in handleResult — the context already
+    // returns the challenge and chains further ones.
+    const [step, setStep] = useState<'credentials' | 'newPassword'>('credentials');
+    const [challenge, setChallenge] = useState<Challenge | null>(null);
 
     function validate(): boolean {
         let valid = true;
@@ -42,76 +55,79 @@ export default function LoginPage() {
         return valid;
     }
 
+    /** Report a failure honestly instead of blaming the user's credentials. */
+    function reportError(err: unknown) {
+        if (err instanceof ApiError) {
+            if (err.status === 400 || err.status === 401) {
+                setPasswordError('Incorrect email or password. Please try again.');
+            } else {
+                setFormError(err.message);
+            }
+            return;
+        }
+        // fetch rejects with a TypeError when the request never reached a server.
+        setFormError('Cannot reach the server. Check your connection and try again.');
+    }
+
+    function handleResult(result: LoginResult) {
+        if (result.status === 'authenticated') {
+            router.replace(next);
+            return;
+        }
+
+        if (result.challengeName === 'NEW_PASSWORD_REQUIRED') {
+            setChallenge(result);
+            setStep('newPassword');
+            return;
+        }
+
+        setFormError(
+            `This account requires ${result.challengeName}, which isn't supported yet. Contact an administrator.`,
+        );
+    }
+
     async function handleLogin() {
+        setFormError('');
         if (!validate()) return;
 
         setIsLoading(true);
         try {
-            const result = await login(email, password);
-            if (result?.challengeName === 'NEW_PASSWORD_REQUIRED') {
-                setChallenge({ session: result.session, email: result.email });
-            } else {
-                router.push('/');
-            }
-        } catch {
-            setPasswordError('Incorrect email or password. Please try again.');
+            handleResult(await login(email, password));
+        } catch (err) {
+            reportError(err);
         } finally {
             setIsLoading(false);
         }
     }
 
-    async function handleSetPassword() {
-        if (!newPassword) {
-            setNewPasswordError('Please enter a new password');
-            return;
-        }
-        if (
-            newPassword.length < 8 ||
-            !/[A-Z]/.test(newPassword) ||
-            !/[a-z]/.test(newPassword) ||
-            !/[0-9]/.test(newPassword)
-        ) {
-            setNewPasswordError('Password must be at least 8 characters and include uppercase, lowercase, and a number');
-            return;
-        }
-        setNewPasswordError('');
+    async function handleNewPassword(newPassword: string) {
+        if (!challenge) return;
+        setFormError('');
         setIsLoading(true);
         try {
-            await setPassword(challenge!.email, challenge!.session, newPassword);
-            router.push('/');
-        } catch {
-            setNewPasswordError('Failed to set password. Please try again.');
+            handleResult(await respondToChallenge({ ...challenge, newPassword }));
+        } catch (err) {
+            reportError(err);
         } finally {
             setIsLoading(false);
         }
     }
 
-    if (challenge) {
+    if (step === 'newPassword') {
         return (
             <div className="flex min-h-screen items-center justify-center px-4">
-            <div className="flex flex-col items-center text-center w-80">
-                <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-3">Set Password</h1>
-                <p className="![font-family:var(--font-body)] !text-[14px] !mb-6 text-gray-600">
-                    Welcome! Please set a permanent password to continue.
-                </p>
-                <div className="flex flex-col gap-4 w-full !mb-10">
-                    <TextInputField
-                        label="New Password *"
-                        placeholder="Enter new password"
-                        errorMessage={newPasswordError}
-                        isError={!!newPasswordError}
-                        value={newPassword}
-                        onChange={(value) => setNewPassword(value)}
+                <div className="flex flex-col items-center text-center">
+                    <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-6">
+                        Your account needs a new password before you can sign in.
+                    </h5>
+                    <SetPasswordForm
+                        heading="Set a new password"
+                        submitLabel="Set password and sign in"
+                        onSubmit={handleNewPassword}
+                        error={formError || null}
+                        isLoading={isLoading}
                     />
                 </div>
-                <Button
-                    className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5"
-                    onClick={handleSetPassword}
-                    loading={isLoading}
-                >
-                    Set Password
-                </Button>
-            </div>
             </div>
         );
     }
@@ -121,6 +137,11 @@ export default function LoginPage() {
         <div className="flex flex-col items-center text-center w-80">
             <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">Login</h1>
             <h5 className="![font-family:var(--font-body)] !text-[16px] !font-bold !mb-6">BRANCH Accounting Platform</h5>
+            {formError && (
+                <p role="alert" className="!text-red-600 !text-[14px] !mb-4">
+                    {formError}
+                </p>
+            )}
             <div className="flex flex-col gap-4 w-full !mb-10">
                 <TextInputField
                     label="Email *"
@@ -151,5 +172,15 @@ export default function LoginPage() {
             </Link>
         </div>
         </div>
+    );
+}
+
+// useSearchParams must be inside a Suspense boundary or `next build` fails
+// under output: 'export'.
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginPageContent />
+        </Suspense>
     );
 }

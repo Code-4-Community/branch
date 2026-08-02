@@ -1,9 +1,11 @@
-import { jest } from '@jest/globals';
-import fs from 'fs';
-import path from 'path';
+import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
+import { ensureSchema, resetData } from '../../../db/testkit';
 
-jest.mock('../auth');
+jest.mock('../auth', () => ({
+  ...jest.requireActual<typeof import('../auth')>('../auth'),
+  authenticateRequest: jest.fn(),
+}));
 
 import { handler } from '../handler';
 import db from '../db';
@@ -11,38 +13,72 @@ import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
+
 const adminAuthResult = {
-  isAuthenticated: true,
-  user: {
-    cognitoSub: 'admin-sub',
-    userId: 1,
-    email: 'ashley@branch.org',
-    isAdmin: true,
-  },
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'admin-sub', userId: 1, email: 'ashley@branch.org', isAdmin: true },
 };
 
 const nonAdminAuthResult = {
-  isAuthenticated: true,
-  user: {
-    cognitoSub: 'staff-sub',
-    userId: 3,
-    email: 'nour@branch.org',
-    isAdmin: false,
-  },
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'staff-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
 };
 
-beforeAll(() => {
-  process.env.DB_HOST = process.env.DB_HOST ?? 'localhost';
-  process.env.DB_PORT = process.env.DB_PORT ?? '5432';
-  process.env.DB_USER = process.env.DB_USER ?? 'branch_dev';
-  process.env.DB_PASSWORD = process.env.DB_PASSWORD ?? 'password';
-  process.env.DB_NAME = process.env.DB_NAME ?? 'branch_db';
+const pool = new Pool({
+  host: 'localhost',
+  port: Number(5432),
+  user: 'branch_dev',
+  password: 'password',
+  database: 'branch_db',
+  ssl: false,
+});
+
+// Build schema "branch" from db/migrations if it isn't already current. Cheap
+// (one SELECT) unless a migration was added since the schema was last built.
+beforeAll(async () => {
+  const client = await pool.connect();
+  try {
+    await ensureSchema(client);
+  } finally {
+    client.release();
+  }
+});
+
+
+// Non-admin users inserted by the Authorization block after each reseed.
+// The seed creates users 1-3, so these deterministically become 4 and 5.
+const nonMemberUser = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'nonmember-sub', userId: 4, email: 'nonmember@branch.org', isAdmin: false },
+};
+
+const piMemberUser = {
+  isAuthenticated: true as const,
+  user: { cognitoSub: 'pi-sub', userId: 5, email: 'pimember@branch.org', isAdmin: false },
+};
+
+beforeEach(async () => {
+  jest.clearAllMocks();
+  mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+
+  const client = await pool.connect();
+  try {
+    await resetData(client);
+  } finally {
+    client.release();
+  }
+});
+
+afterAll(async () => {
+  await pool.end();
+  await db.destroy();
 });
 
 function postEvent(body: unknown) {
   return {
     rawPath: '/projects',
     requestContext: { http: { method: 'POST' } },
+    headers: { Authorization: 'Bearer fake-token' },
     body: JSON.stringify(body),
   } as any;
 }
@@ -51,8 +87,112 @@ function getExpendituresEvent(id: string) {
   return {
     rawPath: `/projects/${id}/expenditures`,
     requestContext: { http: { method: 'GET' } },
+    headers: { Authorization: 'Bearer fake-token' },
   } as any;
 }
+
+function getEvent(rawPath: string) {
+  return {
+    rawPath,
+    requestContext: { http: { method: 'GET' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    queryStringParameters: {},
+  } as any;
+}
+
+function putEvent(rawPath: string, body: unknown) {
+  return {
+    rawPath,
+    requestContext: { http: { method: 'PUT' } },
+    headers: { Authorization: 'Bearer fake-token' },
+    body: JSON.stringify(body),
+  } as any;
+}
+
+describe('Authorization', () => {
+  // Seed users are all admins, so add non-admin users to exercise the
+  // membership-based paths in canCreateProject/canEditProject/canAccessProject.
+  beforeEach(async () => {
+    const client = await pool.connect();
+    try {
+      await client.query(
+        `INSERT INTO branch.users (name, email, is_admin) VALUES
+           ('Non Member', 'nonmember@branch.org', FALSE),
+           ('PI Member', 'pimember@branch.org', FALSE)`,
+      );
+      await client.query(
+        `INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours)
+         SELECT 1, user_id, 'PI', '2025-01-01', 10 FROM branch.users WHERE email = 'pimember@branch.org'`,
+      );
+    } finally {
+      client.release();
+    }
+  });
+
+  test('403: non-admin cannot create a project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(postEvent({ name: 'Nope' }));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('Admin access required');
+  });
+
+  test('403: non-member cannot read a project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(getEvent('/projects/1'));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('You do not have access to this project');
+  });
+
+  test('200: admin lists every project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+    const res = await handler(getEvent('/projects'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).length).toBe(4);
+  });
+
+  test('200: member lists only projects they belong to', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(getEvent('/projects'));
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.length).toBe(1);
+    expect(body[0].project_id).toBe(1);
+  });
+
+  test('200: non-member lists no projects', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(getEvent('/projects'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).length).toBe(0);
+  });
+
+  test('403: non-member cannot edit a project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
+    const res = await handler(putEvent('/projects/1', { name: 'X' }));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('You do not have access to edit this project');
+  });
+
+  test('200: PI member can read their project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(getEvent('/projects/1'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).project_id).toBe(1);
+  });
+
+  test('200: PI member can edit their project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(putEvent('/projects/1', { name: 'Renamed by PI' }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).name).toBe('Renamed by PI');
+  });
+
+  test('403: PI member cannot edit a project they do not belong to', async () => {
+    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    const res = await handler(putEvent('/projects/2', { name: 'X' }));
+    expect(res.statusCode).toBe(403);
+  });
+});
 
 describe('POST /projects (e2e)', () => {
   test('201 creates project with number budget', async () => {
@@ -161,18 +301,6 @@ describe('GET /projects/{id}/expenditures (e2e)', () => {
 });
 
 describe('GET /dashboard (e2e)', () => {
-  const pool = new Pool({
-    host: 'localhost',
-    port: Number(5432),
-    user: 'branch_dev',
-    password: 'password',
-    database: 'branch_db',
-    ssl: false,
-  });
-
-  const seedSqlPath = path.resolve(__dirname, '../../../db/db_setup.sql');
-  const seedSql = fs.readFileSync(seedSqlPath, 'utf8');
-
   function dashboardEvent() {
     return {
       rawPath: '/dashboard',
@@ -188,24 +316,20 @@ describe('GET /dashboard (e2e)', () => {
 
     const client = await pool.connect();
     try {
-      await client.query(seedSql);
+      await resetData(client);
     } finally {
       client.release();
     }
   });
 
-  afterAll(async () => {
-    await pool.end();
-  });
-
   test('401: unauthenticated request rejected 🌞', async () => {
-    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(401);
   });
 
   test('403: non-admin is forbidden 🌞', async () => {
-    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult as any);
+    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult);
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).message).toBe('Admin access required');
@@ -266,8 +390,4 @@ describe('GET /dashboard (e2e)', () => {
       expect(typeof row.amount).toBe('number');
     });
   });
-});
-
-afterAll(async () => {
-  await db.destroy();
 });
