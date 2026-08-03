@@ -1,12 +1,27 @@
-import { render, screen, fireEvent, waitFor, signIn, signOut } from '../utils';
+import { render, screen, fireEvent, waitFor } from '../utils';
 import Donors from '@/app/donors/page';
 
 describe('Donors Page', () => {
     beforeEach(() => {
-        signIn();
+        localStorage.setItem('branch_access_token', 'fake.access.token');
+        localStorage.setItem('branch_id_token', 'fake.id.token');
+        localStorage.setItem('branch_refresh_token', 'fake.refresh');
+
+        global.fetch = jest.fn().mockImplementation((input: RequestInfo) => {
+            const url = typeof input === 'string' ? input : (input as Request).url;
+            if (url.includes('/auth/me')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ userId: 1, cognitoSub: 'sub-test', email: 'test@example.com', name: 'Test User', isAdmin: false }) } as unknown as Response);
+            }
+            if (url.includes('/donors')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ donor_id: 1, organization: 'Org A', contact_name: null, contact_email: null, num_projects: 1, last_donation: '2026-01-01' }]) } as unknown as Response);
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+        });
     });
+
     afterEach(() => {
-        signOut();
+        jest.restoreAllMocks();
+        localStorage.clear();
     });
 
     it('renders the Donors heading', () => {
