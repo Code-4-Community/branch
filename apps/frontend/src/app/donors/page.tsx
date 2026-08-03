@@ -1,5 +1,5 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import NavBar from "../components/Navbar";
 import { HStack, Input, Button, Table, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from '../components/TextInputField';
@@ -16,26 +16,40 @@ type Donor = {
     num_projects: number;
     last_donation: string | null;
 };
+import { useApi } from '@/hooks/useApi';
 
-const mockDonors: Donor[] = [
-    { donor_id: 1, organization: 'Green Future Foundation', contact_name: 'Alice Chen', contact_email: 'alice@greenfuture.org', num_projects: 4, last_donation: '03/12/2024' },
-    { donor_id: 2, organization: 'Horizon Trust', contact_name: 'James Patel', contact_email: 'james@horizontrust.org', num_projects: 2, last_donation: '01/05/2024' },
-    { donor_id: 3, organization: 'Bright Path Nonprofit', contact_name: null, contact_email: null, num_projects: 7, last_donation: '02/28/2024' },
-    { donor_id: 4, organization: 'Unity Giving Circle', contact_name: 'Maria Lopez', contact_email: 'maria@unitygiving.org', num_projects: 1, last_donation: '03/30/2024' },
-    { donor_id: 5, organization: 'Sunrise Community Fund', contact_name: 'David Kim', contact_email: 'david@sunrisefund.org', num_projects: 3, last_donation: '04/01/2024' },
-    { donor_id: 6, organization: 'Blue Ridge Giving', contact_name: 'Sarah Thompson', contact_email: 'sarah@blueridge.org', num_projects: 5, last_donation: '02/14/2024' },
-    { donor_id: 7, organization: 'Maple Leaf Charitable Trust', contact_name: null, contact_email: null, num_projects: 2, last_donation: '01/20/2024' },
-    { donor_id: 8, organization: 'Evergreen Partners', contact_name: 'Rachel Singh', contact_email: 'rachel@evergreenpartners.org', num_projects: 6, last_donation: '03/05/2024' },
-    { donor_id: 9, organization: 'New Horizons Society', contact_name: 'Tom Bradley', contact_email: 'tom@newhorizons.org', num_projects: 9, last_donation: '04/10/2024' },
-    { donor_id: 10, organization: 'Coastal Care Foundation', contact_name: 'Nina Rossi', contact_email: 'nina@coastalcare.org', num_projects: 3, last_donation: '03/22/2024' },
-];
+// fetched from API
+const apiBase = 'http://localhost:3003';
+
 
 export default function DonorsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const rowsPerPage = 10;
 
-    const totalPages = Math.ceil(mockDonors.length / rowsPerPage);
-    const currentDonors = mockDonors.slice(
+    const api = useApi();
+    const [donors, setDonors] = useState<Donor[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function fetchDonors() {
+            try {
+                const json = await api.get<Donor[] | { data: Donor[] }>(`${apiBase}/donors`);
+                const list = Array.isArray(json) ? json : (json && 'data' in json ? json.data : []);
+                setDonors(list);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load donors');
+                setDonors([]);
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchDonors();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const totalPages = Math.max(1, Math.ceil(donors.length / rowsPerPage));
+    const currentDonors = donors.slice(
         (currentPage - 1) * rowsPerPage,
         currentPage * rowsPerPage
     );
@@ -49,7 +63,7 @@ export default function DonorsPage() {
 
     const [showFilter, setShowFilter] = useState(false);
     const [selectedDonor, setSelectedDonor] = useState<string>('');
-    const donorNames = mockDonors.map(d => d.organization);
+    const donorNames = donors.map(d => d.organization);
 
     const [showSort, setShowSort] = useState(false);
     const [selectedSort, setSelectedSort] = useState<string>('');
@@ -186,6 +200,9 @@ export default function DonorsPage() {
                         </Portal>
                     </Dialog.Root>
 
+                    {loading && <p>Loading donors...</p>}
+                    {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+                    {!loading && !error && (
                     <Table.Root>
                         <Table.ColumnGroup>
                             <Table.Column width="15%" />
@@ -212,6 +229,7 @@ export default function DonorsPage() {
                             ))}
                         </Table.Body>
                     </Table.Root>
+                    )}
 
                     <div style={{ marginTop: 'auto' }}>
                         <HStack width="100%" justify="center" paddingTop="3%" paddingBottom="3%" gap="6">

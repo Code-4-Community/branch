@@ -1,5 +1,5 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import NavBar from "../components/Navbar";
 import { HStack, Input, Button, Table, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from '../components/TextInputField';
@@ -14,29 +14,79 @@ type Donation = {
     project_name: string;
     amount: number;
 };
+import { useApi } from '@/hooks/useApi';
 
-const mockDonors = ['Green Future Foundation', 'Horizon Trust', 'Bright Path Nonprofit', 'Unity Giving Circle', 'Sunrise Community Fund'];
-const mockProjects = ['Clean Water Initiative', 'Youth Mentorship Program', 'Food Security Drive', 'Urban Garden Project', 'STEM Education Fund'];
+const donorsBase = 'http://localhost:3003';
+const projectsBase = 'http://localhost:3002';
 
-const mockDonations: Donation[] = [
-    { donor_id: 1, date: '03/12/2024', project_name: 'Clean Water Initiative', amount: 5000 },
-    { donor_id: 2, date: '01/05/2024', project_name: 'Youth Mentorship Program', amount: 12000 },
-    { donor_id: 3, date: '02/28/2024', project_name: 'Food Security Drive', amount: 750 },
-    { donor_id: 4, date: '03/30/2024', project_name: 'Urban Garden Project', amount: 3200 },
-    { donor_id: 5, date: '04/01/2024', project_name: 'STEM Education Fund', amount: 8500 },
-    { donor_id: 6, date: '02/14/2024', project_name: 'Shelter Renovation', amount: 1500 },
-    { donor_id: 7, date: '01/20/2024', project_name: 'Mental Health Outreach', amount: 20000 },
-    { donor_id: 8, date: '03/05/2024', project_name: 'Digital Literacy Program', amount: 9750 },
-    { donor_id: 9, date: '04/10/2024', project_name: 'Community Health Fair', amount: 4300 },
-    { donor_id: 10, date: '03/22/2024', project_name: 'After-School Arts', amount: 600 },
-];
 
 export default function DonationsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const rowsPerPage = 10;
 
-    const totalPages = Math.ceil(mockDonations.length / rowsPerPage);
-    const currentDonations = mockDonations.slice(
+    const api = useApi();
+    const [donations, setDonations] = useState<Donation[]>([]);
+    const [donorNames, setDonorNames] = useState<string[]>([]);
+    const [projectNames, setProjectNames] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function loadAll() {
+            try {
+                const [donationsJson, donorsJson, projectsJson] = await Promise.all([
+                    api.get<Donation[] | { data: Donation[] }>(`${donorsBase}/donations`),
+                    api.get<string[] | { data: unknown[] }>(`${donorsBase}/donors`),
+                    api.get<string[] | { data: unknown[] }>(`${projectsBase}/projects`),
+                ]);
+
+                const dList = Array.isArray(donationsJson) ? donationsJson : (donationsJson && 'data' in donationsJson ? donationsJson.data : []);
+                const dn = Array.isArray(donorsJson) ? donorsJson : (donorsJson && 'data' in donorsJson ? donorsJson.data : []);
+                const pn = Array.isArray(projectsJson) ? projectsJson : (projectsJson && 'data' in projectsJson ? projectsJson.data : []);
+
+                setDonations(dList);
+                // donors API may return objects; if so map to organization names
+                const dnArray: unknown[] = dn as unknown[];
+                const donorNamesMapped = dnArray
+                    .map((d) => {
+                        if (typeof d === 'string') return d;
+                        if (d && typeof d === 'object' && 'organization' in d) {
+                            const maybeOrg = (d as { [key: string]: unknown })['organization'];
+                            if (typeof maybeOrg === 'string') return maybeOrg;
+                        }
+                        return '';
+                    })
+                    .filter((s): s is string => Boolean(s));
+
+                const pnArray: unknown[] = pn as unknown[];
+                const projectNamesMapped = pnArray
+                    .map((p) => {
+                        if (typeof p === 'string') return p;
+                        if (p && typeof p === 'object' && 'name' in p) {
+                            const maybeName = (p as { [key: string]: unknown })['name'];
+                            if (typeof maybeName === 'string') return maybeName;
+                        }
+                        return '';
+                    })
+                    .filter((s): s is string => Boolean(s));
+
+                setDonorNames(donorNamesMapped);
+                setProjectNames(projectNamesMapped);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load donations data');
+                setDonations([]);
+                setDonorNames([]);
+                setProjectNames([]);
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadAll();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const totalPages = Math.max(1, Math.ceil(donations.length / rowsPerPage));
+    const currentDonations = donations.slice(
         (currentPage - 1) * rowsPerPage,
         currentPage * rowsPerPage
     );
@@ -104,7 +154,7 @@ export default function DonationsPage() {
                                 {showFilter && (
                                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                                         <DropdownSelector
-                                            options={mockDonors}
+                                            options={donorNames}
                                             placeholder="Filter by donor..."
                                             multiSelect={true}
                                             value={selectedDonor}
@@ -126,13 +176,13 @@ export default function DonationsPage() {
                                 </Button>
                                 {showSort && (
                                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                                        <DropdownSelector
-                                            options={sortOptions}
-                                            placeholder="Sort by..."
-                                            multiSelect={false}
-                                            value={selectedSort}
-                                            onChange={(val: string | string[]) => setSelectedSort(val as string)}
-                                        />
+                                            <DropdownSelector
+                                                options={sortOptions}
+                                                placeholder="Sort by..."
+                                                multiSelect={false}
+                                                value={selectedSort}
+                                                onChange={(val: string | string[]) => setSelectedSort(val as string)}
+                                            />
                                     </div>
                                 )}
                             </div>
@@ -174,7 +224,7 @@ export default function DonationsPage() {
                                                 {dateError && <span style={{ color: 'red', fontSize: '12px' }}>Enter a valid date</span>}
                                             </div>
                                             <DropdownSelector
-                                                options={mockDonors}
+                                                options={donorNames}
                                                 placeholder="Select a donor"
                                                 multiSelect={false}
                                                 value={newDonor}
@@ -182,7 +232,7 @@ export default function DonationsPage() {
                                             />
                                             {donorError && <span style={{ color: 'red', fontSize: '12px' }}>Select a donor</span>}
                                             <DropdownSelector
-                                                options={mockProjects}
+                                                options={projectNames}
                                                 placeholder="Select a project"
                                                 multiSelect={false}
                                                 value={newProject}
@@ -208,6 +258,9 @@ export default function DonationsPage() {
                         </Portal>
                     </Dialog.Root>
 
+                    {loading && <p>Loading donations...</p>}
+                    {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+                    {!loading && !error && (
                     <Table.Root>
                         <Table.ColumnGroup>
                             <Table.Column width="15%" />
@@ -234,6 +287,7 @@ export default function DonationsPage() {
                             ))}
                         </Table.Body>
                     </Table.Root>
+                    )}
 
                     <div style={{ marginTop: 'auto' }}>
                         <HStack width="100%" justify="center" paddingTop="3%" paddingBottom="3%" gap="6">
