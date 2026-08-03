@@ -19,12 +19,12 @@ describe('Donors Page', () => {
         expect(screen.getByText('New Donor')).toBeInTheDocument();
     });
 
-    it('renders the table with correct headers', () => {
+    it('renders the table with correct headers', async () => {
         render(<Donors />);
-        expect(screen.getByText('Donor ID')).toBeInTheDocument();
-        expect(screen.getByText('Donor Name')).toBeInTheDocument();
-        expect(screen.getByText('# of Projects')).toBeInTheDocument();
-        expect(screen.getByText('Last Donation')).toBeInTheDocument();
+        expect(await screen.findByText('Donor ID')).toBeInTheDocument();
+        expect(await screen.findByText('Donor Name')).toBeInTheDocument();
+        expect(await screen.findByText('# of Projects')).toBeInTheDocument();
+        expect(await screen.findByText('Last Donation')).toBeInTheDocument();
     });
 
     it('renders left and right pagination arrows', () => {

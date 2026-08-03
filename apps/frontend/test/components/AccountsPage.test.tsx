@@ -9,27 +9,33 @@ describe('AccountsPage', () => {
         expect(screen.getByText('BRANCH Team Members')).toBeInTheDocument();
     });
 
-    it('renders the correct staff cards in the facilitation section', () => {
+    it('renders the correct staff cards in the facilitation section', async () => {
         render(<AccountsPage />);
-        const section = screen.getByText('Core BRANCH Facilitation Team').closest('div');
-        const cards = section?.querySelectorAll('[data-testid="staff-card"]');
+        const sectionHeader = await screen.findByText('Core BRANCH Facilitation Team');
+        await waitFor(() => {
+            const section = sectionHeader.closest('div');
+            const cards = section?.querySelectorAll('[data-testid="staff-card"]');
 
-        if (facilitationTeam.length === 0) {
-            expect(cards?.length).toBe(0);
-        } else {
-            expect(cards?.length).toBeGreaterThan(0);
-        }
+            if (facilitationTeam.length === 0) {
+                expect(cards?.length).toBe(0);
+            } else {
+                expect(cards?.length).toBeGreaterThan(0);
+            }
+        });
     });
 
-    it('renders the correct staff cards in the team members section', () => {
+    it('renders the correct staff cards in the team members section', async () => {
         render(<AccountsPage />);
-        const section = screen.getByText('BRANCH Team Members').closest('div');
-        const cards = section?.querySelectorAll('[data-testid="staff-card"]');
+        const sectionHeader = await screen.findByText('BRANCH Team Members');
+        await waitFor(() => {
+            const section = sectionHeader.closest('div');
+            const cards = section?.querySelectorAll('[data-testid="staff-card"]');
 
-        if (teamMembers.length === 0) {
-            expect(cards?.length).toBe(0);
-        } else {
-            expect(cards?.length).toBeGreaterThan(0);
-        }
+            if (teamMembers.length === 0) {
+                expect(cards?.length).toBe(0);
+            } else {
+                expect(cards?.length).toBeGreaterThan(0);
+            }
+        });
     });
 });

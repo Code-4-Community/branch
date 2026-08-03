@@ -19,12 +19,12 @@ describe('Donations Page Component', () => {
         expect(screen.getByText('New Donation')).toBeInTheDocument();
     });
 
-    it('renders the table with correct headers', () => {
+    it('renders the table with correct headers', async () => {
         render(<Donations />);
-        expect(screen.getByText('Date')).toBeInTheDocument();
-        expect(screen.getByText('Donor ID')).toBeInTheDocument();
-        expect(screen.getByText('Project Name')).toBeInTheDocument();
-        expect(screen.getByText('Amount')).toBeInTheDocument();
+        expect(await screen.findByText('Date')).toBeInTheDocument();
+        expect(await screen.findByText('Donor ID')).toBeInTheDocument();
+        expect(await screen.findByText('Project Name')).toBeInTheDocument();
+        expect(await screen.findByText('Amount')).toBeInTheDocument();
     });
 
     it('renders left and right pagination arrows', () => {
