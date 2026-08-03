@@ -1,4 +1,4 @@
-import { render, screen } from '../utils';
+import { render, screen, waitFor } from '../utils';
 import AccountsPage, { facilitationTeam, teamMembers } from '@/app/accounts/page';
 
 describe('AccountsPage', () => {
