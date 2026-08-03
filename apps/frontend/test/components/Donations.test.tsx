@@ -1,7 +1,14 @@
-import { render, screen, fireEvent, waitFor } from '../utils';
+import { render, screen, fireEvent, waitFor, signIn, signOut } from '../utils';
 import Donations from '@/app/donations/page';
 
 describe('Donations Page Component', () => {
+    beforeEach(() => {
+        signIn();
+    });
+    afterEach(() => {
+        signOut();
+    });
+
     it('renders the donations heading', () => {
         render(<Donations />);
         expect(screen.getByText('Donations', { selector: 'h1' })).toBeInTheDocument();

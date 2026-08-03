@@ -1,7 +1,14 @@
-import { render, screen, waitFor } from '../utils';
+import { render, screen, waitFor, signIn, signOut } from '../utils';
 import AccountsPage, { facilitationTeam, teamMembers } from '@/app/accounts/page';
 
 describe('AccountsPage', () => {
+    beforeEach(() => {
+        signIn();
+    });
+    afterEach(() => {
+        signOut();
+    });
+
     it('renders the headings', () => {
         render(<AccountsPage />);
         expect(screen.getByText('Accounts')).toBeInTheDocument();
