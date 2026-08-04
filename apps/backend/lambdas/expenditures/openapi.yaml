@@ -100,6 +100,49 @@ paths:
       responses:
         '201':
           description: Success
+
+  /expenditures/upload-url:
+    get:
+      summary: GET /expenditures/upload-url
+      description: >-
+        Mints a presigned S3 PUT for a PDF receipt. The browser uploads to
+        `uploadUrl` directly, then passes `objectUrl` back as `receiptUrl` on
+        POST /expenditures. Requires the same project role as creating an
+        expenditure.
+      parameters:
+        - in: query
+          name: fileName
+          required: true
+          schema:
+            type: string
+          description: Must end in .pdf.
+        - in: query
+          name: projectId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: Presigned PUT, valid for one hour.
+                  objectUrl:
+                    type: string
+        '400':
+          description: fileName missing or not a PDF, or projectId invalid
+        '401':
+          description: Unauthorized
+        '403':
+          description: Caller may not record spending on this project
+        '404':
+          description: Project not found
+
   /expenditures/{id}:
     get:
       summary: GET /expenditures/{id}

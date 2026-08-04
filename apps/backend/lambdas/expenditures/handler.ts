@@ -1,7 +1,26 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
+
+const REGION = process.env.AWS_REGION ?? 'us-east-2';
+const s3 = new S3Client({ region: REGION });
+const RECEIPTS_BUCKET = process.env.RECEIPTS_BUCKET_NAME ?? '';
+
+/** Roles that may record spending on a project, and so attach a receipt to it. */
+const SPENDING_ROLES = ['PI', 'Accountant', 'Admin'];
+
+/**
+ * Strips everything but the basename and the characters safe in an S3 key. The
+ * name arrives from the browser, so without this a `fileName` of `../../x.pdf`
+ * would write outside the project's prefix.
+ */
+function safeFileName(fileName: string): string {
+  const base = fileName.split(/[\\/]/).pop() ?? '';
+  return base.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
+}
 
 function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
   const authCheck = checkAuthorization(authContext, level, resourceUserId);
@@ -96,6 +115,77 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         : await db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').execute();
 
       return json(200, { data: expenditures });
+    }
+
+    // GET /expenditures/upload-url
+    // Must stay above GET /expenditures/{id}: that route's matcher is
+    // /^\/[^\/]+$/, which would otherwise swallow /upload-url as an id.
+    if ((normalizedPath === '/expenditures/upload-url' || normalizedPath === '/upload-url') && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+      const { user } = authContext;
+
+      if (!RECEIPTS_BUCKET) {
+        console.error('RECEIPTS_BUCKET_NAME is not set');
+        return json(500, { message: 'Receipt uploads are not configured' });
+      }
+
+      const queryParams = event.queryStringParameters || {};
+      const fileName = queryParams.fileName as string | undefined;
+      const projectIdStr = queryParams.projectId as string | undefined;
+
+      if (!fileName || typeof fileName !== 'string') {
+        return json(400, { message: 'fileName is required' });
+      }
+      // The receipt dropzone accepts application/pdf only.
+      if (fileName.split('.').pop()?.toLowerCase() !== 'pdf') {
+        return json(400, { message: 'Only PDF receipts are supported' });
+      }
+      if (!projectIdStr || !/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
+        return json(400, { message: 'projectId must be a positive integer' });
+      }
+      const projectId = parseInt(projectIdStr, 10);
+
+      const project = await db
+        .selectFrom('branch.projects')
+        .where('project_id', '=', projectId)
+        .select('project_id')
+        .executeTakeFirst();
+      if (!project) return json(404, { message: 'Project not found' });
+
+      // Same bar as POST /expenditures below: a receipt is only ever useful
+      // attached to an expenditure the caller is allowed to create.
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', projectId)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership || !SPENDING_ROLES.includes(membership.role)) {
+          return json(403, { message: 'Unable to upload receipts for this project' });
+        }
+      }
+
+      // Date.now() keeps two uploads of the same filename from overwriting.
+      const key = `receipts/${projectId}/${Date.now()}-${safeFileName(fileName)}`;
+      const uploadUrl = await getSignedUrl(
+        s3,
+        new PutObjectCommand({
+          Bucket: RECEIPTS_BUCKET,
+          Key: key,
+          ContentType: 'application/pdf',
+        }),
+        { expiresIn: 3600 },
+      );
+
+      return json(200, {
+        uploadUrl,
+        objectUrl: `https://${RECEIPTS_BUCKET}.s3.${REGION}.amazonaws.com/${key}`,
+      });
     }
 
     // POST /expenditures

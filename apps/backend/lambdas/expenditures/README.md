@@ -10,6 +10,7 @@ Lambda for tracking project expenditures.
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /expenditures |  |
+| GET | /expenditures/upload-url | Presigned S3 PUT for a PDF receipt; returns the `objectUrl` to pass back as `receiptUrl` |
 | POST | /expenditures |  |
 | GET | /expenditures/{id} |  |
 | DELETE | /expenditures/{id} |  |

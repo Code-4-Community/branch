@@ -46,6 +46,24 @@ resource "aws_iam_role_policy" "lambda_cognito_admin" {
   })
 }
 
+# A presigned PUT carries the signer's permissions, so the role that mints the
+# URL in GET /expenditures/upload-url must itself be allowed to write the object
+# -- otherwise the browser's upload 403s at S3.
+resource "aws_iam_role_policy" "lambda_receipts_bucket" {
+  name = "branch-lambda-receipts-bucket"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ExpenditureReceiptWrite"
+      Effect   = "Allow"
+      Action   = ["s3:PutObject"]
+      Resource = "${aws_s3_bucket.receipts_bucket.arn}/*"
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 
@@ -152,6 +170,9 @@ resource "aws_lambda_function" "functions" {
       # on branch-reports only; listed here so this authoritative block does not
       # wipe it. Harmless on the other five functions.
       REPORTS_BUCKET_NAME = aws_s3_bucket.reports_bucket.id
+
+      # Read by lambdas/expenditures/handler.ts for GET /expenditures/upload-url.
+      RECEIPTS_BUCKET_NAME = aws_s3_bucket.receipts_bucket.id
     }
   }
 }
