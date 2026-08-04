@@ -6,6 +6,16 @@ import { authenticateRequest, checkAuthorization } from '../auth';
 
 jest.mock('../auth');
 
+jest.mock('@aws-sdk/client-cognito-identity-provider', () => ({
+  CognitoIdentityProviderClient: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockResolvedValue({
+      User: { Attributes: [{ Name: 'sub', Value: 'test-cognito-sub-123' }] },
+    }),
+  })),
+  AdminCreateUserCommand: jest.fn().mockImplementation((args) => args),
+  AdminDeleteUserCommand: jest.fn().mockImplementation((args) => args),
+}));
+
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 

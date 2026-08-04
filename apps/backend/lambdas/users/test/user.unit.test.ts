@@ -4,6 +4,16 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 jest.mock('../db');
 jest.mock('../auth');
 
+jest.mock('@aws-sdk/client-cognito-identity-provider', () => ({
+  CognitoIdentityProviderClient: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockImplementation(async () => ({
+      User: { Attributes: [{ Name: 'sub', Value: 'test-cognito-sub-123' }] },
+    })),
+  })),
+  AdminCreateUserCommand: jest.fn().mockImplementation((args: unknown) => args),
+  AdminDeleteUserCommand: jest.fn().mockImplementation((args: unknown) => args),
+}));
+
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest, checkAuthorization } from '../auth';
