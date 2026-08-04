@@ -9,6 +9,28 @@ export interface Project {
     created_at: string | null;
 };
 
+/** A project as `GET /projects/dashboard` returns it: the row plus its aggregates. */
+export interface ProjectSummary {
+    project_id: number;
+    name: string;
+    total_budget: number | null;
+    currency: string | null;
+    spent: number;
+    staff_count: number;
+    spent_percentage: number;
+}
+
+export interface Dashboard {
+    summary: {
+        topExpenseCategory: { category: string; amount: number } | null;
+        totalSpent: number;
+        totalProjects: number;
+        averageSpendPerProject: number;
+    };
+    projects: ProjectSummary[];
+    expensesByMonth: { month: string; category: string; amount: number }[];
+}
+
 export type ProjectRole = 'PI' | 'Accountant' | 'Staff' | 'Admin';
 
 export interface Member {

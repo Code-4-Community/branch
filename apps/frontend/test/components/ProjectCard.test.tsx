@@ -41,6 +41,25 @@ describe('ProjectCard (active)', () => {
         const percentage = Math.round((activeMockProps.budget_used / activeMockProps.total_budget) * 100);
         expect(screen.getByText(`${percentage}%`)).toBeInTheDocument();
     });
+
+    it('renders 0% rather than NaN when the project has no budget', () => {
+        render(<ProjectCard {...activeMockProps} total_budget={0} budget_used={0} />);
+        expect(screen.getByText('0%')).toBeInTheDocument();
+    });
+
+    it('renders 0% rather than Infinity when spend exists but no budget is set', () => {
+        render(<ProjectCard {...activeMockProps} total_budget={0} budget_used={4500} />);
+        expect(screen.getByText('0%')).toBeInTheDocument();
+    });
+
+    it('reports overspend honestly but keeps the bar within the track', () => {
+        const { container } = render(
+            <ProjectCard {...activeMockProps} total_budget={1000} budget_used={2000} />,
+        );
+        expect(screen.getByText('200%')).toBeInTheDocument();
+        const bar = container.querySelector('.bg-core-green') as HTMLElement;
+        expect(bar.style.width).toBe('100%');
+    });
 });
 
 describe('ProjectCard (archive)', () => {

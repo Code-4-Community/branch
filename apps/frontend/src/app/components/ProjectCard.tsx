@@ -23,6 +23,14 @@ type ArchiveProps = {
 type ProjectCardProps = ActiveProps | ArchiveProps;
 
 export default function ProjectCard(props: ProjectCardProps) {
+    // A project with no budget set divides by zero. Now that these numbers come
+    // from the API rather than a hardcoded 0, that is a real case: it yields
+    // NaN% (or Infinity% once anything is spent) straight into the bar width.
+    const percentUsed =
+        props.variant === 'active' && props.total_budget > 0
+            ? Math.round((props.budget_used / props.total_budget) * 100)
+            : 0;
+
     return (
         <div className="!border-[1px] border-solid border-black-300 w-full sm:w-[50%] md:w-[35%] lg:w-[25%] rounded-[4px] overflow-hidden">
             <div className="flex flex-col !gap-4 !p-4">
@@ -51,11 +59,11 @@ export default function ProjectCard(props: ProjectCardProps) {
                     <div className="flex flex-row items-center !gap-2">
                         <div className="w-full !h-[24px] rounded-full bg-black-100">
                             <div
-                                style={{ width: `${Math.round((props.budget_used / props.total_budget) * 100)}%` }}
+                                style={{ width: `${Math.min(percentUsed, 100)}%` }}
                                 className="!h-full rounded-full bg-core-green"
                             />
                         </div>
-                        <p>{Math.round((props.budget_used / props.total_budget) * 100)}%</p>
+                        <p>{percentUsed}%</p>
                     </div>
                 ) : (
                     <div className="flex flex-row w-full items-center !gap-4 !px-2">

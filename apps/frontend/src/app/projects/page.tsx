@@ -6,6 +6,7 @@ import NavBar from '../components/Navbar';
 import Header from '../components/Header';
 import ProjectCard from '../components/ProjectCard';
 import { useApi } from '@/hooks/useApi';
+import { Dashboard, ProjectSummary } from '@/types';
 
 /**
  * Projects index. The Navbar has always linked to /projects, but only the
@@ -15,22 +16,20 @@ import { useApi } from '@/hooks/useApi';
  * `output: 'export'`.
  */
 
-interface ProjectRow {
-  project_id: number;
-  name: string;
-  total_budget: number | string | null;
-}
-
 export default function ProjectsListPage() {
   const api = useApi();
-  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // /projects/dashboard rather than /projects: it returns the same set of
+  // projects (scoped to the caller) already carrying the spend and staff counts
+  // the cards need, so there is nothing left to aggregate client-side.
   const load = useCallback(async () => {
     try {
       setError(null);
-      setProjects(await api.get<ProjectRow[]>('/projects'));
+      const dashboard = await api.get<Dashboard>('/projects/dashboard');
+      setProjects(dashboard.projects ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load projects');
     } finally {
@@ -81,9 +80,9 @@ export default function ProjectsListPage() {
                 <ProjectCard
                   variant="active"
                   name={project.name}
-                  total_budget={Number(project.total_budget ?? 0)}
-                  budget_used={0}
-                  members={0}
+                  total_budget={project.total_budget ?? 0}
+                  budget_used={project.spent}
+                  members={project.staff_count}
                 />
               </Link>
             ))}
