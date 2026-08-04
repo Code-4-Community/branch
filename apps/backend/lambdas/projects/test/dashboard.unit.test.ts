@@ -47,6 +47,11 @@ function chain(value: any) {
   ]) {
     p[m] = jest.fn().mockReturnValue(p);
   }
+  // Every builder method above returns `p`, so applying the callback or not
+  // lands on the same object -- but calling it keeps the `where` spy accurate.
+  p.$if = jest.fn((condition: boolean, callback: (qb: any) => any) =>
+    condition ? callback(p) : p,
+  );
   p.execute = jest.fn().mockResolvedValue(value as any);
   p.executeTakeFirst = jest.fn().mockResolvedValue(value as any);
   return p;
@@ -70,11 +75,53 @@ describe('GET /dashboard unit tests', () => {
       expect(JSON.parse(res.body).message).toBe('Authentication required');
     });
 
-    test('403: authenticated non-admin is forbidden', async () => {
+    test('200: a non-admin gets a dashboard scoped to their memberships', async () => {
       mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult as any);
+
+      mockDb.selectFrom = jest.fn();
+      // 0) the caller's memberships, which set the scope for everything after
+      const memberships = chain([{ project_id: 2 }, { project_id: 2 }]);
+      mockDb.selectFrom.mockReturnValueOnce(memberships);
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '4500.00' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '1' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ category: 'General', total: '3000.00' }));
+      const projectRows = chain([{ project_id: 2, name: 'P2', total_budget: '300000.00', currency: 'USD' }]);
+      mockDb.selectFrom.mockReturnValueOnce(projectRows);
+      mockDb.selectFrom.mockReturnValueOnce(chain([{ project_id: 2, total: '4500.00' }]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([{ project_id: 2, count: '1' }]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
       const res = await handler(getEvent());
-      expect(res.statusCode).toBe(403);
-      expect(JSON.parse(res.body).message).toBe('Admin access required');
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.projects).toHaveLength(1);
+      expect(body.projects[0]).toMatchObject({ project_id: 2, spent: 4500, staff_count: 1 });
+
+      // Duplicate membership rows must not widen the IN list.
+      expect(projectRows.where).toHaveBeenCalledWith('project_id', 'in', [2]);
+    });
+
+    test('200: a non-admin with no memberships gets an empty dashboard, not a 403', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult as any);
+
+      mockDb.selectFrom = jest.fn();
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
+      const res = await handler(getEvent());
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body).toEqual({
+        summary: {
+          topExpenseCategory: null,
+          totalSpent: 0,
+          totalProjects: 0,
+          averageSpendPerProject: 0,
+        },
+        projects: [],
+        expensesByMonth: [],
+      });
+      // Short-circuits before any aggregate query -- `where in ()` is invalid SQL.
+      expect(mockDb.selectFrom).toHaveBeenCalledTimes(1);
     });
   });
 

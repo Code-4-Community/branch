@@ -9,7 +9,7 @@ Lambda for managing projects.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /health | Health check |
-| GET | /dashboard |  |
+| GET | /dashboard | Spend/staffing aggregates, scoped to the caller's projects (all of them for an admin) |
 | GET | /projects/{id}/members |  |
 | GET | /projects |  |
 | GET | /projects/{id}/donors |  |

@@ -115,13 +115,57 @@ paths:
   /dashboard:
     get:
       summary: GET /dashboard
+      description: >-
+        Spend and staffing aggregates. An admin sees every project; anyone else
+        sees only the projects they are a member of, and gets an empty dashboard
+        when they are a member of none.
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      topExpenseCategory:
+                        type: object
+                        nullable: true
+                      totalSpent:
+                        type: number
+                      totalProjects:
+                        type: integer
+                      averageSpendPerProject:
+                        type: number
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        project_id:
+                          type: integer
+                        name:
+                          type: string
+                        total_budget:
+                          type: number
+                          nullable: true
+                        currency:
+                          type: string
+                          nullable: true
+                        spent:
+                          type: number
+                        staff_count:
+                          type: integer
+                        spent_percentage:
+                          type: number
+                  expensesByMonth:
+                    type: array
+                    items:
+                      type: object
         '401':
           description: Unauthorized
-        '403':
-          description: Forbidden
 
   /projects/{id}/donors:
     get:

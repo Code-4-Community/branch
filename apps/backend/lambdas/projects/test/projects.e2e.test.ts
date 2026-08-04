@@ -328,11 +328,32 @@ describe('GET /dashboard (e2e)', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  test('403: non-admin is forbidden 🌞', async () => {
+  test('non-admin sees only the projects they are a member of 🌞', async () => {
     mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult);
     const res = await handler(dashboardEvent());
-    expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Admin access required');
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+
+    // User 3 is seeded into project 2 alone, which has 3000 + 1500 spent.
+    expect(body.projects.map((p: any) => p.project_id)).toEqual([2]);
+    expect(body.projects[0]).toMatchObject({ spent: 4500, staff_count: 1 });
+    expect(body.summary.totalProjects).toBe(1);
+    expect(body.summary.totalSpent).toBe(4500);
+    expect(body.expensesByMonth.every((m: any) => m.amount > 0)).toBe(true);
+  });
+
+  test('non-admin with no memberships gets an empty dashboard 🌞', async () => {
+    mockAuthenticateRequest.mockResolvedValue({
+      isAuthenticated: true as const,
+      user: { cognitoSub: 'nobody-sub', userId: 99999, email: 'nobody@branch.org', isAdmin: false },
+    });
+    const res = await handler(dashboardEvent());
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.projects).toEqual([]);
+    expect(body.expensesByMonth).toEqual([]);
+    expect(body.summary.totalSpent).toBe(0);
+    expect(body.summary.topExpenseCategory).toBeNull();
   });
 
   test('summary aggregates seed totals 🌞', async () => {

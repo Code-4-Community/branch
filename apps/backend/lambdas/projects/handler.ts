@@ -41,11 +41,38 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // CLI-generated routes will be inserted here
     // GET /dashboard
     if ((normalizedPath === '/dashboard' || normalizedPath.endsWith('/dashboard')) && method === 'GET') {
-      if (!user.isAdmin) {
-        return json(403, { message: 'Admin access required' });
-      }
-
       try {
+        // Admins see every project. Everyone else sees the ones they are a
+        // member of, so a non-admin gets the same dashboard scoped to their own
+        // work rather than a 403 — which is what the project cards on /dashboard
+        // and /projects need to show real spend and staff counts.
+        let scopedIds: number[] | null = null;
+        if (!user.isAdmin) {
+          const memberships = await db
+            .selectFrom('branch.project_memberships')
+            .select('project_id')
+            .where('user_id', '=', user.userId!)
+            .execute();
+          scopedIds = [...new Set(memberships.map((m) => m.project_id))];
+
+          // `where in ()` with an empty list is not valid SQL, and there is
+          // nothing to aggregate anyway.
+          if (scopedIds.length === 0) {
+            return json(200, {
+              summary: {
+                topExpenseCategory: null,
+                totalSpent: 0,
+                totalProjects: 0,
+                averageSpendPerProject: 0,
+              },
+              projects: [],
+              expensesByMonth: [],
+            });
+          }
+        }
+        const ids = scopedIds;
+        const scoped = ids !== null;
+
         const [
           totalSpentRow,
           totalProjectsRow,
@@ -57,32 +84,39 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ] = await Promise.all([
           db.selectFrom('branch.expenditures')
             .select(db.fn.sum('amount').as('total'))
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .executeTakeFirst(),
           db.selectFrom('branch.projects')
             .select(db.fn.count('project_id').as('count'))
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .executeTakeFirst(),
           db.selectFrom('branch.expenditures')
             .select(['category', db.fn.sum('amount').as('total')])
             .where('category', 'is not', null)
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .groupBy('category')
             .orderBy(db.fn.sum('amount'), 'desc')
             .limit(1)
             .executeTakeFirst(),
           db.selectFrom('branch.projects')
             .selectAll()
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .orderBy('project_id', 'asc')
             .execute(),
           db.selectFrom('branch.expenditures')
             .select(['project_id', db.fn.sum('amount').as('total')])
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .groupBy('project_id')
             .execute(),
           db.selectFrom('branch.project_memberships')
             .select(['project_id', db.fn.count('user_id').as('count')])
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .groupBy('project_id')
             .execute(),
           db.selectFrom('branch.expenditures')
             .select(['spent_on', 'category', 'amount'])
             .where('category', 'is not', null)
+            .$if(scoped, (qb) => qb.where('project_id', 'in', ids!))
             .execute(),
         ]);
 
