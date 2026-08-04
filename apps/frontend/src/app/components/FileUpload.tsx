@@ -1,51 +1,32 @@
 'use client';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { FileRejection, useDropzone } from 'react-dropzone';
 import UploadProgressBar from './UploadProgressBar';
 import FilePreview from './FilePreview';
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
+export interface UploadProgress {
+  transferredBytes: number;
+  totalBytes: number;
+  fileName: string;
+}
+
 interface FileUploadProps {
   value: File | null;
   onChange: (file: File | null) => void;
   onReject?: () => void;
+  /**
+   * Live progress of the real upload, driven by the parent. The file is sent
+   * when the form is submitted -- not on drop -- because the presigned URL is
+   * per project, and because a file dropped into an abandoned form would
+   * otherwise leave an orphaned object in the bucket.
+   */
+  progress?: UploadProgress | null;
 }
 
-export default function FileUpload({ value, onChange, onReject }: FileUploadProps) {
-    const [isUploading, setIsUploading] = useState(false);
-    const [transferredBytes, setTransferredBytes] = useState(0);
-    const [pendingFile, setPendingFile] = useState<File | null>(null);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    {/*Simulated progress for testing
-        TODO: update to use real progress of uploaded file */}
-    const simulateUpload = useCallback(
-        (file: File) => {
-        setPendingFile(file);
-        setIsUploading(true);
-        setTransferredBytes(0);
-
-        const total = file.size;
-        const step = total / 15; // ~15 ticks to finish
-        let transferred = 0;
-
-        intervalRef.current = setInterval(() => {
-            transferred += step;
-            if (transferred >= total) {
-            transferred = total;
-            if (intervalRef.current) clearInterval(intervalRef.current);
-            setTransferredBytes(total);
-            setIsUploading(false);
-            setPendingFile(null);
-            onChange(file); // flip to selected state
-            } else {
-            setTransferredBytes(transferred);
-            }
-        }, 100);
-        },
-        [onChange],
-    );
+export default function FileUpload({ value, onChange, onReject, progress }: FileUploadProps) {
+    const isUploading = progress !== null && progress !== undefined;
 
     {/*When the file is dropped, check if it's accepted*/}
     const onDrop = useCallback(
@@ -54,9 +35,9 @@ export default function FileUpload({ value, onChange, onReject }: FileUploadProp
             onReject?.();
             return;
         }
-        if (accepted[0]) simulateUpload(accepted[0]);
+        if (accepted[0]) onChange(accepted[0]);
         },
-        [simulateUpload, onReject],
+        [onChange, onReject],
     );
 
     {/*Dropzone component to allow user to drop in files*/}
@@ -73,12 +54,12 @@ export default function FileUpload({ value, onChange, onReject }: FileUploadProp
       ? 'var(--color-core-green)'
       : 'var(--color-black-200)';
 
-    if (isUploading && pendingFile) {
+    if (isUploading) {
         return (
             <UploadProgressBar
-                transferredBytes={transferredBytes}
-                totalBytes={pendingFile.size}
-                fileName={pendingFile.name}
+                transferredBytes={progress.transferredBytes}
+                totalBytes={progress.totalBytes}
+                fileName={progress.fileName}
             />
         );
     }

@@ -1,11 +1,32 @@
 import { render, screen, fireEvent, waitFor } from '../utils';
 import AddExpenseModal from '@/app/components/AddExpenseModal';
 import { authedFetch as apiFetch } from '@/lib/authClient';
+import { putWithProgress } from '@/lib/upload';
 
 jest.mock('../../src/lib/authClient', () => ({
   ...jest.requireActual('../../src/lib/authClient'),
   authedFetch: jest.fn(),
 }));
+
+jest.mock('../../src/lib/upload', () => ({
+  putWithProgress: jest.fn(),
+}));
+
+const mockPut = putWithProgress as jest.Mock;
+
+const UPLOAD_URL = '/expenditures/upload-url?fileName=receipt.pdf&projectId=2';
+const OBJECT_URL = 'https://bucket.s3.us-east-2.amazonaws.com/receipts/2/1-receipt.pdf';
+
+/** GET /expenditures/upload-url resolves, POST /expenditures resolves. */
+function mockHappyPath() {
+  (apiFetch as jest.Mock).mockImplementation((path: string) => {
+    if (path.startsWith('/expenditures/upload-url')) {
+      return Promise.resolve({ uploadUrl: 'https://signed.example/put', objectUrl: OBJECT_URL });
+    }
+    return Promise.resolve({});
+  });
+  mockPut.mockResolvedValue(undefined);
+}
 
 // Mock DropdownSelector — render a simple native select so we can drive it
 jest.mock('../../src/app/components/DropdownSelector', () => {
@@ -72,6 +93,26 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+/** Fills every required field with a valid value, including the receipt. */
+function fillValidForm() {
+  fireEvent.change(document.querySelector('input[type="date"]')!, {
+    target: { value: '2025-05-15' },
+  });
+  fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
+    target: { value: '12000' },
+  });
+  fireEvent.change(screen.getByLabelText('Select type'), {
+    target: { value: 'Travel Foreign' },
+  });
+  fireEvent.change(screen.getByLabelText('Select a project'), {
+    target: { value: 'Project Name 2' },
+  });
+  fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+    target: { value: 'A test description' },
+  });
+  fireEvent.click(screen.getByText('mock-select-file'));
+}
+
 describe('AddExpenseModal Component', () => {
   it('renders the modal title when open', () => {
     render(<AddExpenseModal {...baseProps} />);
@@ -121,27 +162,10 @@ describe('AddExpenseModal Component', () => {
     expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it('calls apiFetch with the correct payload when the form is valid', async () => {
-    (apiFetch as jest.Mock).mockResolvedValueOnce({});
+  it('uploads the receipt and posts its object URL as receiptUrl', async () => {
+    mockHappyPath();
     render(<AddExpenseModal {...baseProps} />);
-
-    fireEvent.change(document.querySelector('input[type="date"]')!, {
-      target: { value: '2025-05-15' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
-      target: { value: '12000' },
-    });
-    fireEvent.change(screen.getByLabelText('Select type'), {
-      target: { value: 'Travel Foreign' },
-    });
-    fireEvent.change(screen.getByLabelText('Select a project'), {
-      target: { value: 'Project Name 2' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
-      target: { value: 'A test description' },
-    });
-    fireEvent.click(screen.getByText('mock-select-file'));
-
+    fillValidForm();
     fireEvent.click(screen.getByText('Submit For Review'));
 
     await waitFor(() => {
@@ -155,32 +179,56 @@ describe('AddExpenseModal Component', () => {
             category: 'Travel Foreign',
             description: 'A test description',
             spentOn: '2025-05-15',
+            receiptUrl: OBJECT_URL,
           }),
         }),
       );
     });
+
+    // The URL is requested for the chosen project and the dropped filename.
+    expect(apiFetch).toHaveBeenCalledWith(UPLOAD_URL, { method: 'GET' });
+
+    // The PUT must be signed for the same content type the backend signed.
+    expect(mockPut).toHaveBeenCalledWith(
+      'https://signed.example/put',
+      expect.any(File),
+      'application/pdf',
+      expect.any(Function),
+    );
+  });
+
+  it('uploads the file before recording the expenditure', async () => {
+    mockHappyPath();
+    render(<AddExpenseModal {...baseProps} />);
+    fillValidForm();
+    fireEvent.click(screen.getByText('Submit For Review'));
+
+    await waitFor(() => expect(baseProps.onSuccess).toHaveBeenCalled());
+
+    const postCall = (apiFetch as jest.Mock).mock.invocationCallOrder[
+      (apiFetch as jest.Mock).mock.calls.findIndex(([path]) => path === '/expenditures')
+    ];
+    expect(mockPut.mock.invocationCallOrder[0]).toBeLessThan(postCall);
+  });
+
+  it('does not record an expenditure when the receipt upload fails', async () => {
+    mockHappyPath();
+    mockPut.mockRejectedValueOnce(new Error('Upload failed (403)'));
+    render(<AddExpenseModal {...baseProps} />);
+    fillValidForm();
+    fireEvent.click(screen.getByText('Submit For Review'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Upload failed (403)')).toBeInTheDocument();
+    });
+    expect(apiFetch).not.toHaveBeenCalledWith('/expenditures', expect.anything());
+    expect(baseProps.onSuccess).not.toHaveBeenCalled();
   });
 
   it('calls onSuccess after a successful submit', async () => {
-    (apiFetch as jest.Mock).mockResolvedValueOnce({});
+    mockHappyPath();
     render(<AddExpenseModal {...baseProps} />);
-
-    fireEvent.change(document.querySelector('input[type="date"]')!, {
-      target: { value: '2025-05-15' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
-      target: { value: '12000' },
-    });
-    fireEvent.change(screen.getByLabelText('Select type'), {
-      target: { value: 'Travel Foreign' },
-    });
-    fireEvent.change(screen.getByLabelText('Select a project'), {
-      target: { value: 'Project Name 2' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
-      target: { value: 'A test description' },
-    });
-    fireEvent.click(screen.getByText('mock-select-file'));
+    fillValidForm();
     fireEvent.click(screen.getByText('Submit For Review'));
 
     await waitFor(() => {
@@ -189,25 +237,9 @@ describe('AddExpenseModal Component', () => {
   });
 
   it('shows a submit error if apiFetch rejects', async () => {
-    (apiFetch as jest.Mock).mockRejectedValueOnce(new Error('Server exploded'));
+    (apiFetch as jest.Mock).mockRejectedValue(new Error('Server exploded'));
     render(<AddExpenseModal {...baseProps} />);
-
-    fireEvent.change(document.querySelector('input[type="date"]')!, {
-      target: { value: '2025-05-15' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
-      target: { value: '12000' },
-    });
-    fireEvent.change(screen.getByLabelText('Select type'), {
-      target: { value: 'Travel Foreign' },
-    });
-    fireEvent.change(screen.getByLabelText('Select a project'), {
-      target: { value: 'Project Name 2' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
-      target: { value: 'A test description' },
-    });
-    fireEvent.click(screen.getByText('mock-select-file'));
+    fillValidForm();
     fireEvent.click(screen.getByText('Submit For Review'));
 
     await waitFor(() => {

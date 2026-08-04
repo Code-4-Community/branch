@@ -41,32 +41,52 @@ describe('FileUpload Component', () => {
     expect(screen.getByText('Upload Complete')).toBeInTheDocument();
   });
 
-  it('shows the upload progress bar after a valid file is dropped', () => {
-    jest.useFakeTimers();
-    render(<FileUpload value={null} onChange={() => {}} />);
-
-    act(() => {
-      capturedOnDrop!([makePdf()], []);
-    });
-
-    expect(screen.getByText(/uploading\.\.\./)).toBeInTheDocument();
-    jest.useRealTimers();
-  });
-
-  it('calls onChange with the file once the simulated upload completes', () => {
-    jest.useFakeTimers();
+  it('calls onChange as soon as a valid file is dropped', () => {
     const onChange = jest.fn();
     render(<FileUpload value={null} onChange={onChange} />);
 
     act(() => {
       capturedOnDrop!([makePdf()], []);
     });
-    act(() => {
-      jest.advanceTimersByTime(2000);
-    });
 
     expect(onChange.mock.calls[0][0].name).toBe('receipt.pdf');
-    jest.useRealTimers();
+  });
+
+  it('shows no progress bar on drop — the upload happens on submit', () => {
+    render(<FileUpload value={null} onChange={() => {}} />);
+
+    act(() => {
+      capturedOnDrop!([makePdf()], []);
+    });
+
+    expect(screen.queryByText(/uploading\.\.\./)).not.toBeInTheDocument();
+  });
+
+  it('renders the real transferred bytes when the parent reports progress', () => {
+    render(
+      <FileUpload
+        value={makePdf()}
+        onChange={() => {}}
+        progress={{ transferredBytes: 512, totalBytes: 2048, fileName: 'receipt.pdf' }}
+      />,
+    );
+
+    expect(screen.getByText(/receipt\.pdf uploading\.\.\./)).toBeInTheDocument();
+    expect(screen.getByText('25%')).toBeInTheDocument();
+  });
+
+  it('returns to the preview once progress clears', () => {
+    const { rerender } = render(
+      <FileUpload
+        value={makePdf()}
+        onChange={() => {}}
+        progress={{ transferredBytes: 2048, totalBytes: 2048, fileName: 'receipt.pdf' }}
+      />,
+    );
+    expect(screen.getByText('100%')).toBeInTheDocument();
+
+    rerender(<FileUpload value={makePdf()} onChange={() => {}} progress={null} />);
+    expect(screen.getByText('Upload Complete')).toBeInTheDocument();
   });
 
   it('calls onReject when a rejected file is dropped', () => {

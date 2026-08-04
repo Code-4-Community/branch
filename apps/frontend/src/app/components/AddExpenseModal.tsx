@@ -4,9 +4,12 @@ import { useState } from 'react';
 import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
 import DropdownSelector from './DropdownSelector';
 import { useApi } from '@/hooks/useApi';
-import FileUpload from './FileUpload';
+import FileUpload, { UploadProgress } from './FileUpload';
+import { putWithProgress } from '@/lib/upload';
 import { FiDollarSign } from 'react-icons/fi';
 import { Project } from '@/types';
+
+const RECEIPT_CONTENT_TYPE = 'application/pdf';
 interface AddExpenseModalProps {
   open: boolean;
   onClose: () => void;
@@ -38,6 +41,8 @@ export default function AddExpenseModal({
   const [projectError, setProjectError] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function resetForm() {
     setNewDate('');
@@ -45,6 +50,9 @@ export default function AddExpenseModal({
     setNewDescription('');
     setNewAmount('');
     setNewProject('');
+    setNewFile(null);
+    setUploadProgress(null);
+    setIsSubmitting(false);
     setDateError(false);
     setTypeError(false);
     setDescError(false);
@@ -83,19 +91,38 @@ export default function AddExpenseModal({
       return;
     }
 
+    setSubmitError(null);
+    setIsSubmitting(true);
     try {
+      // The receipt goes to S3 first: POST /expenditures stores the resulting
+      // object URL, so there is nothing to record until the file has landed.
+      const { uploadUrl, objectUrl } = await api.get<{ uploadUrl: string; objectUrl: string }>(
+        `/expenditures/upload-url?fileName=${encodeURIComponent(newFile.name)}` +
+          `&projectId=${selectedProject.project_id}`,
+      );
+
+      setUploadProgress({ transferredBytes: 0, totalBytes: newFile.size, fileName: newFile.name });
+      await putWithProgress(uploadUrl, newFile, RECEIPT_CONTENT_TYPE, (transferredBytes) =>
+        setUploadProgress({ transferredBytes, totalBytes: newFile.size, fileName: newFile.name }),
+      );
+      setUploadProgress(null);
+
       await api.post('/expenditures', {
         projectID: selectedProject.project_id,
         amount: Number(newAmount),
         category: newType,
         description: newDescription,
         spentOn: newDate,
+        receiptUrl: objectUrl,
       });
 
       resetForm();
       onSuccess();
     } catch (err) {
+      setUploadProgress(null);
       setSubmitError(err instanceof Error ? err.message : 'Failed to create expense');
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -304,6 +331,7 @@ export default function AddExpenseModal({
                       setFileError(null);
                     }}
                     onReject={() => setFileError('File type not supported')}
+                    progress={uploadProgress}
                   />
                   {fileError && (
                     <span style={{ color: 'var(--color-error-red)', fontSize: '12px', fontStyle: 'italic', fontWeight: 600 }}>
@@ -332,6 +360,8 @@ export default function AddExpenseModal({
                 backgroundColor="var(--color-core-green)"
                 color="var(--color-core-white)"
                 onClick={handleSubmit}
+                loading={isSubmitting}
+                disabled={isSubmitting}
               >
                 Submit For Review
               </Button>
