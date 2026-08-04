@@ -196,9 +196,8 @@ describe('ReportsPage', () => {
         });
     });
 
-    it('logs a stub message when New Report is clicked', async () => {
+    it('opens the Upload New Report modal when New Report is clicked', async () => {
         const user = userEvent.setup();
-        const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
         mockApiFetchImplementation();
         render(<ReportsPage />);
 
@@ -206,11 +205,8 @@ describe('ReportsPage', () => {
 
         await user.click(screen.getByRole('button', { name: /new report/i }));
 
-        expect(consoleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('New Report clicked'),
-        );
-
-        consoleSpy.mockRestore();
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Upload New Report')).toBeInTheDocument();
     });
 
     it('switches to the Schedule tab and shows the not-implemented message', async () => {

@@ -44,7 +44,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
-    // CORS preflight — must return 2xx or the browser blocks the request.
+    // CORS preflight
     if (method === 'OPTIONS') {
       return json(200, {});
     }

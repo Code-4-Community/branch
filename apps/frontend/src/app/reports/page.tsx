@@ -16,6 +16,8 @@ import {
   VStack,
 } from '@chakra-ui/react';
 import { useApi } from '@/hooks/useApi';
+import { type Project } from '@/lib/reports';
+import UploadReportModal from '../components/UploadReportModal';
 import { FaPlus } from 'react-icons/fa';
 import { LuClipboardPenLine } from 'react-icons/lu';
 import { RiDeleteBack2Line } from "react-icons/ri";
@@ -30,11 +32,6 @@ type Report = {
     report_type: string;
     date_created: string | null;
     emails?: string[];
-};
-
-type Project = {
-    project_id: number;
-    name: string;
 };
 
 const ROWS_PER_PAGE = 10;
@@ -85,6 +82,9 @@ function ReportsPageContent() {
 
     // Selected rows (checkboxes) for bulk delete
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+    // Upload modal
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
     // Tab: Reports vs Schedule
     const [activeTab, setActiveTab] = useState<'reports' | 'schedule'>('reports');
@@ -182,10 +182,8 @@ function ReportsPageContent() {
         */
     }
 
-    // New Report handler
-    // NOTE: no create/upload flow defined yet — stub until that's scoped.
-    async function handleNewReport() {
-        console.log('New Report clicked — needs a create/upload flow defined');
+    function handleNewReport() {
+        setIsUploadModalOpen(true);
     }
 
     
@@ -366,6 +364,14 @@ function ReportsPageContent() {
               )}
             </div>
 
+
+            {/* Upload New Report modal */}
+            <UploadReportModal
+              open={isUploadModalOpen}
+              onClose={() => setIsUploadModalOpen(false)}
+              onSuccess={() => { setIsUploadModalOpen(false); fetchReports(); }}
+              projects={projects}
+            />
 
             {/* Generate New Report modal — matches Figma */}
             <Dialog.Root
