@@ -170,8 +170,8 @@ services:
   # Auth Service
   auth:
     build:
-      context: ./lambdas/auth
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/backend/lambdas/auth/Dockerfile
     container_name: branch-auth
     restart: unless-stopped
     environment:
