@@ -25,27 +25,31 @@ const Header: React.FC<HeaderProps> = ({
   // particular exists only in Postgres and is not a JWT claim.
   const { user, isAdmin } = useAuth();
 
+  // Padding utilities need the ! prefix here: Chakra's reset zeroes padding on
+  // bare elements and outranks unprefixed Tailwind utilities.
   return (
     <header
-      className="flex w-full h-12 items-center justify-between border-b border-gray-200 bg-white"
-      style={{paddingLeft: 32, paddingRight: 32, paddingTop: 20, paddingBottom: 12}}
+      className="flex w-full h-12 items-center justify-between gap-3 border-b border-gray-200 bg-white !px-4 sm:!px-8"
+      style={{paddingTop: 20, paddingBottom: 12}}
     >
       {/* Dynamic Text Section */}
-      <h5 className="text-core-black">
+      <h5 className="min-w-0 truncate text-core-black">
         {text}
       </h5>
 
       {/* Flexible Icon Section */}
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         {icon ?? (user ? (
           <>
-            <div className="flex flex-col items-end leading-tight">
-              <span className="text-sm font-semibold text-core-black">{user.name}</span>
-              <span className="text-xs text-gray-500">{user.email}</span>
+            {/* Hidden on a phone: the name and email are the first things that
+                can go when the rail already claims most of the width. */}
+            <div className="hidden min-w-0 flex-col items-end leading-tight sm:flex">
+              <span className="max-w-[22ch] truncate text-sm font-semibold text-core-black">{user.name}</span>
+              <span className="max-w-[26ch] truncate text-xs text-gray-500">{user.email}</span>
             </div>
             {isAdmin && (
               <span
-                className="rounded-full px-2 py-0.5 text-xs font-semibold"
+                className="hidden shrink-0 rounded-full !px-2 !py-0.5 text-xs font-semibold sm:inline"
                 style={{ backgroundColor: '#e6f0e8', color: '#2E6038' }}
               >
                 Admin

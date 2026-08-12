@@ -32,6 +32,41 @@ function getBucketName(): string {
   return bucket;
 }
 
+// Every report object lives under its project's prefix. Callers validate stored
+// URLs against this, so a report row cannot reference another project's object.
+export function reportKeyPrefix(projectId: number): string {
+  return `reports/${projectId}/`;
+}
+
+export function objectUrlFor(key: string): string {
+  const region = process.env.AWS_REGION ?? 'us-east-2';
+  return `https://${getBucketName()}.s3.${region}.amazonaws.com/${key}`;
+}
+
+export function keyFromObjectUrl(objectUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(objectUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:') return null;
+
+  const bucket = getBucketName();
+  const region = process.env.AWS_REGION ?? 'us-east-2';
+  // the region-less host is still accepted so rows written before objectUrlFor stay downloadable
+  const validHosts = [`${bucket}.s3.${region}.amazonaws.com`, `${bucket}.s3.amazonaws.com`];
+  if (!validHosts.includes(parsed.host)) return null;
+
+  let key: string;
+  try {
+    key = decodeURIComponent(parsed.pathname.replace(/^\//, ''));
+  } catch {
+    return null;
+  }
+  return key || null;
+}
+
 // The deploy bundle (esbuild) ships the Roboto TTFs under <task>/fonts/Roboto
 // (see package.json "package"). In local dev (ts-node, unbundled) they live in
 // node_modules/pdfmake. pdfmake reads these files at render time, so they must
@@ -492,7 +527,7 @@ export async function uploadToS3(fileBuffer: Buffer, projectId: number, fileType
   const bucketName = getBucketName();
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const key = `reports/${projectId}/${timestamp}.${fileType}`;
+  const key = `${reportKeyPrefix(projectId)}${timestamp}.${fileType}`;
   const contentType = fileType === 'docx'
     ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     : 'application/pdf';
@@ -506,7 +541,7 @@ export async function uploadToS3(fileBuffer: Buffer, projectId: number, fileType
     }),
   );
 
-  return `https://${bucketName}.s3.amazonaws.com/${key}`;
+  return objectUrlFor(key);
 }
 
 export async function saveReportRecord(

@@ -192,9 +192,9 @@ test('404: project not found', async () => {
   expect(json.message).toBe('Project not found');
 });
 
-test('500: invalid id causes error', async () => {
+test('400: invalid id is rejected', async () => {
   const res = await handler(getExpendituresEvent('invalid'));
-  expect(res.statusCode).toBe(500);
+  expect(res.statusCode).toBe(400);
   const json = JSON.parse(res.body);
-  expect(json.message).toContain('Failed to fetch expenditures');
+  expect(json.message).toBe('Project id must be a valid number');
 });

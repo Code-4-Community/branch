@@ -8,13 +8,12 @@ import Pagination from '../components/Pagination';
 import {
   HStack,
   Button,
-  Table,
-  Checkbox,
   NativeSelect,
   Dialog,
   Portal,
   VStack,
 } from '@chakra-ui/react';
+import DataTable, { type DataTableColumn } from '../components/DataTable';
 import { useApi } from '@/hooks/useApi';
 import { type Project } from '@/lib/reports';
 import UploadReportModal from '../components/UploadReportModal';
@@ -80,8 +79,15 @@ function ReportsPageContent() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Delete/download failures — non-blocking, so they must not hide the table
+    const [actionError, setActionError] = useState<string | null>(null);
+
     // Selected rows (checkboxes) for bulk delete
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [deleting, setDeleting] = useState(false);
+
+    // report_id whose download URL is currently being fetched
+    const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
     // Upload modal
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -94,13 +100,17 @@ function ReportsPageContent() {
         page: '',
     });
     const currentPage = parseInt(filters.page, 10) || 1;
-    
+    const [totalPages, setTotalPages] = useState(1);
+
 
     // Fetch reports
     async function fetchReports() {
         try {
-        const json = await api.get<{ data: Report[] }>('/reports');
+        const json = await api.get<{ data: Report[]; pagination?: { totalPages: number } }>(
+          `/reports?page=${currentPage}&limit=${ROWS_PER_PAGE}`,
+        );
         setReports(json.data ?? []);
+        setTotalPages(Math.max(1, json.pagination?.totalPages ?? 1));
         } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load reports');
         } finally {
@@ -136,27 +146,27 @@ function ReportsPageContent() {
     
 
     useEffect(() => {
+        // Selection is scoped to the visible page, so it must not survive a page
+        // change — bulk delete would otherwise remove rows the user can't see.
+        setSelectedIds([]);
         fetchReports();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage]);
+
+    useEffect(() => {
         fetchProjects();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Pagination
-    const totalPages = Math.max(1, Math.ceil(reports.length / ROWS_PER_PAGE));
-    const paginatedData = reports.slice(
-        (currentPage - 1) * ROWS_PER_PAGE,
-        currentPage * ROWS_PER_PAGE,
-    );
-
     // Selection helpers (scoped to the currently visible page of rows)
-    const allSelected = paginatedData.length > 0 && paginatedData.every((r) => selectedIds.includes(r.report_id));
-    const someSelected = paginatedData.some((r) => selectedIds.includes(r.report_id)) && !allSelected;
+    const allSelected = reports.length > 0 && reports.every((r) => selectedIds.includes(r.report_id));
+    const someSelected = reports.some((r) => selectedIds.includes(r.report_id)) && !allSelected;
 
     function toggleAll() {
         if (allSelected) {
-          setSelectedIds((prev) => prev.filter((id) => !paginatedData.some((r) => r.report_id === id)));
+          setSelectedIds((prev) => prev.filter((id) => !reports.some((r) => r.report_id === id)));
         } else {
-          const pageIds = paginatedData.map((r) => r.report_id);
+          const pageIds = reports.map((r) => r.report_id);
           setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
         }
     }
@@ -168,23 +178,92 @@ function ReportsPageContent() {
     }
 
 
-    // Bulk delete handler
-    // NOTE: DELETE /reports endpoint doesn't exist
+    // Bulk delete handler — the backend deletes one report per call
     async function handleDeleteSelected() {
-        console.log('Delete isn\'t available yet — no DELETE /reports endpoint exists on the backend.');
-        /* await apiFetch('/reports', {
-           token,
-           method: 'DELETE',
-           body: JSON.stringify({ ids: selectedIds }),
-         });
-         setSelectedIds([]);
-         await fetchReports();
-        */
+        if (selectedIds.length === 0 || deleting) return;
+        setDeleting(true);
+        setActionError(null);
+        try {
+          const results = await Promise.allSettled(
+            selectedIds.map((id) => api.del(`/reports/${id}`)),
+          );
+          const failed = results.filter((r) => r.status === 'rejected').length;
+          if (failed > 0) {
+            setActionError(
+              `Failed to delete ${failed} of ${selectedIds.length} report${selectedIds.length === 1 ? '' : 's'}`,
+            );
+          }
+          setSelectedIds([]);
+          await fetchReports();
+        } finally {
+          setDeleting(false);
+        }
+    }
+
+    async function handleDownload(reportId: number) {
+        setDownloadingId(reportId);
+        setActionError(null);
+        try {
+          const { downloadUrl } = await api.get<{ downloadUrl: string; expiresIn: number }>(
+            `/reports/${reportId}/download`,
+          );
+          window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+        } catch (err) {
+          setActionError(err instanceof Error ? err.message : 'Failed to open report');
+        } finally {
+          setDownloadingId(null);
+        }
     }
 
     function handleNewReport() {
         setIsUploadModalOpen(true);
     }
+
+    const reportColumns: DataTableColumn<Report>[] = [
+        {
+            key: 'date',
+            header: 'Date Created',
+            width: '18%',
+            cell: (report) => formatDate(report.date_created),
+            skeleton: { width: '70%' },
+        },
+        {
+            key: 'title',
+            header: 'Report Name',
+            width: '32%',
+            cell: (report) => (
+                <Button
+                    variant="plain"
+                    height="auto"
+                    minWidth="auto"
+                    padding="0"
+                    color="var(--color-core-green)"
+                    textDecoration="underline"
+                    onClick={() => handleDownload(report.report_id)}
+                    loading={downloadingId === report.report_id}
+                    loadingText={report.title || 'Untitled report'}
+                >
+                    {report.title || 'Untitled report'}
+                </Button>
+            ),
+        },
+        {
+            key: 'emails',
+            header: 'Emails',
+            width: '35%',
+            cell: (report) =>
+                report.emails && report.emails.length > 0 ? report.emails.join(', ') : '—',
+            skeleton: { width: '85%' },
+        },
+        {
+            key: 'format',
+            header: 'Format',
+            width: '15%',
+            align: 'right',
+            cell: (report) => getFormatLabel(report.object_url),
+            skeleton: { width: '45%' },
+        },
+    ];
 
     
     return (
@@ -232,7 +311,8 @@ function ReportsPageContent() {
                     backgroundColor="var(--color-error-red)"
                     color="var(--color-core-white)"
                     onClick={handleDeleteSelected}
-                    disabled={selectedIds.length === 0}
+                    loading={deleting}
+                    disabled={selectedIds.length === 0 || deleting}
                   >
                     <RiDeleteBack2Line />
                     Delete
@@ -262,89 +342,32 @@ function ReportsPageContent() {
                 </HStack>
               </HStack>
      
-              {/* Loading / Error */}
-              {loading && <p>Loading reports...</p>}
               {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+              {actionError && (
+                <p style={{ color: 'var(--color-error-red)', paddingBottom: '12px' }}>{actionError}</p>
+              )}
      
               {/* Reports tab content */}
-              {!loading && !error && activeTab === 'reports' && (
-                <Table.Root variant="outline" width="100%">
-                  <Table.Header>
-                    <Table.Row backgroundColor="var(--color-primary-800)">
-                      <Table.ColumnHeader width="48px" paddingY="12px">
-                        <Checkbox.Root
-                          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                          onCheckedChange={toggleAll}
-                        >
-                          <Checkbox.HiddenInput />
-                          <Checkbox.Control
-                            borderRadius="md"
-                            css={{
-                                backgroundColor: 'var(--color-core-white)',
-                                borderColor: 'var(--color-core-green)',
-                                '&[data-state="checked"]': {
-                                  backgroundColor: 'var(--color-primary-800)',
-                                  borderColor: 'var(--color-core-green)',
-                                },
-                            }}
-                          />
-                        </Checkbox.Root>
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600}>
-                        Date Created
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600}>
-                        Report Name
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600}>
-                        Emails
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600} textAlign="right">
-                        Format
-                      </Table.ColumnHeader>
-                    </Table.Row>
-                  </Table.Header>
-                  <Table.Body>
-                    {paginatedData.length === 0 && (
-                      <Table.Row>
-                        <Table.Cell colSpan={5} textAlign="center" paddingY="32px" color="var(--color-black-500)">
-                          No reports found.
-                        </Table.Cell>
-                      </Table.Row>
-                    )}
-                    {paginatedData.map((report) => (
-                      <Table.Row key={report.report_id}>
-                        <Table.Cell>
-                          <Checkbox.Root
-                            checked={selectedIds.includes(report.report_id)}
-                            onCheckedChange={() => toggleOne(report.report_id)}
-                          >
-                            <Checkbox.HiddenInput />
-                            <Checkbox.Control
-                                borderRadius="md"
-                                css={{
-                                    backgroundColor: 'var(--color-core-white)',
-                                    borderColor: 'var(--color-core-green)',
-                                    '&[data-state="checked"]': {
-                                      backgroundColor: 'var(--color-primary-800)',
-                                      borderColor: 'var(--color-core-green)',
-                                    },
-                                }}
-                            />
-                          </Checkbox.Root>
-                        </Table.Cell>
-                        <Table.Cell>{formatDate(report.date_created)}</Table.Cell>
-                        <Table.Cell>{report.title || 'Untitled report'}</Table.Cell>
-                        <Table.Cell>
-                          {report.emails && report.emails.length > 0 ? report.emails.join(', ') : '—'}
-                        </Table.Cell>
-                        <Table.Cell textAlign="right">
-                          {getFormatLabel(report.object_url)}
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Root>
+              {!error && activeTab === 'reports' && (
+                <DataTable
+                  variant="outline"
+                  columns={reportColumns}
+                  rows={reports}
+                  rowKey={(report) => report.report_id}
+                  isLoading={loading}
+                  loadingLabel="Loading reports…"
+                  skeletonRows={ROWS_PER_PAGE}
+                  emptyMessage="No reports found."
+                  selection={{
+                    label: 'Select all reports',
+                    isSelected: (report) => selectedIds.includes(report.report_id),
+                    onToggleRow: (report) => toggleOne(report.report_id),
+                    allSelected,
+                    someSelected,
+                    onToggleAll: toggleAll,
+                    disabled: loading,
+                  }}
+                />
               )}
      
               {/* Schedule tab content */}

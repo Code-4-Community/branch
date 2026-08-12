@@ -21,7 +21,7 @@ const adminAuthResult = {
 
 const nonAdminAuthResult = {
   isAuthenticated: true as const,
-  user: { cognitoSub: 'staff-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
+  user: { cognitoSub: 'student-sub', userId: 3, email: 'nour@branch.org', isAdmin: false },
 };
 
 const pool = new Pool({
@@ -52,9 +52,9 @@ const nonMemberUser = {
   user: { cognitoSub: 'nonmember-sub', userId: 4, email: 'nonmember@branch.org', isAdmin: false },
 };
 
-const piMemberUser = {
+const directorMemberUser = {
   isAuthenticated: true as const,
-  user: { cognitoSub: 'pi-sub', userId: 5, email: 'pimember@branch.org', isAdmin: false },
+  user: { cognitoSub: 'director-sub', userId: 5, email: 'directormember@branch.org', isAdmin: false },
 };
 
 beforeEach(async () => {
@@ -118,11 +118,11 @@ describe('Authorization', () => {
       await client.query(
         `INSERT INTO branch.users (name, email, is_admin) VALUES
            ('Non Member', 'nonmember@branch.org', FALSE),
-           ('PI Member', 'pimember@branch.org', FALSE)`,
+           ('Director Member', 'directormember@branch.org', FALSE)`,
       );
       await client.query(
         `INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours)
-         SELECT 1, user_id, 'PI', '2025-01-01', 10 FROM branch.users WHERE email = 'pimember@branch.org'`,
+         SELECT 1, user_id, 'Director', '2025-01-01', 10 FROM branch.users WHERE email = 'directormember@branch.org'`,
       );
     } finally {
       client.release();
@@ -151,7 +151,7 @@ describe('Authorization', () => {
   });
 
   test('200: member lists only projects they belong to', async () => {
-    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+    mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
     const res = await handler(getEvent('/projects'));
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
@@ -173,22 +173,22 @@ describe('Authorization', () => {
     expect(JSON.parse(res.body).message).toBe('You do not have access to edit this project');
   });
 
-  test('200: PI member can read their project', async () => {
-    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+  test('200: Director member can read their project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
     const res = await handler(getEvent('/projects/1'));
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).project_id).toBe(1);
   });
 
-  test('200: PI member can edit their project', async () => {
-    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
-    const res = await handler(putEvent('/projects/1', { name: 'Renamed by PI' }));
+  test('200: Director member can edit their project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
+    const res = await handler(putEvent('/projects/1', { name: 'Renamed by Director' }));
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).name).toBe('Renamed by PI');
+    expect(JSON.parse(res.body).name).toBe('Renamed by Director');
   });
 
-  test('403: PI member cannot edit a project they do not belong to', async () => {
-    mockAuthenticateRequest.mockResolvedValue(piMemberUser);
+  test('403: Director member cannot edit a project they do not belong to', async () => {
+    mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
     const res = await handler(putEvent('/projects/2', { name: 'X' }));
     expect(res.statusCode).toBe(403);
   });
@@ -317,6 +317,22 @@ describe('GET /dashboard (e2e)', () => {
     const client = await pool.connect();
     try {
       await resetData(client);
+      // Dashboard cards scope spend to the current calendar year and count
+      // only active projects. Seed rows use 2025 spend dates and early-2026
+      // end dates, so shift them forward for deterministic e2e assertions.
+      await client.query(`
+        UPDATE branch.projects
+           SET end_date = '2099-12-31'
+         WHERE end_date IS NOT NULL
+      `);
+      await client.query(`
+        UPDATE branch.expenditures
+           SET spent_on = make_date(
+             EXTRACT(YEAR FROM CURRENT_DATE)::int,
+             EXTRACT(MONTH FROM spent_on)::int,
+             EXTRACT(DAY FROM spent_on)::int
+           )
+      `);
     } finally {
       client.release();
     }

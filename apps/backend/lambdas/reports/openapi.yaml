@@ -214,6 +214,45 @@ paths:
         '500':
           description: Internal server error
 
+  /reports/{id}/download:
+    get:
+      summary: Get a pre-signed S3 URL for downloading a report file
+      description: >
+        Returns a short-lived pre-signed GET URL for the report's stored S3
+        object. The reports bucket is private, so the stored object_url is not
+        directly fetchable. Requires the caller to be a member of the report's
+        project or a global admin.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Pre-signed download URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  downloadUrl:
+                    type: string
+                    description: Pre-signed S3 GET URL
+                  expiresIn:
+                    type: integer
+                    description: Seconds until the URL expires
+                    example: 900
+        '401':
+          description: Authentication required
+        '403':
+          description: No access to this report
+        '404':
+          description: Report not found
+        '409':
+          description: Report is not stored in the reports bucket
+
   /reports/{id}:
     get:
       summary: GET /reports/{id}

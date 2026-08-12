@@ -37,18 +37,21 @@ jest.mock('../../src/app/components/DropdownSelector', () => {
   };
 });
 
-// Mock FileUpload — expose a button that selects a fake file
+// Mock FileUpload — expose a button that reports a finished upload
 jest.mock('../../src/app/components/FileUpload', () => {
   return function MockFileUpload({
     onChange,
   }: {
-    onChange: (file: File | null) => void;
+    onChange: (file: File | null, objectUrl: string | null) => void;
   }) {
     return (
       <button
         type="button"
         onClick={() =>
-          onChange(new File(['x'], 'receipt.pdf', { type: 'application/pdf' }))
+          onChange(
+            new File(['x'], 'receipt.pdf', { type: 'application/pdf' }),
+            'https://bucket.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf',
+          )
         }
       >
         mock-select-file
@@ -112,7 +115,7 @@ describe('AddExpenseModal Component', () => {
     expect(screen.getByText('Select a type of expense')).toBeInTheDocument();
     expect(screen.getByText('Select a project')).toBeInTheDocument();
     expect(screen.getByText('Enter a description')).toBeInTheDocument();
-    expect(screen.getByText('File type not supported')).toBeInTheDocument();
+    expect(screen.getByText('Please upload an image of the receipt')).toBeInTheDocument();
   });
 
   it('does not call apiFetch when the form is invalid', () => {
@@ -155,6 +158,7 @@ describe('AddExpenseModal Component', () => {
             category: 'Travel Foreign',
             description: 'A test description',
             spentOn: '2025-05-15',
+            receiptUrl: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf',
           }),
         }),
       );

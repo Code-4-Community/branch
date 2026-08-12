@@ -11,7 +11,9 @@ Lambda for managing projects.
 | GET | /health | Health check |
 | GET | /dashboard |  |
 | GET | /projects/{id}/members |  |
+| GET | /projects/assignable-staff |  |
 | GET | /projects |  |
+| GET | /projects/{id}/overview |  |
 | GET | /projects/{id}/donors |  |
 | GET | /projects/{id} |  |
 | PUT | /projects/{id} |  |

@@ -33,7 +33,10 @@
   
     /* Errors */
     --color-error-red: #AD1A00;
-    --color-error-light-red: #D68C80;
+    --color-error-light-red: #E17070;
+
+    /* Status pills */
+    --color-status-pending: #FFD167;
 
   /* Font Families */
     --font-heading: 'Roboto Slab', serif;
@@ -101,3 +104,65 @@
     height: 100%;
     cursor: pointer;
   }
+
+/* Loading primitives — the animations behind <Spinner> and <Skeleton>. They
+   live here rather than in the components so every loading affordance in the
+   app shares one timing curve, and so a spinner can render before any
+   component library is mounted (see FullPageSpinner). */
+
+@keyframes branch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes branch-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Takes its colour from `currentColor`, so a spinner on a dark surface only
+   needs a text colour rather than its own variant. */
+.branch-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border-style: solid;
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  animation: branch-spin 0.7s linear infinite;
+}
+
+.branch-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-black-100);
+  border-radius: 4px;
+}
+
+.branch-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-core-white) 70%, transparent),
+    transparent
+  );
+  animation: branch-shimmer 1.4s ease-in-out infinite;
+  /* Staggered per row so a table of skeletons reads as one wave. */
+  animation-delay: var(--branch-skeleton-delay, 0s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .branch-spinner {
+    animation-duration: 2.4s;
+  }
+
+  .branch-skeleton::after {
+    animation: none;
+  }
+}

@@ -1,7 +1,8 @@
 import React from 'react';
-import { LuDollarSign } from "react-icons/lu";
-import { RxPeople } from "react-icons/rx";
-import { FaArrowRight } from "react-icons/fa6";
+import { LuDollarSign } from 'react-icons/lu';
+import { RxPeople } from 'react-icons/rx';
+import { FaArrowRight } from 'react-icons/fa6';
+import { formatCurrency } from '@/lib/format';
 
 type ActiveProps = {
     variant: 'active';
@@ -20,57 +21,112 @@ type ArchiveProps = {
     end_date: string;
 };
 
-type ProjectCardProps = ActiveProps | ArchiveProps;
+// `fullWidth` hands sizing to the parent: the responsive widths below are tuned
+// for the projects list and would shrink inside a grid cell.
+type ProjectCardProps = (ActiveProps | ArchiveProps) & { fullWidth?: boolean };
+
+/** `$ Budget` / `people Staff` — the two stat columns split by a rule. */
+function StatColumn({
+    icon,
+    label,
+    value,
+    grow = false,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+    /** Only the Staff column flexes; Budget keeps its natural width so a figure
+     *  like "$52,500/ $100,000" is never ellipsised in favour of "3 members". */
+    grow?: boolean;
+}) {
+    return (
+        <div className={`flex min-w-0 flex-col !gap-2 ${grow ? 'flex-1' : 'shrink'}`}>
+            <div className="flex flex-row items-center !gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center text-core-black [&>svg]:h-full [&>svg]:w-full">
+                    {icon}
+                </span>
+                <h5>{label}</h5>
+            </div>
+            <p className="truncate">{value}</p>
+        </div>
+    );
+}
 
 export default function ProjectCard(props: ProjectCardProps) {
+    const widthClasses = props.fullWidth
+        ? 'w-full'
+        : 'w-full sm:w-[50%] md:w-[35%] lg:w-[25%]';
+
     return (
-        <div className="!border-[1px] border-solid border-black-300 w-full sm:w-[50%] md:w-[35%] lg:w-[25%] rounded-[4px] overflow-hidden">
-            <div className="flex flex-col !gap-4 !p-4">
-                <h4 className="!px-2">{props.name}</h4>
-                <div className="flex flex-row !px-2 !gap-4 min-w-0">
-                    <div className="flex flex-col !gap-1 !pr-4 !border-r-[2px] border-black-300 min-w-0">
-                        <div className="flex flex-row items-center !gap-1 !pr-4">
-                            <LuDollarSign />
-                            <h5 className="!font-bold">Budget</h5>
+        // A container, not a viewport breakpoint: how much room the stats have
+        // depends on the card's own width, which varies with the grid track.
+        <div
+            className={`@container flex h-full flex-col !gap-4 rounded-[4px] !border-[1px] !border-solid !border-black-300 !bg-core-white !p-4 ${widthClasses}`}
+        >
+            {/* Two lines then ellipsis: the design's cards are a fixed height and a
+                long project name would otherwise push the stats out of alignment
+                across a row. */}
+            <h4 className="line-clamp-2 break-words">{props.name}</h4>
+
+            <div className="flex min-w-0 flex-row items-stretch !gap-4 @max-[240px]:flex-col @max-[240px]:!gap-2">
+                <StatColumn
+                    icon={<LuDollarSign aria-hidden />}
+                    label="Budget"
+                    value={
+                        props.variant === 'active'
+                            ? `${formatCurrency(props.budget_used)}/ ${formatCurrency(props.total_budget)}`
+                            : formatCurrency(props.total_budget)
+                    }
+                />
+                <div
+                    className="!w-px shrink-0 self-stretch !bg-black-300 @max-[240px]:hidden"
+                    aria-hidden
+                />
+                <StatColumn
+                    grow
+                    icon={<RxPeople aria-hidden />}
+                    label="Staff"
+                    value={`${props.members.toLocaleString()} ${props.members === 1 ? 'member' : 'members'}`}
+                />
+            </div>
+
+            {props.variant === 'active' ? (
+                // A project with no budget set divides by zero; show 0% rather
+                // than "NaN%" and a bar of unset width.
+                (() => {
+                    const percentUsed = props.total_budget > 0
+                        ? Math.round((props.budget_used / props.total_budget) * 100)
+                        : 0;
+                    return (
+                        <div className="mt-auto flex flex-row items-center !gap-3">
+                            <div className="!h-6 w-full rounded-full !bg-black-300 !p-0.5">
+                                <div
+                                    // Capped at 100% so an overspent project fills the
+                                    // track instead of overflowing the rounded corners.
+                                    style={{ width: `${Math.min(percentUsed, 100)}%` }}
+                                    className="!h-full rounded-full !bg-core-green"
+                                />
+                            </div>
+                            <p className="shrink-0">{percentUsed}%</p>
                         </div>
-                        <p className="truncate">
-                            {props.variant === 'active'
-                                ? `$${props.budget_used.toLocaleString()}/$${props.total_budget.toLocaleString()}`
-                                : `$${props.total_budget.toLocaleString()}`}
-                        </p>
-                    </div>
-                    <div className="flex flex-col !gap-1 !pl-1 min-w-0">
-                        <div className="flex flex-row items-center !gap-1">
-                            <RxPeople />
-                            <h5 className="!font-bold">Staff</h5>
+                    );
+                })()
+            ) : (
+                <div className="mt-auto flex flex-col !gap-2">
+                    <hr className="!border-0 !border-t !border-solid !border-black-300" />
+                    <div className="flex flex-row items-center !gap-3 @max-[240px]:flex-col @max-[240px]:items-start @max-[240px]:!gap-2">
+                        <div className="flex min-w-0 flex-1 flex-col !gap-1">
+                            <small className="!font-bold">Start Date</small>
+                            <p className="truncate">{props.start_date}</p>
                         </div>
-                        <p className="truncate">{props.members.toLocaleString()} members</p>
+                        <FaArrowRight className="shrink-0 @max-[240px]:hidden" aria-hidden />
+                        <div className="flex min-w-0 flex-1 flex-col !gap-1">
+                            <small className="!font-bold">End Date</small>
+                            <p className="truncate">{props.end_date}</p>
+                        </div>
                     </div>
                 </div>
-                {props.variant === 'active' ? (
-                    <div className="flex flex-row items-center !gap-2">
-                        <div className="w-full !h-[24px] rounded-full bg-black-100">
-                            <div
-                                style={{ width: `${Math.round((props.budget_used / props.total_budget) * 100)}%` }}
-                                className="!h-full rounded-full bg-core-green"
-                            />
-                        </div>
-                        <p>{Math.round((props.budget_used / props.total_budget) * 100)}%</p>
-                    </div>
-                ) : (
-                    <div className="flex flex-row w-full items-center !gap-4 !px-2">
-                        <div className="flex flex-col !gap-1">
-                            <h5 className="!font-bold">Start Date</h5>
-                            <p>{props.start_date}</p>
-                        </div>
-                        <FaArrowRight className="shrink-0" />
-                        <div className="flex flex-col !gap-1">
-                            <h5 className="!font-bold">End Date</h5>
-                            <p>{props.end_date}</p>
-                        </div>
-                    </div>
-                )}
-            </div>
+            )}
         </div>
     );
 }

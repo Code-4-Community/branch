@@ -23,6 +23,7 @@ jest.mock('../auth', () => ({
 
 const mockExecuteTakeFirst = jest.fn();
 const mockExecute = jest.fn();
+const mockUpdateResult = jest.fn();
 const mockSet = jest.fn();
 const mockValues = jest.fn();
 
@@ -40,6 +41,7 @@ jest.mock('../db', () => {
     },
     where: () => updateChain,
     execute: (...a: unknown[]) => mockExecute(...a),
+    executeTakeFirst: (...a: unknown[]) => mockUpdateResult(...a),
   };
   const insertChain: any = {
     values: (...a: unknown[]) => {
@@ -84,6 +86,7 @@ const TOKENS = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUpdateResult.mockResolvedValue({ numUpdatedRows: 1n });
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -563,7 +566,7 @@ describe('POST /register — claim-on-register', () => {
     mockSend
       .mockResolvedValueOnce({ UserSub: 'new-sub' }) // SignUp
       .mockResolvedValueOnce({}); // AdminDeleteUser
-    mockExecute.mockRejectedValue(new Error('db down'));
+    mockUpdateResult.mockRejectedValue(new Error('db down'));
 
     const res = await handler(event('/register', 'POST', validBody));
 

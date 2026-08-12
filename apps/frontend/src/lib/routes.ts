@@ -10,7 +10,32 @@
 export type RouteAccess = 'public' | 'protected' | 'bootstrap';
 
 export const LOGIN_PATH = '/login';
-export const POST_LOGIN_PATH = '/dashboard';
+
+/**
+ * Landing route when nothing more specific applies. Must stay reachable by every
+ * role — it was `/dashboard`, which dropped non-admins on the no-access panel
+ * once that page became admin-only. Prefer `landingPathFor()` when the role is known.
+ */
+export const DEFAULT_LANDING_PATH = '/projects';
+export const ADMIN_LANDING_PATH = '/dashboard';
+
+export function landingPathFor(isAdmin: boolean): string {
+  return isAdmin ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
+}
+
+/**
+ * Link to a single project.
+ *
+ * The id is a query param rather than a path segment on purpose. The app is a
+ * static export, so a dynamic `/projects/[id]` segment would have to enumerate
+ * every id at build time — impossible for database rows — leaving real ids with
+ * no exported document and depending on a CloudFront fallback to serve some
+ * other page's shell. `/projects?id=1` is one prerendered document that reads
+ * the id at runtime, so deep links and refreshes work with no hosting rules.
+ */
+export function projectPath(id: number | string): string {
+  return `/projects?id=${encodeURIComponent(String(id))}`;
+}
 
 /** Reachable without a session. Authenticated users get bounced off these. */
 const PUBLIC_PREFIXES = [
@@ -19,8 +44,15 @@ const PUBLIC_PREFIXES = [
   '/reset-password',
 ] as const;
 
-/** Require `isAdmin` on top of authentication. */
-const ADMIN_PREFIXES = ['/expenses', '/reports', '/accounts'] as const;
+/**
+ * Require `isAdmin` on top of authentication.
+ *
+ * `/expenses` is deliberately not here: non-admins submit expenses and read
+ * their own submissions there. Only the approve/deny controls and admin notes
+ * inside the review modal are admin-gated, and the backend already lets any
+ * authenticated user list expenditures.
+ */
+const ADMIN_PREFIXES = ['/dashboard', '/reports', '/accounts'] as const;
 
 /**
  * Strips the trailing slash and lowercases.
@@ -64,7 +96,7 @@ export function requiresAdmin(pathname: string): boolean {
  */
 export function safeNextPath(
   raw: string | null | undefined,
-  fallback = POST_LOGIN_PATH,
+  fallback = DEFAULT_LANDING_PATH,
 ): string {
   if (!raw) return fallback;
   if (!raw.startsWith('/')) return fallback;

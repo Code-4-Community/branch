@@ -20,7 +20,9 @@ function LoginPageContent() {
     // Where to land after signing in. AuthGate sets ?next= when it bounces an
     // unauthenticated user off a protected page; safeNextPath rejects anything
     // that isn't a same-origin path, so a crafted link can't redirect offsite.
-    const next = safeNextPath(searchParams.get('next'));
+    // With no ?next= we hand off to "/" rather than naming a page: the landing
+    // route depends on isAdmin, which only arrives with GET /auth/me.
+    const next = safeNextPath(searchParams.get('next'), '/');
 
     const [email, setEmail] = useState('');
     const [password, setPasswordValue] = useState('');

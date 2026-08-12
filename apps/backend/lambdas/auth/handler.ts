@@ -733,17 +733,21 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
             );
             const sub = cognitoUser.UserAttributes?.find((a) => a.Name === 'sub')?.Value;
             if (sub && cognitoUser.UserStatus === 'CONFIRMED') {
-              await db
+              const linkResult = await db
                 .updateTable('branch.users')
                 .set({ cognito_sub: sub })
                 .where('user_id', '=', claimingUserId)
                 .where('cognito_sub', 'is', null)
-                .execute();
-              return json(200, {
-                message: 'Existing account linked',
-                claimed: true,
-                email: email.toLowerCase(),
-              });
+                .executeTakeFirst();
+              // A concurrent claim already took this row; do not delete the
+              // pre-existing Cognito user, it may back a working account.
+              if (linkResult.numUpdatedRows > 0n) {
+                return json(200, {
+                  message: 'Existing account linked',
+                  claimed: true,
+                  email: email.toLowerCase(),
+                });
+              }
             }
           } catch (linkError) {
             console.warn('Could not auto-link existing Cognito user:', linkError);
@@ -764,25 +768,7 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
       return json(500, { message: 'Failed to register user in authentication service' });
     }
 
-    // Create user in database, or claim the pending invitation
-    try {
-      // Claim the invitation. is_admin is deliberately NOT touched: it was set
-      // by whoever created the invitation (a seed, or an admin via POST /users)
-      // and must never be settable from a public, unauthenticated endpoint.
-      // There is no insert path here -- registration cannot mint a new row, only
-      // claim one an admin already approved. The cognito_sub IS NULL predicate
-      // makes a concurrent claim a no-op rather than an overwrite;
-      // UNIQUE(cognito_sub) is the backstop.
-      await db
-        .updateTable('branch.users')
-        .set({ cognito_sub: cognitoUserSub, name: name.trim() })
-        .where('user_id', '=', claimingUserId)
-        .where('cognito_sub', 'is', null)
-        .execute();
-    } catch (dbError: any) {
-      console.error('Database insert error:', dbError);
-
-      // Rollback: Delete user from Cognito if database insert fails
+    const rollbackCognitoUser = async () => {
       try {
         await cognitoClient.send(
           new AdminDeleteUserCommand({
@@ -794,6 +780,39 @@ async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
       } catch (rollbackError) {
         console.error('Failed to rollback Cognito user:', rollbackError);
       }
+    };
+
+    // Create user in database, or claim the pending invitation
+    try {
+      // Claim the invitation. is_admin is deliberately NOT touched: it was set
+      // by whoever created the invitation (a seed, or an admin via POST /users)
+      // and must never be settable from a public, unauthenticated endpoint.
+      // There is no insert path here -- registration cannot mint a new row, only
+      // claim one an admin already approved. The cognito_sub IS NULL predicate
+      // makes a concurrent claim a no-op rather than an overwrite;
+      // UNIQUE(cognito_sub) is the backstop.
+      const claimResult = await db
+        .updateTable('branch.users')
+        .set({ cognito_sub: cognitoUserSub, name: name.trim() })
+        .where('user_id', '=', claimingUserId)
+        .where('cognito_sub', 'is', null)
+        .executeTakeFirst();
+
+      // No-op claim: the Cognito sub we just created would reference no row, so
+      // every later login would fail. Undo the Cognito user instead.
+      if (claimResult.numUpdatedRows === 0n) {
+        console.error('Invitation already claimed for user_id:', claimingUserId);
+        await rollbackCognitoUser();
+        return json(409, {
+          message: 'User with this email already exists',
+          code: 'ALREADY_CLAIMED',
+        });
+      }
+    } catch (dbError: any) {
+      console.error('Database insert error:', dbError);
+
+      // Rollback: Delete user from Cognito if database insert fails
+      await rollbackCognitoUser();
 
       return json(500, { message: 'Failed to create user account' });
     }

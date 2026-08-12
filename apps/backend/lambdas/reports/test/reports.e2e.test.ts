@@ -18,6 +18,9 @@ import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
+// objectUrlFor/keyFromObjectUrl require a bucket name; 'bucket' matches fakeObjectUrl below
+process.env.REPORTS_BUCKET_NAME = 'bucket';
+
 const pool = new Pool({
   host: 'localhost',
   port: Number(5432),
@@ -287,7 +290,8 @@ describe('Reports e2e tests', () => {
     });
 
     test('201: created report appears in subsequent GET /reports', async () => {
-      await handler(postEvent({ title: 'Verify Report', projectId: 2, objectUrl: fakeObjectUrl }));
+      const project2ObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/2/123-report.pdf';
+      await handler(postEvent({ title: 'Verify Report', projectId: 2, objectUrl: project2ObjectUrl }));
       const getRes = await handler(getEvent());
       const getBody = JSON.parse(getRes.body);
       expect(getBody.data.some((r: any) => r.title === 'Verify Report')).toBe(true);

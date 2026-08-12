@@ -11,6 +11,7 @@ import { UserValidationUtils } from './validation-utils';
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-2',
 });
+
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
 function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
@@ -37,8 +38,6 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       normalizedPath = '/';
     }
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
-
-        console.log('DEBUG - rawPath:', rawPath, 'normalizedPath:', normalizedPath, 'method:', method);
 
     // CORS preflight — must return 2xx before auth, or the browser blocks it.
     if (method === 'OPTIONS') {
@@ -100,8 +99,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             .selectFrom('branch.users')
             .selectAll()
             .execute();
-      
-      console.log(users);
+
       return json(200, { users });
     } 
 
@@ -111,7 +109,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const authError = requireAuth(authContext, 'ADMIN_OR_SELF', userId);
       if (authError) return authError;
 
-      if (!userId) return json(400, { message: 'userId is required' });
+      if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
 
       const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
       if (!user) return json(404, { message: 'User not found' });
@@ -136,18 +134,19 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const authError = requireAuth(authContext, 'ADMIN_OR_SELF', userId);
       if (authError) return authError;
       
-      if (!userId) return json(400, { message: 'userId is required' });
+      if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
       // make sure user exists
       let user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
       if (!user) return json(404, { message: 'User not found' });
 
-      const updates: { email?: string; name?: string; is_admin?: boolean; profile_image?: string } = {};
+      const updates: { name?: string; is_admin?: boolean; profile_image?: string } = {};
 
-      const emailResult = UserValidationUtils.validateEmail(body.email);
-      if (!emailResult.isValid) return json(400, { message: emailResult.error });
-      if (emailResult.value != null) updates.email = emailResult.value;
+      // email is the Cognito username and nothing here syncs it, so it is immutable
+      if (body.email !== undefined && body.email !== null && body.email !== '') {
+        return json(400, { message: 'email cannot be changed' });
+      }
 
       const nameResult = UserValidationUtils.validateName(body.name);
       if (!nameResult.isValid) return json(400, { message: nameResult.error });
@@ -193,15 +192,34 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (authError) return authError;
 
       const userId = normalizedPath.split('/')[1];
-      if (!userId) return json(400, { message: 'userId is required' });
-      
+      if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
+
+      const user = await db.selectFrom('branch.users').where('user_id', '=', Number(userId)).select('email').executeTakeFirst();
+      if (!user) return json(404, { message: 'User not found' });
+
       const deleted = await db.deleteFrom('branch.users').where('user_id', '=', Number(userId)).execute();
-    
+
       if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
         return json(404, { message: 'User not found' });
       }
 
-      return json(200, { ok: true, route: 'DELETE /users/{userId}', pathParams: { userId } });
+      // the Cognito user must go too, or the email can never be re-invited
+      let cognitoDeleted = true;
+      if (!USER_POOL_ID) {
+        console.error('COGNITO_USER_POOL_ID is not set; skipping Cognito delete for', user.email);
+        cognitoDeleted = false;
+      } else {
+        try {
+          await cognitoClient.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: user.email }));
+        } catch (err: any) {
+          if (err?.name !== 'UserNotFoundException') {
+            console.error('Cognito delete error:', err);
+            cognitoDeleted = false;
+          }
+        }
+      }
+
+      return json(200, { ok: true, route: 'DELETE /users/{userId}', pathParams: { userId }, cognitoDeleted });
     }
 
     // POST /users

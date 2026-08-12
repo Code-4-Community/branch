@@ -3,7 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LOGIN_PATH, POST_LOGIN_PATH, normalizePath } from '@/lib/routes';
+import {
+  DEFAULT_LANDING_PATH,
+  LOGIN_PATH,
+  landingPathFor,
+  normalizePath,
+} from '@/lib/routes';
 import FullPageSpinner from './components/FullPageSpinner';
 
 /**
@@ -15,18 +20,19 @@ import FullPageSpinner from './components/FullPageSpinner';
  *
  * It also absorbs the CloudFront SPA fallback: the distribution rewrites every
  * 403/404 to `/index.html` (see infrastructure/aws/frontend_hosting.tf), so a
- * deep link to a path with no exported document — `/projects/7/`, say — is served
- * *this* document. We detect that and hand the URL back to the client router.
+ * deep link to a path with no exported document is served *this* document. We
+ * detect that and hand the URL back to the client router.
  *
- * Follow-up for whoever owns the infra: adding a CloudFront Function rule that
- * maps `/projects/*` to the dynamic route's document would let those deep links
- * hydrate directly instead of round-tripping through here.
+ * Note that landing here is a last resort — the client router can only render
+ * routes the export actually emitted, so a path with no document of its own
+ * still ends at not-found. That is why per-record pages take the id as a query
+ * param (`/projects?id=1`) instead of a path segment: the document exists.
  */
 
 const SPA_FALLBACK_KEY = 'branch_spa_fallback_path';
 
 export default function RootPage() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading } = useAuth();
   const router = useRouter();
   const [notFound, setNotFound] = useState(false);
 
@@ -58,8 +64,8 @@ export default function RootPage() {
 
     // A genuine visit to "/". Route by session, but only once it is known.
     if (isLoading) return;
-    router.replace(isAuthenticated ? POST_LOGIN_PATH : LOGIN_PATH);
-  }, [isLoading, isAuthenticated, router]);
+    router.replace(isAuthenticated ? landingPathFor(isAdmin) : LOGIN_PATH);
+  }, [isLoading, isAuthenticated, isAdmin, router]);
 
   if (notFound) return <NotFoundPanel />;
   return <FullPageSpinner />;
@@ -87,10 +93,10 @@ function NotFoundPanel() {
         That link doesn&apos;t point anywhere in BRANCH.
       </p>
       <a
-        href={POST_LOGIN_PATH}
+        href={DEFAULT_LANDING_PATH}
         style={{ color: '#2E6038', textDecoration: 'underline' }}
       >
-        Back to dashboard
+        Back to projects
       </a>
     </div>
   );
