@@ -10,6 +10,8 @@ Lambda for managing projects.
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /dashboard |  |
+| GET | /project |  |
+| GET | /true |  |
 | GET | /projects/{id}/members |  |
 | GET | /projects |  |
 | GET | /projects/{id}/donors |  |
