@@ -317,6 +317,22 @@ describe('GET /dashboard (e2e)', () => {
     const client = await pool.connect();
     try {
       await resetData(client);
+      // Dashboard cards scope spend to the current calendar year and count
+      // only active projects. Seed rows use 2025 spend dates and early-2026
+      // end dates, so shift them forward for deterministic e2e assertions.
+      await client.query(`
+        UPDATE branch.projects
+           SET end_date = '2099-12-31'
+         WHERE end_date IS NOT NULL
+      `);
+      await client.query(`
+        UPDATE branch.expenditures
+           SET spent_on = make_date(
+             EXTRACT(YEAR FROM CURRENT_DATE)::int,
+             EXTRACT(MONTH FROM spent_on)::int,
+             EXTRACT(DAY FROM spent_on)::int
+           )
+      `);
     } finally {
       client.release();
     }
