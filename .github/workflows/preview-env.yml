@@ -20,11 +20,13 @@ on:
     types: [labeled, synchronize, unlabeled, closed]
 
 # Concurrency is set PER JOB, not workflow-wide, on purpose:
-#   - deploy uses a `preview-deploy-<pr>` group with cancel-in-progress so
-#     back-to-back commits cancel the older run (the survivor rebuilds from the
-#     full base...HEAD diff, so the final state matches the latest commit).
-#   - teardown uses a SEPARATE `preview-teardown-<pr>` group with
-#     cancel-in-progress: false so a teardown is NEVER cancelled by a deploy.
+#   - deploy uses a `preview-deploy-<pr>` group, so back-to-back commits queue
+#     behind the running deploy; GitHub cancels every pending run but the newest,
+#     so the survivor still rebuilds from the full base...HEAD diff.
+#   - teardown uses a SEPARATE `preview-teardown-<pr>` group so a teardown is
+#     NEVER cancelled by a deploy.
+# Neither group cancels in progress: both run terraform, and terraform killed
+# mid-apply is unrecoverable (see `deploy`).
 # A single shared group would let a push (e.g. right after removing the label)
 # cancel an in-flight teardown, leaking the stack. Separate groups + the
 # DynamoDB state lock (which serializes any overlapping terraform) keep cleanup
@@ -46,9 +48,15 @@ jobs:
       (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'test-environment'))
     runs-on: ubuntu-latest
     concurrency:
-      # Back-to-back commits: newer deploy cancels the older one for this PR.
+      # Back-to-back commits: the newest run supersedes older PENDING runs but never
+      # kills one already in flight. This job runs `terraform apply`, and cancelling
+      # that mid-apply cannot be recovered from: the runner is killed before
+      # Terraform persists state or releases its DynamoDB lock, so everything it had
+      # created so far is orphaned and the workspace stays locked. The wreckage is
+      # a REST API with no `prod` stage, which answers every request with a bare 403
+      # carrying no CORS headers -- reaching the browser as an opaque CORS error.
       group: preview-deploy-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     environment: preview
     permissions:
       id-token: write
@@ -156,6 +164,7 @@ jobs:
         id: stack
         working-directory: infrastructure/preview
         run: |
+          set -euo pipefail
           if [ "${{ steps.mode.outputs.create }}" = "true" ]; then
             API_URL=$(terraform output -raw api_gateway_url)
           else
@@ -163,6 +172,14 @@ jobs:
               --query "items[?name=='branch-api-pr${PR}'].id | [0]" --output text)
             if [ -z "$API_ID" ] || [ "$API_ID" = "None" ]; then
               echo "::error::No preview API for PR #${PR}. Re-add the ${LABEL} label to (re)create it."
+              exit 1
+            fi
+            # The API existing is not enough. A stack whose apply died partway has
+            # the resources but no stage, and every call to it 403s without CORS
+            # headers, so the browser blames CORS. Fail here rather than posting a
+            # green "updated in place" on an environment that cannot serve a request.
+            if ! aws apigateway get-stage --rest-api-id "$API_ID" --stage-name prod >/dev/null 2>&1; then
+              echo "::error::Preview API ${API_ID} for PR #${PR} has no 'prod' stage — the stack is incomplete. Remove and re-add the ${LABEL} label to rebuild it."
               exit 1
             fi
             API_URL="https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod"
