@@ -5,6 +5,7 @@ import { FaEdit } from 'react-icons/fa';
 import { RxCaretRight } from 'react-icons/rx';
 import NavBar from '../../components/Navbar';
 import ExpensesTable from '../../components/ExpensesTable';
+import LoadingState from '../../components/LoadingState';
 import StaffCard from '../../components/StaffCard';
 import { useApi } from '@/hooks/useApi';
 import { Project, Expenditure, Member } from '@/types';
@@ -60,7 +61,7 @@ export default function ProjectPage() {
       <div className="flex min-h-screen">
         <NavBar />
         <div className="flex-1 flex items-center justify-center">
-          <p>Loading project...</p>
+          <LoadingState label="Loading project…" />
         </div>
       </div>
     );

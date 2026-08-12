@@ -8,13 +8,12 @@ import Pagination from '../components/Pagination';
 import {
   HStack,
   Button,
-  Table,
-  Checkbox,
   NativeSelect,
   Dialog,
   Portal,
   VStack,
 } from '@chakra-ui/react';
+import DataTable, { type DataTableColumn } from '../components/DataTable';
 import { useApi } from '@/hooks/useApi';
 import { type Project } from '@/lib/reports';
 import UploadReportModal from '../components/UploadReportModal';
@@ -220,6 +219,52 @@ function ReportsPageContent() {
         setIsUploadModalOpen(true);
     }
 
+    const reportColumns: DataTableColumn<Report>[] = [
+        {
+            key: 'date',
+            header: 'Date Created',
+            width: '18%',
+            cell: (report) => formatDate(report.date_created),
+            skeleton: { width: '70%' },
+        },
+        {
+            key: 'title',
+            header: 'Report Name',
+            width: '32%',
+            cell: (report) => (
+                <Button
+                    variant="plain"
+                    height="auto"
+                    minWidth="auto"
+                    padding="0"
+                    color="var(--color-core-green)"
+                    textDecoration="underline"
+                    onClick={() => handleDownload(report.report_id)}
+                    loading={downloadingId === report.report_id}
+                    loadingText={report.title || 'Untitled report'}
+                >
+                    {report.title || 'Untitled report'}
+                </Button>
+            ),
+        },
+        {
+            key: 'emails',
+            header: 'Emails',
+            width: '35%',
+            cell: (report) =>
+                report.emails && report.emails.length > 0 ? report.emails.join(', ') : '—',
+            skeleton: { width: '85%' },
+        },
+        {
+            key: 'format',
+            header: 'Format',
+            width: '15%',
+            align: 'right',
+            cell: (report) => getFormatLabel(report.object_url),
+            skeleton: { width: '45%' },
+        },
+    ];
+
     
     return (
         <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -297,106 +342,32 @@ function ReportsPageContent() {
                 </HStack>
               </HStack>
      
-              {/* Loading / Error */}
-              {loading && <p>Loading reports...</p>}
               {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
               {actionError && (
                 <p style={{ color: 'var(--color-error-red)', paddingBottom: '12px' }}>{actionError}</p>
               )}
      
               {/* Reports tab content */}
-              {!loading && !error && activeTab === 'reports' && (
-                <Table.Root variant="outline" width="100%">
-                  <Table.Header>
-                    <Table.Row backgroundColor="var(--color-primary-800)">
-                      <Table.ColumnHeader width="48px" paddingY="12px">
-                        <Checkbox.Root
-                          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-                          onCheckedChange={toggleAll}
-                        >
-                          <Checkbox.HiddenInput />
-                          <Checkbox.Control
-                            borderRadius="md"
-                            css={{
-                                backgroundColor: 'var(--color-core-white)',
-                                borderColor: 'var(--color-core-green)',
-                                '&[data-state="checked"]': {
-                                  backgroundColor: 'var(--color-primary-800)',
-                                  borderColor: 'var(--color-core-green)',
-                                },
-                            }}
-                          />
-                        </Checkbox.Root>
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600}>
-                        Date Created
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600}>
-                        Report Name
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600}>
-                        Emails
-                      </Table.ColumnHeader>
-                      <Table.ColumnHeader color="var(--color-core-white)" fontWeight={600} textAlign="right">
-                        Format
-                      </Table.ColumnHeader>
-                    </Table.Row>
-                  </Table.Header>
-                  <Table.Body>
-                    {reports.length === 0 && (
-                      <Table.Row>
-                        <Table.Cell colSpan={5} textAlign="center" paddingY="32px" color="var(--color-black-500)">
-                          No reports found.
-                        </Table.Cell>
-                      </Table.Row>
-                    )}
-                    {reports.map((report) => (
-                      <Table.Row key={report.report_id}>
-                        <Table.Cell>
-                          <Checkbox.Root
-                            checked={selectedIds.includes(report.report_id)}
-                            onCheckedChange={() => toggleOne(report.report_id)}
-                          >
-                            <Checkbox.HiddenInput />
-                            <Checkbox.Control
-                                borderRadius="md"
-                                css={{
-                                    backgroundColor: 'var(--color-core-white)',
-                                    borderColor: 'var(--color-core-green)',
-                                    '&[data-state="checked"]': {
-                                      backgroundColor: 'var(--color-primary-800)',
-                                      borderColor: 'var(--color-core-green)',
-                                    },
-                                }}
-                            />
-                          </Checkbox.Root>
-                        </Table.Cell>
-                        <Table.Cell>{formatDate(report.date_created)}</Table.Cell>
-                        <Table.Cell>
-                          <Button
-                            variant="plain"
-                            height="auto"
-                            minWidth="auto"
-                            padding="0"
-                            color="var(--color-core-green)"
-                            textDecoration="underline"
-                            onClick={() => handleDownload(report.report_id)}
-                            loading={downloadingId === report.report_id}
-                            loadingText={report.title || 'Untitled report'}
-                          >
-                            {report.title || 'Untitled report'}
-                          </Button>
-                        </Table.Cell>
-                        <Table.Cell>
-                          {report.emails && report.emails.length > 0 ? report.emails.join(', ') : '—'}
-                        </Table.Cell>
-                        <Table.Cell textAlign="right">
-                          {getFormatLabel(report.object_url)}
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Root>
+              {!error && activeTab === 'reports' && (
+                <DataTable
+                  variant="outline"
+                  columns={reportColumns}
+                  rows={reports}
+                  rowKey={(report) => report.report_id}
+                  isLoading={loading}
+                  loadingLabel="Loading reports…"
+                  skeletonRows={ROWS_PER_PAGE}
+                  emptyMessage="No reports found."
+                  selection={{
+                    label: 'Select all reports',
+                    isSelected: (report) => selectedIds.includes(report.report_id),
+                    onToggleRow: (report) => toggleOne(report.report_id),
+                    allSelected,
+                    someSelected,
+                    onToggleAll: toggleAll,
+                    disabled: loading,
+                  }}
+                />
               )}
      
               {/* Schedule tab content */}

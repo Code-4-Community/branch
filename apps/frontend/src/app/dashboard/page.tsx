@@ -8,6 +8,7 @@ import Header from '../components/Header';
 import ProjectCard from '../components/ProjectCard';
 import SummaryStatCard from '../components/SummaryStatCard';
 import ExpensesBarChart from '../components/ExpensesBarChart';
+import LoadingState from '../components/LoadingState';
 import { useApi } from '@/hooks/useApi';
 import type { DashboardResponse } from '@/types/dashboard';
 
@@ -53,7 +54,7 @@ export default function DashboardPage() {
       <main className="min-w-0 flex-1 bg-core-white">
         <Header />
         <div className="flex flex-col !gap-6 !px-4 !py-5 sm:!px-8">
-          {isLoading && <p>Loading dashboard…</p>}
+          {isLoading && <LoadingState label="Loading dashboard…" />}
           {error && <p className="text-error-red">{error}</p>}
 
           {!isLoading && !error && data && summary && (

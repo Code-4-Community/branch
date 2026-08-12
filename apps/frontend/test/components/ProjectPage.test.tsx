@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('Project Page', () => {
     it('renders loading state initially', () => {
         render(<ProjectPage />);
-        expect(screen.getByText('Loading project...')).toBeInTheDocument();
+        expect(screen.getByRole('status', { name: 'Loading project…' })).toBeInTheDocument();
     });
 
     it('renders the project name as heading', async () => {
