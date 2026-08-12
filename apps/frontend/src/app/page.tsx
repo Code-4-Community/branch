@@ -3,7 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LOGIN_PATH, POST_LOGIN_PATH, normalizePath } from '@/lib/routes';
+import {
+  DEFAULT_LANDING_PATH,
+  LOGIN_PATH,
+  landingPathFor,
+  normalizePath,
+} from '@/lib/routes';
 import FullPageSpinner from './components/FullPageSpinner';
 
 /**
@@ -26,7 +31,7 @@ import FullPageSpinner from './components/FullPageSpinner';
 const SPA_FALLBACK_KEY = 'branch_spa_fallback_path';
 
 export default function RootPage() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isAdmin, isLoading } = useAuth();
   const router = useRouter();
   const [notFound, setNotFound] = useState(false);
 
@@ -58,8 +63,8 @@ export default function RootPage() {
 
     // A genuine visit to "/". Route by session, but only once it is known.
     if (isLoading) return;
-    router.replace(isAuthenticated ? POST_LOGIN_PATH : LOGIN_PATH);
-  }, [isLoading, isAuthenticated, router]);
+    router.replace(isAuthenticated ? landingPathFor(isAdmin) : LOGIN_PATH);
+  }, [isLoading, isAuthenticated, isAdmin, router]);
 
   if (notFound) return <NotFoundPanel />;
   return <FullPageSpinner />;
@@ -87,10 +92,10 @@ function NotFoundPanel() {
         That link doesn&apos;t point anywhere in BRANCH.
       </p>
       <a
-        href={POST_LOGIN_PATH}
+        href={DEFAULT_LANDING_PATH}
         style={{ color: '#2E6038', textDecoration: 'underline' }}
       >
-        Back to dashboard
+        Back to projects
       </a>
     </div>
   );

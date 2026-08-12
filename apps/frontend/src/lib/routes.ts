@@ -10,7 +10,18 @@
 export type RouteAccess = 'public' | 'protected' | 'bootstrap';
 
 export const LOGIN_PATH = '/login';
-export const POST_LOGIN_PATH = '/dashboard';
+
+/**
+ * Landing route when nothing more specific applies. Must stay reachable by every
+ * role — it was `/dashboard`, which dropped non-admins on the no-access panel
+ * once that page became admin-only. Prefer `landingPathFor()` when the role is known.
+ */
+export const DEFAULT_LANDING_PATH = '/projects';
+export const ADMIN_LANDING_PATH = '/dashboard';
+
+export function landingPathFor(isAdmin: boolean): string {
+  return isAdmin ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
+}
 
 /** Reachable without a session. Authenticated users get bounced off these. */
 const PUBLIC_PREFIXES = [
@@ -27,7 +38,7 @@ const PUBLIC_PREFIXES = [
  * inside the review modal are admin-gated, and the backend already lets any
  * authenticated user list expenditures.
  */
-const ADMIN_PREFIXES = ['/reports', '/accounts'] as const;
+const ADMIN_PREFIXES = ['/dashboard', '/reports', '/accounts'] as const;
 
 /**
  * Strips the trailing slash and lowercases.
@@ -71,7 +82,7 @@ export function requiresAdmin(pathname: string): boolean {
  */
 export function safeNextPath(
   raw: string | null | undefined,
-  fallback = POST_LOGIN_PATH,
+  fallback = DEFAULT_LANDING_PATH,
 ): string {
   if (!raw) return fallback;
   if (!raw.startsWith('/')) return fallback;
