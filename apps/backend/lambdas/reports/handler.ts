@@ -117,6 +117,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if ((normalizedPath === '/reports' || normalizedPath === '' || normalizedPath === '/') && method === 'GET') {
       const authResult = await requireAuth(event);
       if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
 
       const queryParams = event.queryStringParameters || {};
       const pageStr = queryParams.page as string | undefined;
@@ -148,27 +149,68 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (page && limit) {
         const offset = (page - 1) * limit;
 
-        const totalCount = projectId !== null
-          ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).select(db.fn.count('report_id').as('count')).executeTakeFirst()
-          : await db.selectFrom('branch.reports').select(db.fn.count('report_id').as('count')).executeTakeFirst();
+        if (projectId !== null) {
+          // check access for specific project
+          const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin ?? false);
+          if (!hasAccess) return json(403, { message: 'You do not have access to this project' });
 
+          const totalCount = await db.selectFrom('branch.reports').where('project_id', '=', projectId).select(db.fn.count('report_id').as('count')).executeTakeFirst();
+          const totalItems = Number(totalCount?.count || 0);
+          const totalPages = Math.ceil(totalItems / limit);
+
+          const reports = await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
+          return json(200, { data: reports, pagination: { page, limit, totalItems, totalPages } });
+        }
+
+        // No projectId filter — admins see all, others only their projects
+        if (user.isAdmin) {
+          const totalCount = await db.selectFrom('branch.reports').select(db.fn.count('report_id').as('count')).executeTakeFirst();
+          const totalItems = Number(totalCount?.count || 0);
+          const totalPages = Math.ceil(totalItems / limit);
+
+          const reports = await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
+          return json(200, { data: reports, pagination: { page, limit, totalItems, totalPages } });
+        }
+
+        const memberships = await db
+          .selectFrom('branch.project_memberships')
+          .where('user_id', '=', user.userId!)
+          .select('project_id')
+          .execute();
+        const projectIds = memberships.map((m) => m.project_id);
+        if (projectIds.length === 0) return json(200, { data: [], pagination: { page, limit, totalItems: 0, totalPages: 0 } });
+
+        const totalCount = await db.selectFrom('branch.reports').where('project_id', 'in', projectIds).select(db.fn.count('report_id').as('count')).executeTakeFirst();
         const totalItems = Number(totalCount?.count || 0);
         const totalPages = Math.ceil(totalItems / limit);
 
-        const reports = projectId !== null
-          ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute()
-          : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
-
-        return json(200, {
-          data: reports,
-          pagination: { page, limit, totalItems, totalPages },
-        });
+        const reports = await db.selectFrom('branch.reports').where('project_id', 'in', projectIds).selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
+        return json(200, { data: reports, pagination: { page, limit, totalItems, totalPages } });
       }
 
-      const reports = projectId !== null
-        ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').execute()
-        : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').execute();
+      // Non-paginated
+      if (projectId !== null) {
+        const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin ?? false);
+        if (!hasAccess) return json(403, { message: 'You do not have access to this project' });
 
+        const reports = await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').execute();
+        return json(200, { data: reports });
+      }
+
+      if (user.isAdmin) {
+        const reports = await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').execute();
+        return json(200, { data: reports });
+      }
+
+      const membershipsAll = await db
+        .selectFrom('branch.project_memberships')
+        .where('user_id', '=', user.userId!)
+        .select('project_id')
+        .execute();
+      const projectIdsAll = membershipsAll.map((m) => m.project_id);
+      if (projectIdsAll.length === 0) return json(200, { data: [] });
+
+      const reports = await db.selectFrom('branch.reports').where('project_id', 'in', projectIdsAll).selectAll().orderBy('date_created', 'desc').execute();
       return json(200, { data: reports });
     }
     

@@ -93,7 +93,9 @@ describe("Donor API with data", () => {
 
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(body.data)).toBe(true);
-    expect(body.data.length).toBe(3);
+    // Non-admin user is a member only of project 1, so they should see only
+    // donors linked to that project (seed has 1 donor on project 1).
+    expect(body.data.length).toBe(1);
   });
 
   test("401 when missing authorization header", async () => {
@@ -115,8 +117,8 @@ describe("Donor API with data", () => {
     expect(body.pagination).toBeDefined();
     expect(body.pagination.page).toBe(1);
     expect(body.pagination.limit).toBe(1);
-    expect(body.pagination.totalItems).toBe(3);
-    expect(body.pagination.totalPages).toBe(3);
+    expect(body.pagination.totalItems).toBe(1);
+    expect(body.pagination.totalPages).toBe(1);
     expect(body.data[0].organization).toBe('NIH');
   });
 
@@ -126,9 +128,9 @@ describe("Donor API with data", () => {
     const body = JSON.parse(res.body);
 
     expect(res.statusCode).toBe(200);
-    expect(body.data.length).toBe(1);
+    // With scoping a non-admin has only 1 total item, so page 2 returns no data.
+    expect(body.data.length).toBe(0);
     expect(body.pagination.page).toBe(2);
-    expect(body.data[0].organization).toBe('Harvard Medical');
   });
 
   test("GET /donors with limit larger than total returns all donors", async () => {
@@ -137,8 +139,8 @@ describe("Donor API with data", () => {
     const body = JSON.parse(res.body);
 
     expect(res.statusCode).toBe(200);
-    expect(body.data.length).toBe(3);
-    expect(body.pagination.totalItems).toBe(3);
+    expect(body.data.length).toBe(1);
+    expect(body.pagination.totalItems).toBe(1);
     expect(body.pagination.totalPages).toBe(1);
   });
 
@@ -149,7 +151,7 @@ describe("Donor API with data", () => {
 
     expect(res.statusCode).toBe(200);
     expect(body.pagination).toBeUndefined();
-    expect(body.data.length).toBe(3);
+    expect(body.data.length).toBe(1);
   });
 
   test("GET /donors with only limit returns all donors without pagination", async () => {
@@ -159,7 +161,7 @@ describe("Donor API with data", () => {
 
     expect(res.statusCode).toBe(200);
     expect(body.pagination).toBeUndefined();
-    expect(body.data.length).toBe(3);
+    expect(body.data.length).toBe(1);
   });
 
   test("GET /donors returns 400 for page=0", async () => {
@@ -201,7 +203,9 @@ describe("Donor API with data", () => {
 
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(body.data)).toBe(true);
-    expect(body.data.length).toBe(3);
+    // Non-admin user sees only donations for their project (seed has 1 donation
+    // on project 1).
+    expect(body.data.length).toBe(1);
   });
 
   test("GET /donations with page and limit returns paginated response", async () => {
@@ -214,8 +218,8 @@ describe("Donor API with data", () => {
     expect(body.pagination).toBeDefined();
     expect(body.pagination.page).toBe(1);
     expect(body.pagination.limit).toBe(1);
-    expect(body.pagination.totalItems).toBe(3);
-    expect(body.pagination.totalPages).toBe(3);
+    expect(body.pagination.totalItems).toBe(1);
+    expect(body.pagination.totalPages).toBe(1);
   });
 
   test("GET /donations with only page returns all without pagination", async () => {
@@ -225,7 +229,7 @@ describe("Donor API with data", () => {
 
     expect(res.statusCode).toBe(200);
     expect(body.pagination).toBeUndefined();
-    expect(body.data.length).toBe(3);
+    expect(body.data.length).toBe(1);
   });
 
   test("GET /donations with only limit returns all without pagination", async () => {
@@ -235,7 +239,7 @@ describe("Donor API with data", () => {
 
     expect(res.statusCode).toBe(200);
     expect(body.pagination).toBeUndefined();
-    expect(body.data.length).toBe(3);
+    expect(body.data.length).toBe(1);
   });
 
   test("GET /donations returns 400 for page=0", async () => {
