@@ -76,7 +76,9 @@ describe('Login Page Component', () => {
     });
 
     describe('submitting', () => {
-        it('signs in and redirects to the dashboard', async () => {
+        it('signs in and hands off to the root route, which routes by role', async () => {
+            // The landing page depends on isAdmin, which only arrives with
+            // GET /auth/me — so this page names "/" rather than guessing.
             mockLogin.mockResolvedValue({ status: 'authenticated' });
             render(<LoginPage />);
 
@@ -86,7 +88,7 @@ describe('Login Page Component', () => {
             await waitFor(() =>
                 expect(mockLogin).toHaveBeenCalledWith('jane@example.com', 'Password123!'),
             );
-            expect(mockReplace).toHaveBeenCalledWith('/dashboard');
+            expect(mockReplace).toHaveBeenCalledWith('/');
         });
 
         it('honours a ?next= target', async () => {
@@ -108,7 +110,7 @@ describe('Login Page Component', () => {
             await fillCredentials();
             await submit();
 
-            await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/dashboard'));
+            await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
         });
 
         it('does not call login when validation fails', async () => {
@@ -216,7 +218,7 @@ describe('Login Page Component', () => {
                     }),
                 ),
             );
-            expect(mockReplace).toHaveBeenCalledWith('/dashboard');
+            expect(mockReplace).toHaveBeenCalledWith('/');
         });
 
         it('explains that an MFA challenge is not supported yet', async () => {

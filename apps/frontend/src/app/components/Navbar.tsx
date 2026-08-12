@@ -20,7 +20,7 @@ interface NavItem { label: string; href?: string; action?: "logout"; roles?: Use
 // keying the special case on `action` means a future /logout page couldn't
 // silently turn the button back into a dead link.
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard" },
+  { label: "Dashboard", href: "/dashboard", roles: ["admin"] },
   { label: "Projects", href: "/projects" },
   { label: "Donors", href: "/donors" },
   { label: "Donations", href: "/donations" },

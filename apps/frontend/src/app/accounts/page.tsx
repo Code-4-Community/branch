@@ -4,7 +4,6 @@ import React from 'react';
 import StaffCard from '../components/StaffCard';
 import { facilitationTeam, teamMembers } from './mockUsers';
 
-
 export default function AccountsPage() {
     return (
         <div className="!p-6">

@@ -52,24 +52,26 @@ describe("NavBar", () => {
   // ── Role-based visibility ─────────────────────────────────────────────────
 
   it("hides admin-only items for standard role", () => {
-    render(<NavBar roleOverride="standard" activePath="/dashboard" />);
+    render(<NavBar roleOverride="standard" activePath="/projects" />);
+    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
   it("hides admin-only items for limited role", () => {
-    render(<NavBar roleOverride="limited" activePath="/dashboard" />);
+    render(<NavBar roleOverride="limited" activePath="/projects" />);
+    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
   it("shows shared items for all roles", () => {
     // Expenses is shared: non-admins submit expenses there.
-    const sharedItems = ["Dashboard", "Projects", "Donors", "Donations", "Expenses", "Log Out"];
+    const sharedItems = ["Projects", "Donors", "Donations", "Expenses", "Log Out"];
     const roles: UserRole[] = ["admin", "standard", "limited"];
 
     roles.forEach((role) => {
-      const { unmount } = render(<NavBar roleOverride={role} activePath="/dashboard" />);
+      const { unmount } = render(<NavBar roleOverride={role} activePath="/projects" />);
       sharedItems.forEach((label) => {
         expect(screen.getAllByText(label).length).toBeGreaterThan(0);
       });
