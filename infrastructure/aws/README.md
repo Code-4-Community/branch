@@ -49,6 +49,7 @@ No modules.
 | [aws_iam_role_policy.ci_plan_state_lock](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.ci_preview](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.lambda_cognito_admin](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.lambda_s3_objects](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.ci_apply_admin](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.ci_plan_readonly](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.lambda_basic](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
