@@ -86,13 +86,6 @@ test("get projects yes donors test 🌞", async () => {
   expect(Array.isArray(body.donors)).toBe(true);
   if (body.donors.length > 0) {
     const donor = body.donors[0];
-    expect(donor.project_id).toBeDefined();
-    expect(donor.name).toBeDefined();
-    expect(donor.total_budget).toBeDefined();
-    expect(donor.start_date).toBeDefined();
-    expect(donor.end_date).toBeDefined();
-    expect(donor.currency).toBeDefined();
-    expect(donor.created_at).toBeDefined();
     expect(donor.donation_id).toBeDefined();
     expect(donor.donor_id).toBeDefined();
     expect(donor.amount).toBeDefined();

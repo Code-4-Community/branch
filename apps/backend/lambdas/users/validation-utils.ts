@@ -20,7 +20,8 @@ export class UserValidationUtils {
     if (!this.EMAIL_REGEX.test(input)) {
       return { isValid: false, error: 'Invalid email format' };
     }
-    return { isValid: true, value: input };
+    // email is the Cognito username and is looked up lowercased elsewhere
+    return { isValid: true, value: input.trim().toLowerCase() };
   }
 
   // Validates name - if provided, must be a non-empty string

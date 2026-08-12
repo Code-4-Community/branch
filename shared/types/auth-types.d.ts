@@ -2,11 +2,13 @@
  * Shared auth DTOs used by every lambda's auth.ts.
  */
 
+// Mirrors @branch/lambda-auth's src/types.ts; this package takes no dependencies, so keep the two in sync.
+
 export interface AuthenticatedUser {
   cognitoSub: string;
   userId?: number;
   email?: string;
-  isAdmin?: boolean;
+  isAdmin: boolean;
   cognitoGroups?: string[];
 }
 

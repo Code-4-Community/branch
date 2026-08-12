@@ -18,6 +18,9 @@ import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
+// objectUrlFor/keyFromObjectUrl require a bucket name; 'bucket' matches fakeObjectUrl below
+process.env.REPORTS_BUCKET_NAME = 'bucket';
+
 const pool = new Pool({
   host: 'localhost',
   port: Number(5432),

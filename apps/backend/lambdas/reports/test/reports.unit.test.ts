@@ -18,6 +18,11 @@ jest.mock('../report-service', () => ({
   generateDocx: jest.fn(),
   uploadToS3: jest.fn(),
   saveReportRecord: jest.fn(),
+  objectUrlFor: jest.fn((key: string) => `https://bucket.s3.us-east-2.amazonaws.com/${key}`),
+  keyFromObjectUrl: jest.fn((objectUrl: string) => {
+    const prefix = 'https://bucket.s3.us-east-2.amazonaws.com/';
+    return objectUrl.startsWith(prefix) ? objectUrl.slice(prefix.length) : null;
+  }),
 }));
 
 import { handler } from '../handler';

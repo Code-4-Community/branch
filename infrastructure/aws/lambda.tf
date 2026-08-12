@@ -17,11 +17,11 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# The auth lambda's registration-rollback path calls AdminDeleteUser when the
-# branch.users write fails after a successful Cognito SignUp. Without this it
-# fails AccessDeniedException and orphans a Cognito user with no DB row: that
-# user can never log in (authenticate.ts finds no row) and re-registering
-# returns 409 from Cognito.
+# Two paths call AdminDeleteUser: the auth lambda's registration rollback, when
+# the branch.users write fails after a successful Cognito SignUp, and the users
+# lambda's DELETE /users/{userId}. Without this it fails AccessDeniedException
+# and orphans a Cognito user with no DB row: that user can never log in
+# (authenticate.ts finds no row) and re-registering returns 409 from Cognito.
 #
 # Every other Cognito API the auth lambda uses (SignUp, InitiateAuth,
 # RespondToAuthChallenge, ConfirmSignUp, ResendConfirmationCode,
@@ -42,6 +42,28 @@ resource "aws_iam_role_policy" "lambda_cognito_admin" {
         "cognito-idp:AdminGetUser",
       ]
       Resource = aws_cognito_user_pool.branch_user_pool.arn
+    }]
+  })
+}
+
+# The role had no S3 permissions at all, so report-service.ts's PutObject failed
+# AccessDeniedException on every POST /reports/generate. GetObject is needed too:
+# a presigned URL carries the signer's permissions, so GET /reports/{id}/download
+# can only mint a working link if this role may itself read the object.
+resource "aws_iam_role_policy" "lambda_reports_bucket" {
+  name = "branch-lambda-reports-bucket"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "ReportsBucketReadWrite"
+      Effect = "Allow"
+      Action = [
+        "s3:PutObject",
+        "s3:GetObject",
+      ]
+      Resource = "${aws_s3_bucket.reports_bucket.arn}/*"
     }]
   })
 }

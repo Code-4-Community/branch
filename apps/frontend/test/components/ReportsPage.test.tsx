@@ -43,8 +43,11 @@ function mockApiFetchImplementation({
     projects = mockProjects,
 }: { reports?: typeof mockReports; projects?: typeof mockProjects } = {}) {
     (apiFetch as jest.Mock).mockImplementation((endpoint: string) => {
-        if (endpoint === '/reports') {
-            return Promise.resolve({ data: reports });
+        if (endpoint.startsWith('/reports?')) {
+            return Promise.resolve({
+                data: reports,
+                pagination: { page: 1, limit: 10, totalItems: reports.length, totalPages: 1 },
+            });
         }
         if (endpoint === '/projects') {
             return Promise.resolve(projects);
@@ -63,7 +66,9 @@ describe('ReportsPage', () => {
         mockApiFetchImplementation();
         render(<ReportsPage />);
         expect(screen.getByRole('heading', { name: 'Reports', level: 1 })).toBeInTheDocument();
-        await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/reports', expect.anything()));
+        await waitFor(() =>
+            expect(apiFetch).toHaveBeenCalledWith('/reports?page=1&limit=10', expect.anything()),
+        );
     });
 
     it('renders a row for each fetched report', async () => {
@@ -83,7 +88,7 @@ describe('ReportsPage', () => {
 
     it('shows an error message when fetching reports fails', async () => {
         (apiFetch as jest.Mock).mockImplementation((endpoint: string) => {
-            if (endpoint === '/reports') {
+            if (endpoint.startsWith('/reports?')) {
                 return Promise.reject(new Error('Failed to load reports'));
             }
             return Promise.resolve(mockProjects);
@@ -171,7 +176,12 @@ describe('ReportsPage', () => {
     it('calls POST /reports/generate with the selected project and file type', async () => {
         const user = userEvent.setup();
         (apiFetch as jest.Mock).mockImplementation((endpoint: string) => {
-            if (endpoint === '/reports') return Promise.resolve({ data: mockReports });
+            if (endpoint.startsWith('/reports?')) {
+                return Promise.resolve({
+                    data: mockReports,
+                    pagination: { page: 1, limit: 10, totalItems: mockReports.length, totalPages: 1 },
+                });
+            }
             if (endpoint === '/projects') return Promise.resolve(mockProjects);
             if (endpoint === '/reports/generate') return Promise.resolve({ ok: true });
             return Promise.resolve({});

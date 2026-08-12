@@ -80,8 +80,15 @@ function ReportsPageContent() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Delete/download failures — non-blocking, so they must not hide the table
+    const [actionError, setActionError] = useState<string | null>(null);
+
     // Selected rows (checkboxes) for bulk delete
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const [deleting, setDeleting] = useState(false);
+
+    // report_id whose download URL is currently being fetched
+    const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
     // Upload modal
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -94,13 +101,17 @@ function ReportsPageContent() {
         page: '',
     });
     const currentPage = parseInt(filters.page, 10) || 1;
-    
+    const [totalPages, setTotalPages] = useState(1);
+
 
     // Fetch reports
     async function fetchReports() {
         try {
-        const json = await api.get<{ data: Report[] }>('/reports');
+        const json = await api.get<{ data: Report[]; pagination?: { totalPages: number } }>(
+          `/reports?page=${currentPage}&limit=${ROWS_PER_PAGE}`,
+        );
         setReports(json.data ?? []);
+        setTotalPages(Math.max(1, json.pagination?.totalPages ?? 1));
         } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load reports');
         } finally {
@@ -137,26 +148,23 @@ function ReportsPageContent() {
 
     useEffect(() => {
         fetchReports();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentPage]);
+
+    useEffect(() => {
         fetchProjects();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Pagination
-    const totalPages = Math.max(1, Math.ceil(reports.length / ROWS_PER_PAGE));
-    const paginatedData = reports.slice(
-        (currentPage - 1) * ROWS_PER_PAGE,
-        currentPage * ROWS_PER_PAGE,
-    );
-
     // Selection helpers (scoped to the currently visible page of rows)
-    const allSelected = paginatedData.length > 0 && paginatedData.every((r) => selectedIds.includes(r.report_id));
-    const someSelected = paginatedData.some((r) => selectedIds.includes(r.report_id)) && !allSelected;
+    const allSelected = reports.length > 0 && reports.every((r) => selectedIds.includes(r.report_id));
+    const someSelected = reports.some((r) => selectedIds.includes(r.report_id)) && !allSelected;
 
     function toggleAll() {
         if (allSelected) {
-          setSelectedIds((prev) => prev.filter((id) => !paginatedData.some((r) => r.report_id === id)));
+          setSelectedIds((prev) => prev.filter((id) => !reports.some((r) => r.report_id === id)));
         } else {
-          const pageIds = paginatedData.map((r) => r.report_id);
+          const pageIds = reports.map((r) => r.report_id);
           setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
         }
     }
@@ -168,18 +176,41 @@ function ReportsPageContent() {
     }
 
 
-    // Bulk delete handler
-    // NOTE: DELETE /reports endpoint doesn't exist
+    // Bulk delete handler — the backend deletes one report per call
     async function handleDeleteSelected() {
-        console.log('Delete isn\'t available yet — no DELETE /reports endpoint exists on the backend.');
-        /* await apiFetch('/reports', {
-           token,
-           method: 'DELETE',
-           body: JSON.stringify({ ids: selectedIds }),
-         });
-         setSelectedIds([]);
-         await fetchReports();
-        */
+        if (selectedIds.length === 0 || deleting) return;
+        setDeleting(true);
+        setActionError(null);
+        try {
+          const results = await Promise.allSettled(
+            selectedIds.map((id) => api.del(`/reports/${id}`)),
+          );
+          const failed = results.filter((r) => r.status === 'rejected').length;
+          if (failed > 0) {
+            setActionError(
+              `Failed to delete ${failed} of ${selectedIds.length} report${selectedIds.length === 1 ? '' : 's'}`,
+            );
+          }
+          setSelectedIds([]);
+          await fetchReports();
+        } finally {
+          setDeleting(false);
+        }
+    }
+
+    async function handleDownload(reportId: number) {
+        setDownloadingId(reportId);
+        setActionError(null);
+        try {
+          const { downloadUrl } = await api.get<{ downloadUrl: string; expiresIn: number }>(
+            `/reports/${reportId}/download`,
+          );
+          window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+        } catch (err) {
+          setActionError(err instanceof Error ? err.message : 'Failed to open report');
+        } finally {
+          setDownloadingId(null);
+        }
     }
 
     function handleNewReport() {
@@ -232,7 +263,8 @@ function ReportsPageContent() {
                     backgroundColor="var(--color-error-red)"
                     color="var(--color-core-white)"
                     onClick={handleDeleteSelected}
-                    disabled={selectedIds.length === 0}
+                    loading={deleting}
+                    disabled={selectedIds.length === 0 || deleting}
                   >
                     <RiDeleteBack2Line />
                     Delete
@@ -265,6 +297,9 @@ function ReportsPageContent() {
               {/* Loading / Error */}
               {loading && <p>Loading reports...</p>}
               {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+              {actionError && (
+                <p style={{ color: 'var(--color-error-red)', paddingBottom: '12px' }}>{actionError}</p>
+              )}
      
               {/* Reports tab content */}
               {!loading && !error && activeTab === 'reports' && (
@@ -305,14 +340,14 @@ function ReportsPageContent() {
                     </Table.Row>
                   </Table.Header>
                   <Table.Body>
-                    {paginatedData.length === 0 && (
+                    {reports.length === 0 && (
                       <Table.Row>
                         <Table.Cell colSpan={5} textAlign="center" paddingY="32px" color="var(--color-black-500)">
                           No reports found.
                         </Table.Cell>
                       </Table.Row>
                     )}
-                    {paginatedData.map((report) => (
+                    {reports.map((report) => (
                       <Table.Row key={report.report_id}>
                         <Table.Cell>
                           <Checkbox.Root
@@ -334,7 +369,21 @@ function ReportsPageContent() {
                           </Checkbox.Root>
                         </Table.Cell>
                         <Table.Cell>{formatDate(report.date_created)}</Table.Cell>
-                        <Table.Cell>{report.title || 'Untitled report'}</Table.Cell>
+                        <Table.Cell>
+                          <Button
+                            variant="plain"
+                            height="auto"
+                            minWidth="auto"
+                            padding="0"
+                            color="var(--color-core-green)"
+                            textDecoration="underline"
+                            onClick={() => handleDownload(report.report_id)}
+                            loading={downloadingId === report.report_id}
+                            loadingText={report.title || 'Untitled report'}
+                          >
+                            {report.title || 'Untitled report'}
+                          </Button>
+                        </Table.Cell>
                         <Table.Cell>
                           {report.emails && report.emails.length > 0 ? report.emails.join(', ') : '—'}
                         </Table.Cell>
