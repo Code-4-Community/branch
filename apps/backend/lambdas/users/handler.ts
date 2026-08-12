@@ -204,12 +204,17 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       // the Cognito user must go too, or the email can never be re-invited
       let cognitoDeleted = true;
-      try {
-        await cognitoClient.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: user.email }));
-      } catch (err: any) {
-        if (err?.name !== 'UserNotFoundException') {
-          console.error('Cognito delete error:', err);
-          cognitoDeleted = false;
+      if (!USER_POOL_ID) {
+        console.error('COGNITO_USER_POOL_ID is not set; skipping Cognito delete for', user.email);
+        cognitoDeleted = false;
+      } else {
+        try {
+          await cognitoClient.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: user.email }));
+        } catch (err: any) {
+          if (err?.name !== 'UserNotFoundException') {
+            console.error('Cognito delete error:', err);
+            cognitoDeleted = false;
+          }
         }
       }
 

@@ -32,6 +32,12 @@ function getBucketName(): string {
   return bucket;
 }
 
+// Every report object lives under its project's prefix. Callers validate stored
+// URLs against this, so a report row cannot reference another project's object.
+export function reportKeyPrefix(projectId: number): string {
+  return `reports/${projectId}/`;
+}
+
 export function objectUrlFor(key: string): string {
   const region = process.env.AWS_REGION ?? 'us-east-2';
   return `https://${getBucketName()}.s3.${region}.amazonaws.com/${key}`;
@@ -521,7 +527,7 @@ export async function uploadToS3(fileBuffer: Buffer, projectId: number, fileType
   const bucketName = getBucketName();
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const key = `reports/${projectId}/${timestamp}.${fileType}`;
+  const key = `${reportKeyPrefix(projectId)}${timestamp}.${fileType}`;
   const contentType = fileType === 'docx'
     ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     : 'application/pdf';

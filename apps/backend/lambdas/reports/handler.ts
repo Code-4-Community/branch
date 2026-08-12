@@ -12,6 +12,7 @@ import {
   saveReportRecord,
   objectUrlFor,
   keyFromObjectUrl,
+  reportKeyPrefix,
 } from './report-service';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
@@ -219,7 +220,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(403, { message: 'You do not have access to upload reports for this project' });
       }
 
-      const key = `reports/${projectId}/${Date.now()}-${safeFileName}`;
+      const key = `${reportKeyPrefix(projectId)}${Date.now()}-${safeFileName}`;
       const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
         Bucket: BUCKET,
         Key: key,
@@ -253,7 +254,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!objectUrl || typeof objectUrl !== 'string') {
         return json(400, { message: 'objectUrl is required' });
       }
-      if (!keyFromObjectUrl(objectUrl)) {
+      const postedKey = keyFromObjectUrl(objectUrl);
+      if (!postedKey) {
         return json(400, { message: 'objectUrl must point at the reports bucket' });
       }
       const resolvedReportType: ReportType = (reportType && REPORT_TYPES.includes(reportType as ReportType)) ? reportType as ReportType : 'technical';
@@ -267,6 +269,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const hasAccess = await checkProjectAccess(user.userId!, projectId as number, user.isAdmin);
       if (!hasAccess) {
         return json(403, { message: 'You do not have access to upload reports for this project' });
+      }
+
+      // Checked after authorization: the key must sit under this project's prefix,
+      // or a caller with access to one project could register another project's
+      // object and then read it back through GET /reports/{id}/download.
+      if (!postedKey.startsWith(reportKeyPrefix(projectId))) {
+        return json(400, { message: "objectUrl must point at this project's prefix in the reports bucket" });
       }
 
       const report = await db
@@ -296,7 +305,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
 
       const key = keyFromObjectUrl(report.object_url);
-      if (!key) {
+      if (!key || !key.startsWith(reportKeyPrefix(report.project_id))) {
         return json(409, { message: 'Report is not stored in the reports bucket' });
       }
 

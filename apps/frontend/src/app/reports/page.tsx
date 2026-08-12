@@ -147,6 +147,9 @@ function ReportsPageContent() {
     
 
     useEffect(() => {
+        // Selection is scoped to the visible page, so it must not survive a page
+        // change — bulk delete would otherwise remove rows the user can't see.
+        setSelectedIds([]);
         fetchReports();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage]);

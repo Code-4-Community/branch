@@ -18,6 +18,7 @@ jest.mock('../report-service', () => ({
   generateDocx: jest.fn(),
   uploadToS3: jest.fn(),
   saveReportRecord: jest.fn(),
+  reportKeyPrefix: jest.fn((projectId: number) => `reports/${projectId}/`),
   objectUrlFor: jest.fn((key: string) => `https://bucket.s3.us-east-2.amazonaws.com/${key}`),
   keyFromObjectUrl: jest.fn((objectUrl: string) => {
     const prefix = 'https://bucket.s3.us-east-2.amazonaws.com/';
@@ -473,6 +474,13 @@ describe('POST /reports unit tests', () => {
       });
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.body).message).toBe('Invalid JSON in request body');
+    });
+
+    test("400: objectUrl under another project's prefix is rejected", async () => {
+      const otherProjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/2/123-report.pdf';
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: otherProjectUrl }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toContain("this project's prefix");
     });
 
     test('400: missing title returns 400', async () => {
