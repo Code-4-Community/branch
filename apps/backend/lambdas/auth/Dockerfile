@@ -6,6 +6,11 @@ WORKDIR /shared/types
 COPY shared/types/package.json ./
 COPY shared/types/ ./
 
+WORKDIR /shared/lambda-auth
+COPY shared/lambda-auth/package.json shared/lambda-auth/tsconfig.json ./
+COPY shared/lambda-auth/src ./src/
+RUN npm install && npm run build
+
 WORKDIR /app
 
 # Copy package files
