@@ -143,6 +143,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       // handles both /projects/1/members and /1/members
       const id = parts.length === 3 ? parts[1] : parts[0];
       if (!id) return json(400, { message: 'id is required' });
+      if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
       if (!(await canAccessProject(user.userId!, Number(id)))) {
         return json(403, { message: 'You do not have access to this project' });
       }
@@ -155,7 +156,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           'u.email',
           'pm.role'
         ])
-        .where('pm.project_id', '=', id)
+        .where('pm.project_id', '=', Number(id))
         .execute();
       return json(200, {
         ok: true, route: 'GET /projects/{id}/members', pathParams: { id }, body: {
@@ -213,7 +214,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         "branch.donors as bd",
         "bd.donor_id",
         "bpd.donor_id"
-      ).selectAll().execute();
+      ).select(['bd.donor_id', 'bd.organization', 'bd.contact_name', 'bd.contact_email', 'bpd.donation_id', 'bpd.amount', 'bpd.donated_at']).execute();
       return json(200, { donors });
     }
 
@@ -221,6 +222,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'GET') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
+      if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
       if (!(await canAccessProject(user.userId!, Number(id)))) {
         return json(403, { message: 'You do not have access to this project' });
       }
@@ -234,6 +236,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     if (rawPath.startsWith('/') && rawPath.split('/').length === 2 && method === 'PUT') {
       const id = rawPath.split('/')[1];
       if (!id) return json(400, { message: 'id is required' });
+      if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
       if (!(await canEditProject(user.userId!, Number(id)))) {
         return json(403, { message: 'You do not have access to edit this project' });
       }
@@ -347,6 +350,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         id = pathParts[0];
       }
       if (!id) return json(400, { message: 'id is required' });
+      if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
 
       if (!(await canAccessProject(user.userId!, Number(id)))) {
         return json(403, { message: 'You do not have access to this project' });
@@ -356,7 +360,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
         const project = await db
           .selectFrom('branch.projects')
-          .where('project_id', '=', parseInt(id))
+          .where('project_id', '=', Number(id))
           .selectAll()
           .executeTakeFirst();
 
@@ -367,7 +371,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
         const expenditures = await db
           .selectFrom('branch.expenditures')
-          .where('project_id', '=', parseInt(id))
+          .where('project_id', '=', Number(id))
           .selectAll()
           .orderBy('spent_on', 'desc')
           .execute();

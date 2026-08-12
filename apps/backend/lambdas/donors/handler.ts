@@ -1,7 +1,7 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
 import db from './db';
 import { authenticateRequest } from './auth';
-import { DonorValidationUtils, DonationValidationUtils } from './validation-utils';
+import { DonorValidationUtils } from './validation-utils';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -144,48 +144,79 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (donor_id === undefined || project_id === undefined || amount === undefined) {
         return json(400, { message: 'donor_id, project_id, and amount are required' });
       }
-      if (!Number.isInteger(donor_id) || (donor_id as number) < 1) {
+      // Numeric fields arrive as strings from form posts; amount is NUMERIC(12,2)
+      const num = (value: unknown) =>
+        typeof value === 'number' || (typeof value === 'string' && value.trim() !== '') ? Number(value) : NaN;
+      const donorId = num(donor_id);
+      const projectId = num(project_id);
+      const donationAmount = num(amount);
+
+      if (!Number.isInteger(donorId) || donorId < 1) {
         return json(400, { message: 'donor_id must be a positive integer' });
       }
-      if (!Number.isInteger(project_id) || (project_id as number) < 1) {
+      if (!Number.isInteger(projectId) || projectId < 1) {
         return json(400, { message: 'project_id must be a positive integer' });
       }
-      if (typeof amount !== 'number' || amount <= 0 || !isFinite(amount)) {
+      if (!isFinite(donationAmount) || donationAmount <= 0) {
         return json(400, { message: 'amount must be a positive number' });
       }
       // Check user is admin or a member of the project
       if (!authContext.user?.isAdmin) {
-      const userId = authContext.user!.userId as number;
-      const membership = await db
-        .selectFrom('branch.project_memberships')
-        .select('membership_id')
-        .where('project_id', '=', project_id as number)
-        .where('user_id', '=', userId)
+        const userId = authContext.user!.userId as number;
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .select('membership_id')
+          .where('project_id', '=', projectId)
+          .where('user_id', '=', userId)
+          .executeTakeFirst();
+
+        if (!membership) {
+          return json(403, { message: 'You must be a member' });
+        }
+      }
+
+      // Checked after the membership check so project existence isn't leaked to non-members
+      const donor = await db
+        .selectFrom('branch.donors')
+        .select('donor_id')
+        .where('donor_id', '=', donorId)
         .executeTakeFirst();
 
-      if (!membership) {
-        return json(403, { message: 'You must be a member' });
+      if (!donor) {
+        return json(404, { message: 'Donor not found' });
       }
-    }
+
+      const project = await db
+        .selectFrom('branch.projects')
+        .select('project_id')
+        .where('project_id', '=', projectId)
+        .executeTakeFirst();
+
+      if (!project) {
+        return json(404, { message: 'Project not found' });
+      }
 
       try {
-      const donation = await db
-        .insertInto('branch.project_donations')
-        .values({
-          donor_id: donor_id as number,
-          project_id: project_id as number,
-          amount: amount as number,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
+        const donation = await db
+          .insertInto('branch.project_donations')
+          .values({
+            donor_id: donorId,
+            project_id: projectId,
+            amount: donationAmount,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
 
-      return json(201, { data: donation });
-    } catch (err: any) {
-      if (err?.code === '23505') {
-        return json(409, { message: 'A donation from this donor to this project already exists' });
+        return json(201, { data: donation });
+      } catch (err: any) {
+        if (err?.code === '23505') {
+          return json(409, { message: 'A donation from this donor to this project already exists' });
+        }
+        if (err?.code === '23503') {
+          return json(404, { message: 'Donor or project not found' });
+        }
+        throw err;
       }
-      throw err;
-    }
     }
 
     // POST /donors
