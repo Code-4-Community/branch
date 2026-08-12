@@ -213,19 +213,25 @@ jobs:
           for f in $files; do
             [ -f "$f" ] || continue
             # '-- allow-destructive: <reason>' opts a file out, deliberately loudly.
+            # Read from the raw file: this opt-out is itself a comment.
             if grep -qi '^-- allow-destructive:' "$f"; then
               echo "::warning file=$f::opted out of the destructive-SQL check"
               continue
             fi
-            if grep -inE '\b(DROP[[:space:]]+SCHEMA|DROP[[:space:]]+DATABASE|TRUNCATE|DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN)\b' "$f"; then
+            # Scan SQL, not prose. `make new-migration` scaffolds a header that
+            # says "CREATE INDEX CONCURRENTLY / VACUUM will not work here", and
+            # matching that failed every generated migration. Blanking comments
+            # rather than dropping the lines keeps grep -n line numbers honest.
+            sql=$(sed 's/--.*//' "$f")
+            if printf '%s\n' "$sql" | grep -inE '\b(DROP[[:space:]]+SCHEMA|DROP[[:space:]]+DATABASE|TRUNCATE|DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN)\b'; then
               echo "::error file=$f::destructive statement. Migrations run against production BEFORE the new lambda code deploys, so the currently deployed code would hit the changed schema. See the expand/contract rules in apps/backend/db/README.md. Add '-- allow-destructive: <reason>' only for a contract-phase migration whose expand phase is already live."
               fail=1
             fi
-            if grep -inE 'CONCURRENTLY' "$f"; then
+            if printf '%s\n' "$sql" | grep -inE 'CONCURRENTLY'; then
               echo "::error file=$f::CONCURRENTLY cannot run inside a transaction, and the migrator wraps the run in one. This database is tiny -- use a plain CREATE INDEX."
               fail=1
             fi
-            if grep -inE '^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+(branch\.)?users\b' "$f"; then
+            if printf '%s\n' "$sql" | grep -inE '^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+(branch\.)?users\b'; then
               echo "::warning file=$f::inserting users in a migration puts rows in PRODUCTION. Seeded users with a NULL cognito_sub are claimable by POST /auth/register, so this can hand someone an account. Dev seed rows belong in apps/backend/db/seed.sql."
             fi
           done

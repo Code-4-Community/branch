@@ -431,8 +431,8 @@ describe("Donor API with data", () => {
       }
     });
 
-    test("DELETE /donations/{id} returns 200 for a project member (PI) deleting a donation on their project", async () => {
-      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, PI on project 1
+    test("DELETE /donations/{id} returns 200 for a project member (Director) deleting a donation on their project", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, Director on project 1
       // donation_id 1 belongs to project_id 1
       const res = await handler(createEvent('DELETE', '/donations/1'));
       expect(res.statusCode).toBe(200);

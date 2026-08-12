@@ -48,16 +48,17 @@ resource "aws_iam_role_policy" "lambda_cognito_admin" {
 
 # The role had no S3 permissions at all, so report-service.ts's PutObject failed
 # AccessDeniedException on every POST /reports/generate. GetObject is needed too:
-# a presigned URL carries the signer's permissions, so GET /reports/{id}/download
-# can only mint a working link if this role may itself read the object.
-resource "aws_iam_role_policy" "lambda_reports_bucket" {
-  name = "branch-lambda-reports-bucket"
+# a presigned URL carries the signer's permissions, so neither the expenditures
+# lambda's receipt PUT/GET nor GET /reports/{id}/download can mint a working link
+# unless this role may itself read and write the object.
+resource "aws_iam_role_policy" "lambda_s3_objects" {
+  name = "branch-lambda-s3-objects"
   role = aws_iam_role.lambda_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Sid    = "ReportsBucketReadWrite"
+      Sid    = "LambdaReportsBucketObjects"
       Effect = "Allow"
       Action = [
         "s3:PutObject",

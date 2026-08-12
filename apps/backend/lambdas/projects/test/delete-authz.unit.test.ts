@@ -4,7 +4,7 @@
  * The route sat behind a stale "TODO: requireAuth needs to be added here once
  * ticket #241 is completed" long after #241 merged, so the handler's global gate
  * established authentication but nothing checked authorization: any authenticated
- * user — including a Staff member of an unrelated project — could delete any
+ * user — including a Student member of an unrelated project — could delete any
  * project, cascading away its memberships, donations, expenditures and reports.
  */
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';

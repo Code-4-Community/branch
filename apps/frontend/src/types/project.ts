@@ -9,7 +9,7 @@ export interface Project {
     created_at: string | null;
 };
 
-export type ProjectRole = 'PI' | 'Accountant' | 'Staff' | 'Admin';
+export type ProjectRole = 'Director' | 'Student' | 'Admin';
 
 export interface Member {
   user_id: number;
