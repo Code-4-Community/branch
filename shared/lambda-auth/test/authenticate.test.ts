@@ -197,34 +197,36 @@ describe('authenticateRequest', () => {
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ clientId: null }));
   });
 
-  it('degrades to unauthenticated (not a throw) when COGNITO_USER_POOL_ID is unset', async () => {
-    // This is why a missing env var manifests as blanket silent 401s across all
-    // six lambdas rather than a loud 500: getVerifier() throws inside the try.
+  it('throws (not a silent 401) when COGNITO_USER_POOL_ID is unset', async () => {
+    // Swallowing this gave blanket silent 401s across all six lambdas.
     delete process.env.COGNITO_USER_POOL_ID;
     const { authenticateRequest } = await loadModule();
     const { db } = makeDb({ user_id: 7, is_admin: true });
 
-    await expect(authenticateRequest(db, bearerEvent('good'))).resolves.toEqual({
-      isAuthenticated: false,
-    });
+    await expect(authenticateRequest(db, bearerEvent('good'))).rejects.toThrow(
+      'COGNITO_USER_POOL_ID',
+    );
     expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  it('returns unauthenticated when the database query throws', async () => {
+  it('propagates a database failure instead of reporting it as unauthenticated', async () => {
+    // Regression guard for the preview-env outage (PR #316).
     mockVerify.mockResolvedValue({ sub: 'sub-1' });
     const { authenticateRequest } = await loadModule();
     const db = {
       selectFrom: () => ({
         where: () => ({
           selectAll: () => ({
-            executeTakeFirst: jest.fn().mockRejectedValue(new Error('db down')),
+            executeTakeFirst: jest
+              .fn()
+              .mockRejectedValue(new Error('timeout exceeded when trying to connect')),
           }),
         }),
       }),
     };
 
-    await expect(authenticateRequest(db, bearerEvent('good'))).resolves.toEqual({
-      isAuthenticated: false,
-    });
+    await expect(authenticateRequest(db, bearerEvent('good'))).rejects.toThrow(
+      'timeout exceeded when trying to connect',
+    );
   });
 });

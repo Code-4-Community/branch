@@ -49,39 +49,46 @@ export async function authenticateRequest(
   const token = extractToken(event);
   if (!token) return { isAuthenticated: false };
 
+  // Outside the try: missing config is a broken deployment, not a bad token.
+  const jwtVerifier = getVerifier();
+
+  let payload: any;
   try {
-    const payload = await getVerifier().verify(token);
-
-    const dbUser = await db
-      .selectFrom('branch.users')
-      .where('cognito_sub', '=', payload.sub)
-      .selectAll()
-      .executeTakeFirst();
-
-    if (!dbUser) {
-      console.warn(
-        'User authenticated with Cognito but not found in database:',
-        payload.sub,
-      );
-      return { isAuthenticated: false };
-    }
-
-    const user: AuthenticatedUser = {
-      cognitoSub: payload.sub,
-      userId: dbUser.user_id,
-      email: payload.email as string | undefined,
-      isAdmin: dbUser.is_admin === true,
-      // Informational only. We deliberately do NOT promote on a Cognito
-      // "Admins" group: branch.users.is_admin is the single source of truth.
-      // A second source would make demotion via PATCH /users/{userId} silently
-      // ineffective, nothing in this codebase writes group membership, and no
-      // aws_cognito_user_group is defined in infrastructure/aws/cognito.tf.
-      cognitoGroups: payload['cognito:groups'] as string[] | undefined,
-    };
-
-    return { user, isAuthenticated: true };
+    payload = await jwtVerifier.verify(token);
   } catch (error) {
+    // Only an unverifiable token is genuinely unauthenticated.
     console.error('Token verification failed:', error);
     return { isAuthenticated: false };
   }
+
+  // Uncaught on purpose: a DB outage is not a 401. Catching it hid an unreachable
+  // RDS behind "Authentication required" and logged users out. Handlers map to 500.
+  const dbUser = await db
+    .selectFrom('branch.users')
+    .where('cognito_sub', '=', payload.sub)
+    .selectAll()
+    .executeTakeFirst();
+
+  if (!dbUser) {
+    console.warn(
+      'User authenticated with Cognito but not found in database:',
+      payload.sub,
+    );
+    return { isAuthenticated: false };
+  }
+
+  const user: AuthenticatedUser = {
+    cognitoSub: payload.sub,
+    userId: dbUser.user_id,
+    email: payload.email as string | undefined,
+    isAdmin: dbUser.is_admin === true,
+    // Informational only. We deliberately do NOT promote on a Cognito
+    // "Admins" group: branch.users.is_admin is the single source of truth.
+    // A second source would make demotion via PATCH /users/{userId} silently
+    // ineffective, nothing in this codebase writes group membership, and no
+    // aws_cognito_user_group is defined in infrastructure/aws/cognito.tf.
+    cognitoGroups: payload['cognito:groups'] as string[] | undefined,
+  };
+
+  return { user, isAuthenticated: true };
 }
