@@ -28,12 +28,64 @@ paths:
           required: true
           schema:
             type: string
-  /projects:
+  /projects/assignable-staff:
     get:
-      summary: GET /projects
+      summary: GET /projects/assignable-staff
+      description: >-
+        Users who can be assigned to a project, for the project form's staff
+        picker. Open to admins and to Directors of any project, who may edit
+        their own projects and so need the roster. Returns only the fields the
+        picker renders.
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  staff:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: integer
+                        name:
+                          type: string
+                        email:
+                          type: string
+                        profile_image:
+                          type: string
+                          nullable: true
+        '403':
+          description: Not permitted to assign staff
+
+  /projects:
+    get:
+      summary: GET /projects
+      description: >-
+        Every project the caller can see, each enriched with the aggregates the
+        list cards render.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: '#/components/schemas/Project'
+                    - type: object
+                      properties:
+                        total_spent:
+                          type: number
+                        member_count:
+                          type: integer
+                        is_active:
+                          type: boolean
+                          description: False once the end date has passed.
     post:
       summary: POST /projects
       requestBody:
@@ -51,9 +103,95 @@ paths:
                   type: number
                 description:
                   type: string
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+                  nullable: true
+                members:
+                  $ref: '#/components/schemas/MemberAssignments'
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Validation failed, an unknown user id, or end_date before start_date
+
+  /projects/{id}/overview:
+    get:
+      summary: GET /projects/{id}/overview
+      description: >-
+        Everything the project detail page renders, in one call: the project,
+        its financial roll-up, its members and its expenditures.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+                  stats:
+                    type: object
+                    properties:
+                      totalBudget:
+                        type: number
+                      totalSpent:
+                        type: number
+                      totalRemaining:
+                        type: number
+                      spentPercentage:
+                        type: number
+                        description: 0-100, reported as 0 when no budget is set.
+                      totalDonated:
+                        type: number
+                      memberCount:
+                        type: integer
+                      expenditureCount:
+                        type: integer
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        user_id:
+                          type: integer
+                        name:
+                          type: string
+                        email:
+                          type: string
+                        role:
+                          type: string
+                          enum: [Admin, Director, Student]
+                        profile_image:
+                          type: string
+                          nullable: true
+                  expenditures:
+                    type: array
+                    items:
+                      type: object
+                  isActive:
+                    type: boolean
+                  canEdit:
+                    type: boolean
+                    description: >-
+                      Whether the caller may edit — admin, or a Director on this
+                      project. Returned so the client need not re-derive it.
+        '400':
+          description: Project id must be a valid number
+        '403':
+          description: No access to this project
+        '404':
+          description: Project not found
 
   /projects/{id}:
     get:
@@ -69,15 +207,47 @@ paths:
           description: OK
     put:
       summary: PUT /projects/{id}
+      description: >-
+        Partial update. Omitting `members` leaves the roster untouched; sending
+        an empty array clears it. Field updates and roster changes are applied
+        in one transaction.
       parameters:
         - in: path
           name: id
           required: true
           schema:
-            type: string
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                total_budget:
+                  type: number
+                start_date:
+                  type: string
+                  format: date
+                  nullable: true
+                end_date:
+                  type: string
+                  format: date
+                  nullable: true
+                members:
+                  $ref: '#/components/schemas/MemberAssignments'
       responses:
         '200':
           description: OK
+        '400':
+          description: Validation failed, an unknown user id, or end_date before start_date
+        '403':
+          description: Not permitted to edit this project
+        '404':
+          description: Project not found
     delete:
       summary: DELETE /projects/{id}
       parameters:
@@ -135,3 +305,55 @@ paths:
       responses:
         '200':
           description: OK
+
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        project_id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        total_budget:
+          type: string
+          nullable: true
+          description: NUMERIC, serialised as a string to avoid float rounding.
+        currency:
+          type: string
+          nullable: true
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    MemberAssignments:
+      type: array
+      description: >-
+        Project roster. Accepts bare user ids (the project form, which has no
+        role picker and defaults to Student) or objects carrying an explicit
+        role. A repeated id keeps its last role rather than failing the write.
+      items:
+        oneOf:
+          - type: integer
+            description: User id, assigned the default Student role.
+          - type: object
+            required:
+              - user_id
+            properties:
+              user_id:
+                type: integer
+              role:
+                type: string
+                enum: [Admin, Director, Student]

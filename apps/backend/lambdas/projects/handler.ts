@@ -1,13 +1,15 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { sql } from 'kysely';
+import { sql, Transaction } from 'kysely';
+import type { DB } from '@branch/types';
 import db from './db';
-import { ProjectValidationUtils } from './validation-utils';
+import { MemberAssignment, ProjectValidationUtils } from './validation-utils';
 import {
   authenticateRequest,
   canAccessProject,
   canCreateProject,
   canDeleteProject,
   canEditProject,
+  canListAssignableStaff,
 } from './auth';
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
@@ -234,17 +236,116 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         }
       });
     }
+    // GET /projects/assignable-staff
+    // Declared before the /{id} routes: those now require a numeric segment, but
+    // keeping the literal path first also documents that it is not a project id.
+    if ((normalizedPath === '/assignable-staff' || normalizedPath.endsWith('/assignable-staff')) && method === 'GET') {
+      if (!(await canListAssignableStaff(user.userId!))) {
+        return json(403, { message: 'You do not have access to assign staff' });
+      }
+      const staff = await db
+        .selectFrom('branch.users')
+        .select(['user_id', 'name', 'email', 'profile_image'])
+        .orderBy('name', 'asc')
+        .execute();
+      return json(200, { staff });
+    }
+
     // GET /projects
     if (rawPath === '/' && method === 'GET') {
       const projects = user.isAdmin
-        ? await db.selectFrom("branch.projects").selectAll().execute()
+        ? await db.selectFrom("branch.projects").selectAll().orderBy('project_id', 'asc').execute()
         : await db
             .selectFrom("branch.projects as p")
             .innerJoin("branch.project_memberships as pm", "pm.project_id", "p.project_id")
             .where("pm.user_id", "=", user.userId!)
             .selectAll("p")
+            .orderBy('p.project_id', 'asc')
             .execute();
-      return json(200, projects);
+
+      // The list cards render "spent / budget", a member count and an
+      // active-vs-archived split. Serving those aggregates here keeps the page
+      // to one request instead of three per project.
+      const { spent, members } = await loadProjectAggregates(projects.map((p) => p.project_id));
+
+      return json(
+        200,
+        projects.map((p) => ({
+          ...p,
+          total_spent: spent.get(p.project_id) ?? 0,
+          member_count: members.get(p.project_id) ?? 0,
+          is_active: isProjectActive(p.end_date),
+        })),
+      );
+    }
+
+    // GET /projects/{id}/overview
+    // One call for the whole detail page: the header, the funding donut, the
+    // staff column and the expenses table previously needed three round trips
+    // and still could not show a spend total without summing on the client.
+    if (normalizedPath.endsWith('/overview') && method === 'GET') {
+      const segments = normalizedPath.split('/').filter(Boolean);
+      const id = projectIdFrom(segments[segments.length - 2]);
+      if (id === null) return json(400, { message: 'Project id must be a valid number' });
+
+      if (!(await canAccessProject(user.userId!, id))) {
+        return json(403, { message: 'You do not have access to this project' });
+      }
+
+      const project = await db
+        .selectFrom('branch.projects')
+        .where('project_id', '=', id)
+        .selectAll()
+        .executeTakeFirst();
+      if (!project) return json(404, { message: `Project not found for id: ${id}` });
+
+      const [members, expenditures, donationRow, canEdit] = await Promise.all([
+        db
+          .selectFrom('branch.project_memberships as pm')
+          .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
+          .select(['u.user_id', 'u.name', 'u.email', 'u.profile_image', 'pm.role'])
+          .where('pm.project_id', '=', id)
+          .orderBy('u.name', 'asc')
+          .execute(),
+        db
+          .selectFrom('branch.expenditures')
+          .where('project_id', '=', id)
+          .selectAll()
+          .orderBy('spent_on', 'desc')
+          .execute(),
+        db
+          .selectFrom('branch.project_donations')
+          .select(db.fn.sum('amount').as('total'))
+          .where('project_id', '=', id)
+          .executeTakeFirst(),
+        // Returned so the UI does not have to re-derive the rule: editing is
+        // open to a project's Directors as well as admins, so gating the
+        // button on `isAdmin` alone would hide it from people who may edit.
+        canEditProject(user.userId!, id),
+      ]);
+
+      const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
+      const totalSpent = expenditures.reduce((sum, e) => sum + Number(e.amount), 0);
+      // Guarded because a project may legitimately have no budget set yet, and
+      // 0/0 would render as NaN% in the donut.
+      const spentPercentage = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+
+      return json(200, {
+        project,
+        stats: {
+          totalBudget,
+          totalSpent,
+          totalRemaining: totalBudget - totalSpent,
+          spentPercentage: Number(spentPercentage.toFixed(2)),
+          totalDonated: Number(donationRow?.total ?? 0),
+          memberCount: members.length,
+          expenditureCount: expenditures.length,
+        },
+        members,
+        expenditures,
+        isActive: isProjectActive(project.end_date),
+        canEdit,
+      });
     }
 
     // GET /projects/{id}/donors
@@ -321,18 +422,70 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!result.isValid) return json(400, { message: result.error });
       const updateValues = result.values!;
 
-      if (Object.keys(updateValues).length === 0) {
+      const membersResult = ProjectValidationUtils.validateMembers(body.members);
+      if (!membersResult.isValid) return json(400, { message: membersResult.error });
+      const members = membersResult.value;
+
+      if (Object.keys(updateValues).length === 0 && members === undefined) {
         return json(400, { message: 'No valid fields provided' });
       }
 
-      const updatedProject = await db
-        .updateTable("branch.projects")
-        .set(updateValues)
-        .where("project_id", "=", Number(id))
-        .returning(["project_id", "name", "description", "total_budget"])
+      const existing = await db
+        .selectFrom('branch.projects')
+        .where('project_id', '=', Number(id))
+        .select(['start_date', 'end_date'])
         .executeTakeFirst();
-      if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
-      return json(200, updatedProject);
+      if (!existing) return json(404, { message: `Project not found for id: ${id}` });
+
+      // The edit form can set a start date and clear the end date in the same
+      // submit, so the range is checked against the merged row rather than the
+      // patch — validating the patch alone would miss a start date moved past
+      // an end date that the request never mentions.
+      const nextStart = 'start_date' in updateValues
+        ? (updateValues.start_date as string | null)
+        : toIsoDate(existing.start_date);
+      const nextEnd = 'end_date' in updateValues
+        ? (updateValues.end_date as string | null)
+        : toIsoDate(existing.end_date);
+
+      const rangeResult = ProjectValidationUtils.validateDateRange(nextStart, nextEnd);
+      if (!rangeResult.isValid) return json(400, { message: rangeResult.error });
+
+      if (members !== undefined) {
+        const unknownIds = await findUnknownUserIds(members);
+        if (unknownIds.length > 0) {
+          return json(400, { message: `Unknown user ids: ${unknownIds.join(', ')}` });
+        }
+      }
+
+      try {
+        // Field update and roster replacement share a transaction: a failed
+        // membership insert must not leave the project with nobody assigned.
+        const updatedProject = await db.transaction().execute(async (trx) => {
+          const row = Object.keys(updateValues).length > 0
+            ? await trx
+                .updateTable('branch.projects')
+                .set(updateValues)
+                .where('project_id', '=', Number(id))
+                .returningAll()
+                .executeTakeFirst()
+            : await trx
+                .selectFrom('branch.projects')
+                .where('project_id', '=', Number(id))
+                .selectAll()
+                .executeTakeFirst();
+
+          if (!row) return undefined;
+          if (members !== undefined) await syncMemberships(trx, Number(id), members);
+          return row;
+        });
+
+        if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
+        return json(200, updatedProject);
+      } catch (e) {
+        console.error('Project update failed', e);
+        return json(500, { message: 'Failed to update project' });
+      }
     }
     
     // DELETE /projects/{id}
@@ -395,12 +548,35 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!descriptionResult.isValid) return json(400, { message: descriptionResult.error });
       values.description = descriptionResult.value;
 
+      const rangeResult = ProjectValidationUtils.validateDateRange(
+        startDateResult.value,
+        endDateResult.value,
+      );
+      if (!rangeResult.isValid) return json(400, { message: rangeResult.error });
+
+      const membersResult = ProjectValidationUtils.validateMembers(body.members);
+      if (!membersResult.isValid) return json(400, { message: membersResult.error });
+      const members = membersResult.value ?? [];
+
+      const unknownIds = await findUnknownUserIds(members);
+      if (unknownIds.length > 0) {
+        return json(400, { message: `Unknown user ids: ${unknownIds.join(', ')}` });
+      }
+
       try {
-        const inserted = await db
-          .insertInto('branch.projects')
-          .values(values)
-          .returning(['project_id', 'name', 'description', 'total_budget', 'currency', 'start_date', 'end_date', 'created_at'])
-          .executeTakeFirst();
+        // Creating the project and its roster together: a project that saved
+        // without its staff would look complete but fail the form's own
+        // "at least one staff member" rule on the next read.
+        const inserted = await db.transaction().execute(async (trx) => {
+          const row = await trx
+            .insertInto('branch.projects')
+            .values(values)
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          if (members.length > 0) await syncMemberships(trx, row.project_id, members);
+          return row;
+        });
 
         return json(201, inserted);
       } catch (e) {
@@ -461,6 +637,123 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     return json(500, { message: 'Internal Server Error' });
   }
 };
+
+/**
+ * Path segments carrying a project id are matched with this rather than a bare
+ * "is there a segment here" check. Without it `/projects/assignable-staff`
+ * matches `GET /projects/{id}` with `id = "assignable-staff"`, which reaches
+ * the DB as `NaN` and surfaces as a confusing 403 instead of routing correctly.
+ */
+function projectIdFrom(segment: string | undefined): number | null {
+  if (!segment || !/^\d+$/.test(segment)) return null;
+  const id = Number(segment);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
+ * `pg` hands back DATE columns as `Date`, but every date the API accepts and
+ * returns is a `YYYY-MM-DD` string, so comparisons must go through this.
+ */
+function toIsoDate(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+/** Rows keyed by project id, for stitching aggregates onto a project list. */
+function indexByProject<T extends { project_id: number }>(
+  rows: T[],
+  pick: (row: T) => number,
+): Map<number, number> {
+  return new Map(rows.map((row) => [row.project_id, pick(row)]));
+}
+
+/**
+ * Per-project spend and headcount, aggregated in two grouped queries rather
+ * than one query per project — the list page renders every project the caller
+ * can see, so a per-row lookup is an N+1 that grows with the org.
+ */
+async function loadProjectAggregates(projectIds: number[]): Promise<{
+  spent: Map<number, number>;
+  members: Map<number, number>;
+}> {
+  if (projectIds.length === 0) return { spent: new Map(), members: new Map() };
+
+  const [spentRows, memberRows] = await Promise.all([
+    db
+      .selectFrom('branch.expenditures')
+      .select(['project_id', db.fn.sum('amount').as('total')])
+      .where('project_id', 'in', projectIds)
+      .groupBy('project_id')
+      .execute(),
+    db
+      .selectFrom('branch.project_memberships')
+      .select(['project_id', db.fn.count('user_id').as('count')])
+      .where('project_id', 'in', projectIds)
+      .groupBy('project_id')
+      .execute(),
+  ]);
+
+  return {
+    spent: indexByProject(spentRows, (r) => Number(r.total ?? 0)),
+    members: indexByProject(memberRows, (r) => Number(r.count ?? 0)),
+  };
+}
+
+/**
+ * A project is archived once it has an end date that has passed. The "this
+ * project is still in progress" checkbox in the UI simply clears `end_date`,
+ * so a null end date is always active.
+ */
+function isProjectActive(endDate: unknown, today = new Date()): boolean {
+  const iso = toIsoDate(endDate);
+  if (!iso) return true;
+  return iso >= today.toISOString().slice(0, 10);
+}
+
+/**
+ * Replaces a project's roster with `members` inside the caller's transaction.
+ *
+ * Delete-then-insert rather than a diff: the set is small and bounded by the
+ * staff list, and doing it in one transaction means a failed insert cannot
+ * leave the project with nobody assigned.
+ */
+async function syncMemberships(
+  trx: Transaction<DB>,
+  projectId: number,
+  members: MemberAssignment[],
+): Promise<void> {
+  await trx
+    .deleteFrom('branch.project_memberships')
+    .where('project_id', '=', projectId)
+    .execute();
+
+  if (members.length === 0) return;
+
+  await trx
+    .insertInto('branch.project_memberships')
+    .values(
+      members.map((m) => ({
+        project_id: projectId,
+        user_id: m.user_id,
+        role: m.role,
+      })),
+    )
+    .execute();
+}
+
+/** Rejects member ids that are not real users, so FK errors never reach the client as a 500. */
+async function findUnknownUserIds(members: MemberAssignment[]): Promise<number[]> {
+  if (members.length === 0) return [];
+  const ids = members.map((m) => m.user_id);
+  const found = await db
+    .selectFrom('branch.users')
+    .select('user_id')
+    .where('user_id', 'in', ids)
+    .execute();
+  const known = new Set(found.map((r) => r.user_id));
+  return ids.filter((id) => !known.has(id));
+}
 
 function json(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {

@@ -66,6 +66,38 @@ export async function canEditProject(
   }
 }
 
+/**
+ * Gates the staff picker's user list.
+ *
+ * Creating a project is admin-only, but editing one is open to its Directors,
+ * so a Director must be able to read the roster to assign staff. This is
+ * deliberately narrower than `GET /users` (ADMIN-only) and returns only the
+ * fields the picker renders — not the full user row.
+ */
+export async function canListAssignableStaff(userId: number): Promise<boolean> {
+  try {
+    const user = await db
+      .selectFrom('branch.users')
+      .where('user_id', '=', userId)
+      .select('is_admin')
+      .executeTakeFirst();
+
+    if (user?.is_admin) return true;
+
+    const membership = await db
+      .selectFrom('branch.project_memberships')
+      .where('user_id', '=', userId)
+      .where('role', 'in', ['Director', 'Admin'])
+      .select('membership_id')
+      .executeTakeFirst();
+
+    return !!membership;
+  } catch (error) {
+    console.error('Error checking staff-list access:', error);
+    return false;
+  }
+}
+
 export async function canCreateProject(userId: number): Promise<boolean> {
   try {
     const user = await db

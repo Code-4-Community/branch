@@ -23,6 +23,20 @@ export function landingPathFor(isAdmin: boolean): string {
   return isAdmin ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
 }
 
+/**
+ * Link to a single project.
+ *
+ * The id is a query param rather than a path segment on purpose. The app is a
+ * static export, so a dynamic `/projects/[id]` segment would have to enumerate
+ * every id at build time — impossible for database rows — leaving real ids with
+ * no exported document and depending on a CloudFront fallback to serve some
+ * other page's shell. `/projects?id=1` is one prerendered document that reads
+ * the id at runtime, so deep links and refreshes work with no hosting rules.
+ */
+export function projectPath(id: number | string): string {
+  return `/projects?id=${encodeURIComponent(String(id))}`;
+}
+
 /** Reachable without a session. Authenticated users get bounced off these. */
 const PUBLIC_PREFIXES = [
   '/login',

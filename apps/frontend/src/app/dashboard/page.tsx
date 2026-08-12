@@ -10,6 +10,7 @@ import SummaryStatCard from '../components/SummaryStatCard';
 import ExpensesBarChart from '../components/ExpensesBarChart';
 import LoadingState from '../components/LoadingState';
 import { useApi } from '@/hooks/useApi';
+import { projectPath } from '@/lib/routes';
 import type { DashboardResponse } from '@/types/dashboard';
 
 /**
@@ -107,7 +108,7 @@ export default function DashboardPage() {
                       .map((project) => (
                         <Link
                           key={project.project_id}
-                          href={`/projects/${project.project_id}`}
+                          href={projectPath(project.project_id)}
                           className="flex"
                         >
                           <ProjectCard

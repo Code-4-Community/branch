@@ -1,6 +1,7 @@
 import { act } from 'react';
 import { render, screen, waitFor } from '../utils';
-import ProjectPage from '@/app/projects/[id]/page';
+import ProjectPage from '@/app/projects/page';
+import type { ProjectOverview } from '@/types';
 
 const mockApiFetch = jest.fn();
 jest.mock('../../src/lib/authClient', () => ({
@@ -9,7 +10,6 @@ jest.mock('../../src/lib/authClient', () => ({
 }));
 
 jest.mock('next/navigation', () => ({
-    useParams: () => ({ id: '1' }),
     useRouter: jest.fn(() => ({
         push: jest.fn(),
         replace: jest.fn(),
@@ -18,9 +18,63 @@ jest.mock('next/navigation', () => ({
         forward: jest.fn(),
         refresh: jest.fn(),
     })),
-    usePathname: jest.fn(() => '/'),
-    useSearchParams: jest.fn(() => new URLSearchParams()),
+    usePathname: jest.fn(() => '/projects/'),
+    // The route renders the detail view when ?id is present, the list otherwise.
+    useSearchParams: jest.fn(() => new URLSearchParams('id=1')),
 }));
+
+function makeExpenditure(id: number) {
+    return {
+        expenditure_id: id,
+        project_id: 1,
+        entered_by: null,
+        amount: '1000.00',
+        category: 'Visitor / Honorarium',
+        description: null,
+        status: 'approved' as const,
+        receipt_url: null,
+        admin_notes: null,
+        spent_on: '2026-01-15',
+        created_at: null,
+    };
+}
+
+function makeMember(id: number) {
+    return {
+        user_id: id,
+        name: `Staff ${id}`,
+        email: `staff${id}@example.com`,
+        role: 'Student' as const,
+        profile_image: null,
+    };
+}
+
+const overview: ProjectOverview = {
+    project: {
+        project_id: 1,
+        name: 'Clinician Communication Study',
+        description: 'Test description',
+        total_budget: '500000.00',
+        currency: 'USD',
+        start_date: '2026-01-01',
+        end_date: null,
+        created_at: null,
+    },
+    stats: {
+        totalBudget: 500000,
+        totalSpent: 200000,
+        totalRemaining: 300000,
+        spentPercentage: 40,
+        totalDonated: 0,
+        memberCount: 5,
+        expenditureCount: 5,
+    },
+    // More than the page's preview limits, so the "View All" toggles render.
+    members: [1, 2, 3, 4, 5].map(makeMember),
+    expenditures: [1, 2, 3, 4, 5].map(makeExpenditure),
+    isActive: true,
+    canEdit: true,
+};
 
 let resolvers: Array<() => void> = [];
 
@@ -29,9 +83,9 @@ beforeEach(() => {
     mockApiFetch.mockImplementation((url: string) => {
         return new Promise((resolve) => {
             resolvers.push(() => {
-                if (url === '/projects/1') resolve({ project_id: 1, name: 'Clinician Communication Study', description: 'Test description', total_budget: '500000.00', currency: 'USD', start_date: null, end_date: null, created_at: null });
-                if (url === '/projects/1/expenditures') resolve([]);
-                if (url === '/projects/1/members') resolve({ ok: true, body: { users: [] } });
+                if (url === '/projects/1/overview') resolve(overview);
+                // The Navbar lazily loads this only when its menu is expanded.
+                if (url === '/projects') resolve([]);
             });
         });
     });
@@ -41,6 +95,16 @@ describe('Project Page', () => {
     it('renders loading state initially', () => {
         render(<ProjectPage />);
         expect(screen.getByRole('status', { name: 'Loading project…' })).toBeInTheDocument();
+    });
+
+    it('loads the whole page from the single overview endpoint', async () => {
+        render(<ProjectPage />);
+        act(() => resolvers.forEach(r => r()));
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: 'Clinician Communication Study' })).toBeInTheDocument();
+        });
+        expect(mockApiFetch).toHaveBeenCalledWith('/projects/1/overview', { method: 'GET' });
+        expect(mockApiFetch).not.toHaveBeenCalledWith('/projects/1/expenditures', expect.anything());
     });
 
     it('renders the project name as heading', async () => {
@@ -59,13 +123,43 @@ describe('Project Page', () => {
         });
     });
 
-    it('renders the financial cards', async () => {
+    it('renders the funding totals', async () => {
         render(<ProjectPage />);
         act(() => resolvers.forEach(r => r()));
         await waitFor(() => {
-            expect(screen.getByText('Funding Received')).toBeInTheDocument();
-            expect(screen.getByText('Total Spent')).toBeInTheDocument();
-            expect(screen.getByText('Total Remaining')).toBeInTheDocument();
+            expect(screen.getByText('$500,000')).toBeInTheDocument();
+        });
+        expect(screen.getByText('total')).toBeInTheDocument();
+        expect(screen.getByText('$200,000')).toBeInTheDocument();
+        expect(screen.getByText('$300,000')).toBeInTheDocument();
+        expect(screen.getByText('remaining')).toBeInTheDocument();
+        // "spent" labels both the donut and the figure beneath it, as designed.
+        expect(screen.getAllByText('spent')).toHaveLength(2);
+    });
+
+    it('hides Edit Project when the server says the user cannot edit', async () => {
+        mockApiFetch.mockImplementation((url: string) => {
+            return new Promise((resolve) => {
+                resolvers.push(() => {
+                    if (url === '/projects/1/overview') resolve({ ...overview, canEdit: false });
+                    if (url === '/projects') resolve([]);
+                });
+            });
+        });
+
+        render(<ProjectPage />);
+        act(() => resolvers.forEach(r => r()));
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: 'Clinician Communication Study' })).toBeInTheDocument();
+        });
+        expect(screen.queryByRole('button', { name: /edit project/i })).not.toBeInTheDocument();
+    });
+
+    it('renders the donut percentage from the server-computed stats', async () => {
+        render(<ProjectPage />);
+        act(() => resolvers.forEach(r => r()));
+        await waitFor(() => {
+            expect(screen.getByText('40%')).toBeInTheDocument();
         });
     });
 
@@ -85,12 +179,12 @@ describe('Project Page', () => {
         });
     });
 
-    it('renders View More and View All buttons', async () => {
+    it('renders a View All control for each truncated list', async () => {
         render(<ProjectPage />);
         act(() => resolvers.forEach(r => r()));
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: /view more/i })).toBeInTheDocument();
-            expect(screen.getByRole('button', { name: /view all/i })).toBeInTheDocument();
+            // One for staff, one for expenses — both lists exceed their preview.
+            expect(screen.getAllByRole('button', { name: /view all/i })).toHaveLength(2);
         });
     });
 });
