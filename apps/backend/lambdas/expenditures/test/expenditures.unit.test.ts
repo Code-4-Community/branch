@@ -1103,8 +1103,8 @@ describe('GET /expenditures/upload-url unit tests', () => {
   });
 
   test('403: non-admin without a qualifying role on the project', async () => {
-    mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
-    mockDb.selectFrom.mockReturnValue(mockMembership({ role: 'Staff' }));
+    mockAuthenticateRequest.mockResolvedValue(studentAuthContext);
+    mockDb.selectFrom.mockReturnValue(mockMembership({ role: 'Student' }));
 
     const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: '1' }));
 
@@ -1161,7 +1161,7 @@ describe('GET /expenditures/{id}/receipt unit tests', () => {
   });
 
   test('403: non-admin with no membership on the project', async () => {
-    mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+    mockAuthenticateRequest.mockResolvedValue(studentAuthContext);
     mockDb.selectFrom
       .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure))
       .mockReturnValueOnce(mockMembership(null));

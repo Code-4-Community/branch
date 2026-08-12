@@ -227,7 +227,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           .select('role')
           .executeTakeFirst();
 
-        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+        if (!membership || !['Director', 'Admin'].includes(membership.role)) {
           return json(403, { message: 'Unable to upload a receipt for this project' });
         }
       }
