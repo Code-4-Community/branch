@@ -1,8 +1,7 @@
 /**
- * Shared auth DTOs used by every lambda's auth.ts.
+ * The single declaration of the auth DTOs. @branch/lambda-auth re-exports these
+ * rather than declaring its own copy.
  */
-
-// Mirrors @branch/lambda-auth's src/types.ts; this package takes no dependencies, so keep the two in sync.
 
 export interface AuthenticatedUser {
   cognitoSub: string;

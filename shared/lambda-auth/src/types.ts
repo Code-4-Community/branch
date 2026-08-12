@@ -1,19 +1,8 @@
-export interface AuthenticatedUser {
-  cognitoSub: string;
-  userId?: number;
-  email?: string;
-  isAdmin: boolean;
-  cognitoGroups?: string[];
-}
-
-export interface AuthContext {
-  user?: AuthenticatedUser;
-  isAuthenticated: boolean;
-}
-
-export type AccessLevel = 'PUBLIC' | 'AUTHENTICATED' | 'ADMIN' | 'SELF' | 'ADMIN_OR_SELF';
-
-export interface AuthorizationCheck {
-  allowed: boolean;
-  reason?: string;
-}
+// Declared once in @branch/types and re-exported here so runtime consumers get
+// the DTOs from the package that produces them.
+export type {
+  AccessLevel,
+  AuthContext,
+  AuthenticatedUser,
+  AuthorizationCheck,
+} from '@branch/types';
