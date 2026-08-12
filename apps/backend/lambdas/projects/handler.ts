@@ -56,9 +56,9 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         const yearEnd = `${year}-12-31`;
         const today = now.toISOString().slice(0, 10);
 
-        // A project is active until its end_date passes; a null end_date never
-        // ends. Shared by the count and by the spend feeding the average so the
-        // two can never drift out of agreement.
+        // Projects stay active until their end_date passes; a null end_date
+        // never ends. Shared by the count and by the spend feeding the average
+        // so the two can never drift out of agreement.
         const isActive = (column: any) => (eb: any) =>
           eb.or([eb(column, 'is', null), eb(column, '>=', today as any)]);
 
@@ -150,7 +150,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         const totalSpent = Number(totalSpentRow?.total ?? 0);
         const totalProjects = Number(totalProjectsRow?.count ?? 0);
 
-        // A true aggregate over active projects: this year's spend on active
+        // True aggregate over active projects: this year's spend on active
         // projects divided by how many there are. Dividing the all-projects total
         // by the active count inflated the figure whenever a project ended
         // mid-year, since its spend stayed in the numerator.
