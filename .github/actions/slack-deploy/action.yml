@@ -31,6 +31,12 @@ inputs:
     description: '(finalize mode) dir of <name>.meta ("name|outcome") files to decide pass/fail'
     required: false
     default: ''
+  force-failure:
+    description: >
+      (finalize mode) report failure regardless of results-dir. A .meta records one
+      step's outcome, so a job that dies after writing it still looks successful.
+    required: false
+    default: 'false'
   job-name:
     description: '(step mode) matrix job name to count completed legs for a live status bar'
     required: false
@@ -101,6 +107,7 @@ runs:
         DETAILS: ${{ inputs.details }}
         DETAILS_FILE: ${{ inputs.details-file }}
         RESULTS_DIR: ${{ inputs.results-dir }}
+        FORCE_FAILURE: ${{ inputs.force-failure }}
         JOB_NAME: ${{ inputs.job-name }}
         TS: ${{ inputs.ts }}
         DEPLOY_BY: ${{ inputs.deployed-by }}
@@ -308,7 +315,7 @@ runs:
           // read result artifacts to decide overall pass/fail, then complete/fail.
           if (mode === 'finalize') {
             const dir = process.env.RESULTS_DIR || '';
-            let anyFail = false;
+            let anyFail = process.env.FORCE_FAILURE === 'true';
             try {
               for (const m of fs.readdirSync(dir).filter(f => f.endsWith('.meta'))) {
                 const [, outcome] = fs.readFileSync(path.join(dir, m), 'utf8').trim().split('|');
