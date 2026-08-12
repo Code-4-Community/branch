@@ -8,6 +8,8 @@ interface ExpensesTableProps {
   expenditures: Expenditure[];
   /** Project detail already scopes to one project, so it hides this column. */
   showProject?: boolean;
+  /** The project page's summary table omits the receipt link. */
+  showReceipt?: boolean;
   projectNames?: Record<number, string>;
   onViewReceipt?: (expenditure: Expenditure) => void;
   onRowClick?: (expenditure: Expenditure) => void;
@@ -27,6 +29,7 @@ function formatAmount(amount: string) {
 export default function ExpensesTable({
   expenditures,
   showProject = true,
+  showReceipt = true,
   projectNames = {},
   onViewReceipt,
   onRowClick,
@@ -37,7 +40,9 @@ export default function ExpensesTable({
   // widens the rest instead of leaving a gap at the end of the row.
   const widths = showProject
     ? { id: '11.5%', date: '15.3%', type: '16.6%', project: '21.8%', amount: '14%', receipt: '11%', status: '9.8%' }
-    : { id: '14%', date: '19%', type: '21%', project: '0', amount: '18%', receipt: '14%', status: '14%' };
+    : showReceipt
+      ? { id: '14%', date: '19%', type: '21%', project: '0', amount: '18%', receipt: '14%', status: '14%' }
+      : { id: '16%', date: '22%', type: '25%', project: '0', amount: '21%', receipt: '0', status: '16%' };
 
   const columns: DataTableColumn<Expenditure>[] = [
     {
@@ -82,35 +87,39 @@ export default function ExpensesTable({
       cell: (e) => formatAmount(e.amount),
       skeleton: { width: '60%' },
     },
-    {
-      key: 'receipt',
-      header: 'Receipt',
-      width: widths.receipt,
-      cell: (e) =>
-        e.receipt_url ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onViewReceipt?.(e);
-            }}
-            style={{
-              color: 'var(--color-primary-700)',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              font: 'inherit',
-            }}
-          >
-            View Receipt
-          </button>
-        ) : (
-          '---'
-        ),
-      skeleton: { width: '70%' },
-    },
+    ...(showReceipt
+      ? [
+          {
+            key: 'receipt',
+            header: 'Receipt',
+            width: widths.receipt,
+            cell: (e: Expenditure) =>
+              e.receipt_url ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewReceipt?.(e);
+                  }}
+                  style={{
+                    color: 'var(--color-primary-700)',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    font: 'inherit',
+                  }}
+                >
+                  View Receipt
+                </button>
+              ) : (
+                '---'
+              ),
+            skeleton: { width: '70%' },
+          },
+        ]
+      : []),
     {
       key: 'status',
       header: 'Status',

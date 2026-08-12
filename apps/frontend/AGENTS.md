@@ -75,7 +75,7 @@ Import direction is one-way and must stay that way: `api.ts` ← `authClient.ts`
 
 ## Shared UI
 
-Two families of component are **the** way to do their job — don't hand-roll a second one.
+Three families of component are **the** way to do their job — don't hand-roll a second one.
 
 **Tables — `components/DataTable.tsx`.** Every list view (expenses, reports, donors, donations) renders through it, so the green header row, column widths, empty state, row-click behaviour and loading skeleton stay identical. Columns are data: `{ key, header, width, align, cell, skeleton }`. Pass `selection` (see `reports/page.tsx`) for the leading checkbox column — the page keeps owning the selected ids, since that is what its bulk actions need. `ExpensesTable` is a thin wrapper that fixes the expense column set; add domain wrappers like that rather than re-deriving columns per page.
 
@@ -83,10 +83,12 @@ Two families of component are **the** way to do their job — don't hand-roll a 
 
 - `LoadingState` for a region whose content has not arrived (`variant="section"` reserves height; `"inline"` for menus and dialog bodies). The label is the accessible name and is hidden unless `showLabel`.
 - `DataTable isLoading` for tables — skeleton rows keep the header and column widths on screen. Set `skeletonRows` to the page size so nothing resizes when data lands.
-- Chakra's `Button loading` prop for in-flight actions; it renders its own spinner.
+- `Button isLoading` for in-flight actions (our `Button`; Chakra's own buttons use its `loading` prop).
 - `Spinner` is the primitive; it takes its colour from `currentColor` and only gets a `label` when nothing around it is already `role="status"`.
 
 The animations live in `globals.css` (`.branch-spinner`, `.branch-skeleton`, and their keyframes), not in the components — one timing curve for the whole app, and `FullPageSpinner` can render before any component library is mounted. Both honour `prefers-reduced-motion`.
+
+**Popovers — `hooks/useAnchoredPopover.ts`.** Anything that floats next to a trigger (`DatePickerField`, `StaffPicker`) goes through this hook. The caller owns the open state and passes it in with `onDismiss` and an `estimatedHeight`; the hook returns `{ anchorRef, popoverRef, boundaryRef, position }`, where `position` is viewport coordinates to spread onto a `position: fixed` panel. It flips above the anchor when the viewport would clip it, repositions on scroll and resize, and dismisses on outside-click and `Escape`. Render the panel through `createPortal` into `document.body` — a popover left in normal flow is clipped by the modal body's scroll container, which is the bug this hook exists to prevent.
 
 ## Conventions
 
