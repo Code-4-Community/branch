@@ -1,6 +1,6 @@
 import { render, screen } from '../utils';
 import AccountsPage from '@/app/accounts/page';
-import { facilitationTeam, teamMembers } from '@/app/accounts/staff';
+import { facilitationTeam, teamMembers } from '@/app/accounts/mockUsers';
 
 describe('AccountsPage', () => {
     it('renders the headings', () => {

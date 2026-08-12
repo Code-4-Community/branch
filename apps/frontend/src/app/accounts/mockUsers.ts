@@ -1,7 +1,7 @@
 import { User } from '@/types';
 
-// Placeholder roster. Lives beside the page, not in it: Next.js rejects unknown
-// exports from a page.tsx at build time (jest does not).
+// Lives outside page.tsx because Next.js rejects non-page exports from a page
+// module, and the accounts tests read these lists directly.
 const mockUsers: User[] = [
     { user_id: 1,  name: 'Mehana Nagarur',   email: 'nagarur.m@northeastern.edu', is_admin: true  },
     { user_id: 2,  name: 'Alex Rivera',       email: 'rivera.a@northeastern.edu',  is_admin: true  },

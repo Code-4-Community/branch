@@ -115,19 +115,29 @@ jobs:
             exit 1
           fi
 
-      # Build the preview lambdas' env from the ACTUAL prod config (single source
-      # of truth) + the live RDS endpoint. Reserved / credential keys are dropped;
-      # the module adds NODE_ENV. Only needed when creating the stack.
+      # Prod config is the single source of truth, DB_HOST included. Never re-derive
+      # it from `DBInstances[0]` -- this account hosts other C4C databases and that
+      # picked an unreachable one. Reserved / credential keys are dropped; the module
+      # adds NODE_ENV. Only needed when creating the stack.
       - name: Resolve preview lambda env
         if: steps.mode.outputs.create == 'true'
         run: |
-          DB_HOST=$(aws rds describe-db-instances --query "DBInstances[0].Endpoint.Address" --output text)
+          set -euo pipefail
           AUTH_ENV=$(aws lambda get-function-configuration --function-name branch-auth --query 'Environment.Variables' --output json)
           REPORTS_ENV=$(aws lambda get-function-configuration --function-name branch-reports --query 'Environment.Variables' --output json)
-          ENV_JSON=$(jq -n --argjson a "$AUTH_ENV" --argjson r "$REPORTS_ENV" --arg dbh "$DB_HOST" '
-            (($a // {}) + ($r // {}) + { "DB_HOST": $dbh })
+          ENV_JSON=$(jq -n --argjson a "$AUTH_ENV" --argjson r "$REPORTS_ENV" '
+            (($a // {}) + ($r // {}))
             | del(.NODE_ENV, .AWS_REGION, .AWS_DEFAULT_REGION, .AWS_ACCESS_KEY_ID, .AWS_SECRET_ACCESS_KEY, .AWS_SESSION_TOKEN)
           ')
+          # Fail loudly rather than shipping a preview that 401s on every DB call.
+          for key in DB_HOST DB_NAME DB_USER DB_PASSWORD COGNITO_USER_POOL_ID COGNITO_CLIENT_ID; do
+            value=$(jq -r --arg k "$key" '.[$k] // ""' <<<"$ENV_JSON")
+            if [ -z "$value" ]; then
+              echo "::error::branch-auth/branch-reports did not provide $key; preview lambdas would be misconfigured."
+              exit 1
+            fi
+          done
+          echo "Preview DB_HOST: $(jq -r '.DB_HOST' <<<"$ENV_JSON")"
           # Stash for the terraform step (multiline-safe).
           printf 'LAMBDA_ENV<<EOF\n%s\nEOF\n' "$ENV_JSON" >> "$GITHUB_ENV"
 

@@ -30,7 +30,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 Two `file:`-linked packages dedupe code across lambdas:
 
-- **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
+- **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). It is the **single declaration** of those DTOs: `@branch/lambda-auth` depends on this package and re-exports them, so never add a second copy anywhere. `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
 - **`@branch/lambda-auth`** (`shared/lambda-auth/`) — runtime auth: `authenticateRequest(db, event)`, `extractToken(event)`, `checkAuthorization(ctx, level, resourceUserId?)`. Lambdas wrap it in their local `auth.ts`.
 
 ## Root commands

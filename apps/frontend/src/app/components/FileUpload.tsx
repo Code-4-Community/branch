@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { FileRejection, useDropzone } from 'react-dropzone';
 import UploadProgressBar from './UploadProgressBar';
 import FilePreview from './FilePreview';
@@ -8,55 +8,54 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 interface FileUploadProps {
   value: File | null;
-  onChange: (file: File | null) => void;
+  /** Called with the stored object URL once the upload lands, or null on clear. */
+  onChange: (file: File | null, objectUrl: string | null) => void;
   onReject?: () => void;
+  /** Performs the upload and resolves to the stored object URL. */
+  upload: (file: File, onProgress: (transferredBytes: number) => void) => Promise<string>;
+  /** When set, the dropzone is inert and explains why. */
+  disabledReason?: string;
 }
 
-export default function FileUpload({ value, onChange, onReject }: FileUploadProps) {
+export default function FileUpload({ value, onChange, onReject, upload, disabledReason }: FileUploadProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [transferredBytes, setTransferredBytes] = useState(0);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const [uploadFailed, setUploadFailed] = useState(false);
 
-    {/*Simulated progress for testing
-        TODO: update to use real progress of uploaded file */}
-    const simulateUpload = useCallback(
-        (file: File) => {
+    const startUpload = useCallback(
+        async (file: File) => {
         setPendingFile(file);
         setIsUploading(true);
+        setUploadFailed(false);
         setTransferredBytes(0);
 
-        const total = file.size;
-        const step = total / 15; // ~15 ticks to finish
-        let transferred = 0;
-
-        intervalRef.current = setInterval(() => {
-            transferred += step;
-            if (transferred >= total) {
-            transferred = total;
-            if (intervalRef.current) clearInterval(intervalRef.current);
-            setTransferredBytes(total);
+        try {
+            const objectUrl = await upload(file, setTransferredBytes);
+            setTransferredBytes(file.size);
+            onChange(file, objectUrl);
+        } catch {
+            setUploadFailed(true);
+            onChange(null, null);
+        } finally {
             setIsUploading(false);
             setPendingFile(null);
-            onChange(file); // flip to selected state
-            } else {
-            setTransferredBytes(transferred);
-            }
-        }, 100);
+        }
         },
-        [onChange],
+        [onChange, upload],
     );
 
     {/*When the file is dropped, check if it's accepted*/}
     const onDrop = useCallback(
         (accepted: File[], rejections: FileRejection[]) => {
         if (rejections.length > 0) {
+            setUploadFailed(false);
             onReject?.();
             return;
         }
-        if (accepted[0]) simulateUpload(accepted[0]);
+        if (accepted[0]) startUpload(accepted[0]);
         },
-        [simulateUpload, onReject],
+        [startUpload, onReject],
     );
 
     {/*Dropzone component to allow user to drop in files*/}
@@ -66,12 +65,14 @@ export default function FileUpload({ value, onChange, onReject }: FileUploadProp
         maxSize: MAX_FILE_SIZE_BYTES,
         maxFiles: 1,
         multiple: false,
-        disabled: isUploading,
+        disabled: isUploading || Boolean(disabledReason),
     });
 
     const borderColor = isDragActive
       ? 'var(--color-core-green)'
-      : 'var(--color-black-200)';
+      : uploadFailed
+        ? 'var(--color-error-red)'
+        : 'var(--color-black-200)';
 
     if (isUploading && pendingFile) {
         return (
@@ -90,7 +91,7 @@ export default function FileUpload({ value, onChange, onReject }: FileUploadProp
             <input {...getInputProps()} />
             <FilePreview
                 file={value}
-                onRemove={() => onChange(null)}
+                onRemove={() => onChange(null, null)}
                 onReplace={open}
             />
             </>
@@ -105,7 +106,8 @@ export default function FileUpload({ value, onChange, onReject }: FileUploadProp
         border: `1px dashed ${borderColor}`,
         borderRadius: '6px',
         padding: '32px 16px',
-        cursor: 'pointer',
+        cursor: disabledReason ? 'not-allowed' : 'pointer',
+        opacity: disabledReason ? 0.6 : 1,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -127,9 +129,14 @@ export default function FileUpload({ value, onChange, onReject }: FileUploadProp
       </p>
 
       <p style={{ fontSize: '12px', color: 'var(--color-black-500)', margin: '4px 0 0' }}>
-        PDF only
+        {disabledReason ?? 'PDF only'}
       </p>
-      
+
+      {uploadFailed && (
+        <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--color-error-red)', margin: '8px 0 0' }}>
+          File failed to upload
+        </p>
+      )}
     </div>
   );
 }

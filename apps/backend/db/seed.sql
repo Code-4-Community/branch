@@ -38,9 +38,9 @@ INSERT INTO branch.project_donations (donor_id, project_id, amount, donated_at) 
 (3, 3, 90000, '2025-06-20');
 
 INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours) VALUES
-(1, 1, 'PI', '2025-01-01', 100.00),
-(1, 2, 'Accountant', '2025-02-01', 80.00),
-(2, 3, 'Staff', '2025-03-15', 60.00);
+(1, 1, 'Director', '2025-01-01', 100.00),
+(1, 2, 'Director', '2025-02-01', 80.00),
+(2, 3, 'Student', '2025-03-15', 60.00);
 
 INSERT INTO branch.expenditures (project_id, entered_by, amount, category, description, spent_on) VALUES
 (1, 1, 5000, 'Travel', 'Domestic conference attendance', '2025-02-10'),

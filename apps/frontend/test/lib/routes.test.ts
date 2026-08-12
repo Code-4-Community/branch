@@ -53,18 +53,16 @@ describe('classifyRoute', () => {
 });
 
 describe('requiresAdmin', () => {
-  it.each([
-    '/expenses',
-    '/reports/',
-    '/accounts',
-    '/expenses/123',
-    '/dashboard',
-    '/dashboard/',
-  ])('requires admin for %s', (path) => {
-    expect(requiresAdmin(path)).toBe(true);
-  });
+  it.each(['/dashboard', '/dashboard/', '/reports/', '/accounts'])(
+    'requires admin for %s',
+    (path) => {
+      expect(requiresAdmin(path)).toBe(true);
+    },
+  );
 
-  it.each(['/donors', '/projects/7', '/reports-archive'])(
+  // Non-admins submit expenses, so the page itself is not admin-gated; only the
+  // approve/deny controls inside the review modal are.
+  it.each(['/donors', '/projects/7', '/reports-archive', '/expenses', '/expenses/123'])(
     'does not require admin for %s',
     (path) => {
       expect(requiresAdmin(path)).toBe(false);

@@ -24,7 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Projects", href: "/projects" },
   { label: "Donors", href: "/donors" },
   { label: "Donations", href: "/donations" },
-  { label: "Expenses", href: "/expenses", roles: ["admin"] },
+  { label: "Expenses", href: "/expenses" },
   { label: "Reports", href: "/reports", roles: ["admin"] },
   { label: "Accounts", href: "/accounts", roles: ["admin"] },
   { label: "Log Out", action: "logout" },

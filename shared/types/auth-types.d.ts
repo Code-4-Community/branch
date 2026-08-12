@@ -1,12 +1,13 @@
 /**
- * Shared auth DTOs used by every lambda's auth.ts.
+ * The single declaration of the auth DTOs. @branch/lambda-auth re-exports these
+ * rather than declaring its own copy.
  */
 
 export interface AuthenticatedUser {
   cognitoSub: string;
   userId?: number;
   email?: string;
-  isAdmin?: boolean;
+  isAdmin: boolean;
   cognitoGroups?: string[];
 }
 

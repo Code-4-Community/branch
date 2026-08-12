@@ -30,13 +30,15 @@ const PUBLIC_PREFIXES = [
   '/reset-password',
 ] as const;
 
-/** Require `isAdmin` on top of authentication. */
-const ADMIN_PREFIXES = [
-  '/dashboard',
-  '/expenses',
-  '/reports',
-  '/accounts',
-] as const;
+/**
+ * Require `isAdmin` on top of authentication.
+ *
+ * `/expenses` is deliberately not here: non-admins submit expenses and read
+ * their own submissions there. Only the approve/deny controls and admin notes
+ * inside the review modal are admin-gated, and the backend already lets any
+ * authenticated user list expenditures.
+ */
+const ADMIN_PREFIXES = ['/dashboard', '/reports', '/accounts'] as const;
 
 /**
  * Strips the trailing slash and lowercases.
