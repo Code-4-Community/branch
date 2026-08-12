@@ -49,10 +49,18 @@ describe('RootPage', () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/login'));
   });
 
-  it('sends an authenticated user to /dashboard', async () => {
-    authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+  it('sends an authenticated admin to /dashboard', async () => {
+    authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
     render(<RootPage />);
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/dashboard'));
+  });
+
+  it('sends an authenticated non-admin somewhere they can load', async () => {
+    // /dashboard is admin-only, so routing every session there would land a
+    // non-admin on the no-access panel straight off the root route.
+    authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+    render(<RootPage />);
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/projects'));
   });
 
   it('waits for the session before routing', () => {

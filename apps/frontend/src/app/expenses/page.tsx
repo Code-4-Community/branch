@@ -26,7 +26,8 @@ const MONTHS = [
 const SORT_OPTIONS = ['Amount', 'Date'];
 const ROWS_PER_PAGE = 10;
 
-export const EXPENSE_CATEGORIES = [
+// Not exported: Next.js rejects unknown exports from a page module.
+const EXPENSE_CATEGORIES = [
   'General',
   'Travel',
   'Travel Foreign',

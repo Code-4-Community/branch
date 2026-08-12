@@ -46,6 +46,15 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
 
       try {
+        // Cards read "this year" / "active projects", so spend is scoped to the
+        // calendar year and the count to projects that have not ended. The
+        // per-project budget breakdown below stays lifetime-to-date.
+        const now = new Date();
+        const year = now.getUTCFullYear();
+        const yearStart = `${year}-01-01`;
+        const yearEnd = `${year}-12-31`;
+        const today = now.toISOString().slice(0, 10);
+
         const [
           totalSpentRow,
           totalProjectsRow,
@@ -57,13 +66,23 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ] = await Promise.all([
           db.selectFrom('branch.expenditures')
             .select(db.fn.sum('amount').as('total'))
+            .where('spent_on', '>=', yearStart as any)
+            .where('spent_on', '<=', yearEnd as any)
             .executeTakeFirst(),
           db.selectFrom('branch.projects')
             .select(db.fn.count('project_id').as('count'))
+            .where((eb) =>
+              eb.or([
+                eb('end_date', 'is', null),
+                eb('end_date', '>=', today as any),
+              ]),
+            )
             .executeTakeFirst(),
           db.selectFrom('branch.expenditures')
             .select(['category', db.fn.sum('amount').as('total')])
             .where('category', 'is not', null)
+            .where('spent_on', '>=', yearStart as any)
+            .where('spent_on', '<=', yearEnd as any)
             .groupBy('category')
             .orderBy(db.fn.sum('amount'), 'desc')
             .limit(1)
@@ -83,6 +102,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           db.selectFrom('branch.expenditures')
             .select(['spent_on', 'category', 'amount'])
             .where('category', 'is not', null)
+            .where('spent_on', '>=', yearStart as any)
+            .where('spent_on', '<=', yearEnd as any)
             .execute(),
         ]);
 
@@ -120,11 +141,23 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         }
         const expensesByMonth = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
 
+        // Computed here, not client-side: totalSpent is the divisor and may be 0.
+        const topCategoryAmount = Number(topCategoryRow?.total ?? 0);
+        const topExpenseCategory = topCategoryRow
+          ? {
+              category: topCategoryRow.category,
+              amount: topCategoryAmount,
+              percentage:
+                totalSpent > 0
+                  ? Number(((topCategoryAmount / totalSpent) * 100).toFixed(2))
+                  : 0,
+            }
+          : null;
+
         return json(200, {
+          year,
           summary: {
-            topExpenseCategory: topCategoryRow
-              ? { category: topCategoryRow.category, amount: Number(topCategoryRow.total ?? 0) }
-              : null,
+            topExpenseCategory,
             totalSpent,
             totalProjects,
             averageSpendPerProject: Number(averageSpendPerProject.toFixed(2)),

@@ -20,11 +20,17 @@ type ArchiveProps = {
     end_date: string;
 };
 
-type ProjectCardProps = ActiveProps | ArchiveProps;
+// `fullWidth` hands sizing to the parent: the responsive widths below are tuned
+// for the projects list and would shrink inside a grid cell.
+type ProjectCardProps = (ActiveProps | ArchiveProps) & { fullWidth?: boolean };
 
 export default function ProjectCard(props: ProjectCardProps) {
+    const widthClasses = props.fullWidth
+        ? 'w-full'
+        : 'w-full sm:w-[50%] md:w-[35%] lg:w-[25%]';
+
     return (
-        <div className="!border-[1px] border-solid border-black-300 w-full sm:w-[50%] md:w-[35%] lg:w-[25%] rounded-[4px] overflow-hidden">
+        <div className={`!border-[1px] border-solid !border-black-300 ${widthClasses} rounded-[4px] overflow-hidden`}>
             <div className="flex flex-col !gap-4 !p-4">
                 <h4 className="!px-2">{props.name}</h4>
                 <div className="flex flex-row !px-2 !gap-4 min-w-0">
@@ -48,15 +54,24 @@ export default function ProjectCard(props: ProjectCardProps) {
                     </div>
                 </div>
                 {props.variant === 'active' ? (
-                    <div className="flex flex-row items-center !gap-2">
-                        <div className="w-full !h-[24px] rounded-full bg-black-100">
-                            <div
-                                style={{ width: `${Math.round((props.budget_used / props.total_budget) * 100)}%` }}
-                                className="!h-full rounded-full bg-core-green"
-                            />
-                        </div>
-                        <p>{Math.round((props.budget_used / props.total_budget) * 100)}%</p>
-                    </div>
+                    // A project with no budget set divides by zero; show 0% rather
+                    // than "NaN%" and a bar of unset width.
+                    (() => {
+                        const percentUsed = props.total_budget > 0
+                            ? Math.round((props.budget_used / props.total_budget) * 100)
+                            : 0;
+                        return (
+                            <div className="flex flex-row items-center !gap-2">
+                                <div className="w-full !h-[24px] rounded-full bg-black-100">
+                                    <div
+                                        style={{ width: `${percentUsed}%` }}
+                                        className="!h-full rounded-full bg-core-green"
+                                    />
+                                </div>
+                                <p>{percentUsed}%</p>
+                            </div>
+                        );
+                    })()
                 ) : (
                     <div className="flex flex-row w-full items-center !gap-4 !px-2">
                         <div className="flex flex-col !gap-1">

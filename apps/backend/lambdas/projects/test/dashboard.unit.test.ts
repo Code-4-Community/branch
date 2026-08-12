@@ -119,7 +119,16 @@ describe('GET /dashboard unit tests', () => {
       expect(body.summary.totalSpent).toBe(18000);
       expect(body.summary.totalProjects).toBe(4);
       expect(body.summary.averageSpendPerProject).toBe(4500);
-      expect(body.summary.topExpenseCategory).toEqual({ category: 'Travel', amount: 6800 });
+      expect(body.summary.topExpenseCategory).toEqual({
+        category: 'Travel',
+        amount: 6800,
+        percentage: 37.78,
+      });
+    });
+
+    test('200: response is stamped with the year the aggregates cover', async () => {
+      const res = await handler(getEvent());
+      expect(JSON.parse(res.body).year).toBe(new Date().getUTCFullYear());
     });
 
     test('200: projects breakdown joins spent and staff_count by project_id', async () => {
@@ -178,6 +187,21 @@ describe('GET /dashboard unit tests', () => {
       expect(body.summary.topExpenseCategory).toBeNull();
       expect(body.projects).toEqual([]);
       expect(body.expensesByMonth).toEqual([]);
+    });
+
+    test('200: top category percentage is 0 rather than NaN when nothing was spent', async () => {
+      mockDb.selectFrom = jest.fn();
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '0' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '2' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ category: 'Travel', total: '0' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
+      const res = await handler(getEvent());
+      const body = JSON.parse(res.body);
+      expect(body.summary.topExpenseCategory.percentage).toBe(0);
     });
 
     test('500: db failure surfaces as 500', async () => {

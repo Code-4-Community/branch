@@ -1,7 +1,9 @@
 import {
+  ADMIN_LANDING_PATH,
+  DEFAULT_LANDING_PATH,
   LOGIN_PATH,
-  POST_LOGIN_PATH,
   classifyRoute,
+  landingPathFor,
   normalizePath,
   requiresAdmin,
   safeNextPath,
@@ -51,19 +53,37 @@ describe('classifyRoute', () => {
 });
 
 describe('requiresAdmin', () => {
-  it.each(['/expenses', '/reports/', '/accounts', '/expenses/123'])(
-    'requires admin for %s',
-    (path) => {
-      expect(requiresAdmin(path)).toBe(true);
-    },
-  );
+  it.each([
+    '/expenses',
+    '/reports/',
+    '/accounts',
+    '/expenses/123',
+    '/dashboard',
+    '/dashboard/',
+  ])('requires admin for %s', (path) => {
+    expect(requiresAdmin(path)).toBe(true);
+  });
 
-  it.each(['/dashboard', '/donors', '/projects/7', '/reports-archive'])(
+  it.each(['/donors', '/projects/7', '/reports-archive'])(
     'does not require admin for %s',
     (path) => {
       expect(requiresAdmin(path)).toBe(false);
     },
   );
+});
+
+describe('landingPathFor', () => {
+  it('sends an admin to the dashboard', () => {
+    expect(landingPathFor(true)).toBe(ADMIN_LANDING_PATH);
+  });
+
+  it('sends everyone else somewhere they can actually load', () => {
+    // Regression guard: the landing route was /dashboard for every role, so
+    // making the dashboard admin-only dropped non-admins on the no-access panel
+    // the instant they signed in.
+    expect(landingPathFor(false)).toBe(DEFAULT_LANDING_PATH);
+    expect(requiresAdmin(DEFAULT_LANDING_PATH)).toBe(false);
+  });
 });
 
 describe('safeNextPath', () => {
@@ -82,9 +102,12 @@ describe('safeNextPath', () => {
     ['', 'empty value'],
   ];
 
-  it.each(unsafe)('rejects %p (%s) and falls back to the dashboard', (raw) => {
-    expect(safeNextPath(raw)).toBe(POST_LOGIN_PATH);
-  });
+  it.each(unsafe)(
+    'rejects %p (%s) and falls back to the default landing route',
+    (raw) => {
+      expect(safeNextPath(raw)).toBe(DEFAULT_LANDING_PATH);
+    },
+  );
 
   it('honours an explicit fallback', () => {
     expect(safeNextPath(null, LOGIN_PATH)).toBe(LOGIN_PATH);
