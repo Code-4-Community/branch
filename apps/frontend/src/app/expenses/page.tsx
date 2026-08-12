@@ -11,12 +11,20 @@ import {
   Button,
 } from '@chakra-ui/react';
 import DropdownSelector from '../components/DropdownSelector';
+import ExpenseFilterMenu, { type FilterGroup } from '../components/ExpenseFilterMenu';
+import ReviewExpenseModal from '../components/ReviewExpenseModal';
 import { useApi } from '@/hooks/useApi';
-import { CiFilter } from 'react-icons/ci';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
+import { IoClose } from 'react-icons/io5';
 import ExpensesTable from '../components/ExpensesTable';
-import { Expenditure, Project } from '@/types';
+import { getReceiptDownloadUrl } from '@/lib/expenditures';
+import {
+  EXPENDITURE_STATUSES,
+  EXPENDITURE_STATUS_LABELS,
+  Expenditure,
+  Project,
+} from '@/types';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -26,7 +34,8 @@ const MONTHS = [
 const SORT_OPTIONS = ['Amount', 'Date'];
 const ROWS_PER_PAGE = 10;
 
-export const EXPENSE_CATEGORIES = [
+// Not exported: Next.js rejects non-page exports from a page module.
+const EXPENSE_CATEGORIES = [
   'General',
   'Travel',
   'Travel Foreign',
@@ -56,6 +65,7 @@ function ExpensePageContent() {
     months: [] as string[],
     types: [] as string[],
     projects: [] as string[],
+    statuses: [] as string[],
     sort: '',
     page: '',
   });
@@ -64,17 +74,16 @@ function ExpensePageContent() {
   const selectedMonths = filters.months;
   const selectedTypes = filters.types;
   const selectedProjects = filters.projects;
+  const selectedStatuses = filters.statuses;
   const sortOption = filters.sort;
   const currentPage = parseInt(filters.page, 10) || 1;
 
   // Dropdown visibility
-  const [showMonthFilter, setShowMonthFilter] = useState(false);
-  const [showTypeFilter, setShowTypeFilter] = useState(false);
-  const [showProjectFilter, setShowProjectFilter] = useState(false);
   const [showSortBy, setShowSortBy] = useState(false);
 
-  // Modal
+  // Modals
   const [showNewExpense, setShowNewExpense] = useState(false);
+  const [reviewExpenditureId, setReviewExpenditureId] = useState<number | null>(null);
 
 
   // Fetch expenditures
@@ -107,6 +116,51 @@ function ExpensePageContent() {
 
   const uniqueCategories = EXPENSE_CATEGORIES;
 
+  const projectNames = Object.fromEntries(projects.map((p) => [p.project_id, p.name]));
+
+  const filterGroups: FilterGroup[] = [
+    {
+      key: 'months',
+      label: 'Month',
+      options: MONTHS.map((m) => ({ value: m, label: m })),
+      selected: selectedMonths,
+      onChange: (next) => setFilter({ months: next, page: '' }),
+    },
+    {
+      key: 'projects',
+      label: 'Project',
+      options: projects.map((p) => ({ value: p.name, label: p.name })),
+      selected: selectedProjects,
+      onChange: (next) => setFilter({ projects: next, page: '' }),
+    },
+    {
+      key: 'types',
+      label: 'Type',
+      options: uniqueCategories.map((c) => ({ value: c, label: c })),
+      selected: selectedTypes,
+      onChange: (next) => setFilter({ types: next, page: '' }),
+    },
+    {
+      key: 'statuses',
+      label: 'Status',
+      options: EXPENDITURE_STATUSES.map((s) => ({ value: s, label: EXPENDITURE_STATUS_LABELS[s] })),
+      selected: selectedStatuses,
+      onChange: (next) => setFilter({ statuses: next, page: '' }),
+    },
+  ];
+
+  const activeFilterCount =
+    selectedMonths.length + selectedProjects.length + selectedTypes.length + selectedStatuses.length;
+
+  async function handleViewReceipt(expenditure: Expenditure) {
+    try {
+      const { downloadUrl } = await getReceiptDownloadUrl(expenditure.expenditure_id);
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open receipt');
+    }
+  }
+
   // Filtered + sorted data
   const filteredData = expenditures
     .filter((e) => {
@@ -127,6 +181,9 @@ function ExpensePageContent() {
       if (selectedProjects.length > 0) {
         const projectName = projects.find((p) => p.project_id === e.project_id)?.name;
         if (!projectName || !selectedProjects.includes(projectName)) return false;
+      }
+      if (selectedStatuses.length > 0) {
+        if (!selectedStatuses.includes(e.status)) return false;
       }
       return true;
     })
@@ -175,104 +232,32 @@ function ExpensePageContent() {
 
           {/* Toolbar */}
           <HStack width="100%" justify="space-between" paddingTop="32px" paddingBottom="32px">
-            <HStack width="30%">
+            <HStack width="30%" gap="12px">
               <Input
                 placeholder="Search ..."
                 variant="outline"
                 value={query}
                 onChange={(e) => setFilter({ q: e.target.value, page: '' })}
               />
+              {activeFilterCount > 0 && (
+                <Button
+                  backgroundColor="var(--color-core-white)"
+                  color="var(--color-core-black)"
+                  border="1px solid"
+                  borderColor="var(--color-black-500)"
+                  flexShrink={0}
+                  onClick={() =>
+                    setFilter({ months: [], types: [], projects: [], statuses: [], page: '' })
+                  }
+                >
+                  <IoClose />
+                  Clear Filters ({activeFilterCount})
+                </Button>
+              )}
             </HStack>
             <HStack>
-              {/* Project Filter */}
-              <div style={{ position: 'relative' }}>
-                <Button
-                  backgroundColor="var(--color-core-white)"
-                  color="var(--color-core-black)"
-                  border="1px solid"
-                  borderColor="var(--color-black-500)"
-                  onClick={() => {
-                    setShowProjectFilter((prev) => !prev);
-                    setShowMonthFilter(false);
-                    setShowTypeFilter(false);
-                    setShowSortBy(false);
-                  }}
-                >
-                  <CiFilter />
-                  Project
-                </Button>
-                {showProjectFilter && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                    <DropdownSelector
-                      options={projects.map((p) => p.name)}
-                      multiSelect={true}
-                      hideTrigger={true}
-                      value={selectedProjects}
-                      onChange={(val) => setFilter({ projects: Array.isArray(val) ? val : [val], page: '' })}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Month Filter */}
-              <div style={{ position: 'relative' }}>
-                <Button
-                  backgroundColor="var(--color-core-white)"
-                  color="var(--color-core-black)"
-                  border="1px solid"
-                  borderColor="var(--color-black-500)"
-                  onClick={() => {
-                    setShowMonthFilter((prev) => !prev);
-                    setShowProjectFilter(false);
-                    setShowTypeFilter(false);
-                    setShowSortBy(false);
-                  }}
-                >
-                  <CiFilter />
-                  Month
-                </Button>
-                {showMonthFilter && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                    <DropdownSelector
-                      options={MONTHS}
-                      multiSelect={true}
-                      hideTrigger={true}
-                      value={selectedMonths}
-                      onChange={(val) => setFilter({ months: Array.isArray(val) ? val : [val], page: '' })}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Type Filter */}
-              <div style={{ position: 'relative' }}>
-                <Button
-                  backgroundColor="var(--color-core-white)"
-                  color="var(--color-core-black)"
-                  border="1px solid"
-                  borderColor="var(--color-black-500)"
-                  onClick={() => {
-                    setShowTypeFilter((prev) => !prev);
-                    setShowProjectFilter(false);
-                    setShowMonthFilter(false);
-                    setShowSortBy(false);
-                  }}
-                >
-                  <CiFilter />
-                  Type
-                </Button>
-                {showTypeFilter && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                    <DropdownSelector
-                      options={uniqueCategories}
-                      multiSelect={true}
-                      hideTrigger={true}
-                      value={selectedTypes}
-                      onChange={(val) => setFilter({ types: Array.isArray(val) ? val : [val], page: '' })}
-                    />
-                  </div>
-                )}
-              </div>
+              {/* Filter By */}
+              <ExpenseFilterMenu groups={filterGroups} />
 
               {/* Sort By */}
               <div style={{ position: 'relative' }}>
@@ -281,12 +266,7 @@ function ExpensePageContent() {
                   color="var(--color-core-black)"
                   border="1px solid"
                   borderColor="var(--color-black-500)"
-                  onClick={() => {
-                    setShowSortBy((prev) => !prev);
-                    setShowProjectFilter(false);
-                    setShowMonthFilter(false);
-                    setShowTypeFilter(false);
-                  }}
+                  onClick={() => setShowSortBy((prev) => !prev)}
                 >
                   <LuArrowDownUp />
                   Sort By
@@ -322,7 +302,12 @@ function ExpensePageContent() {
 
           {/* Table */}
           {!loading && !error && (
-            <ExpensesTable expenditures={paginatedData} showDescription={true} />
+            <ExpensesTable
+              expenditures={paginatedData}
+              projectNames={projectNames}
+              onViewReceipt={handleViewReceipt}
+              onRowClick={(e) => setReviewExpenditureId(e.expenditure_id)}
+            />
           )}
 
           {/* Pagination */}
@@ -343,6 +328,17 @@ function ExpensePageContent() {
           onSuccess={handleExpenseAdded}
           categories={uniqueCategories}
           projects={projects}
+        />
+
+        {/* Review Expense Modal */}
+        <ReviewExpenseModal
+          expenditureId={reviewExpenditureId}
+          open={reviewExpenditureId !== null}
+          onClose={() => setReviewExpenditureId(null)}
+          onReviewed={async () => {
+            setReviewExpenditureId(null);
+            await fetchExpenditures();
+          }}
         />
       </main>
     </div>

@@ -1,7 +1,22 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
+
+const REGION = process.env.AWS_REGION ?? 'us-east-2';
+const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
+const s3 = new S3Client({ region: REGION });
+
+// Receipts are PDFs only, matching the dropzone in AddExpenseModal.
+const RECEIPT_CONTENT_TYPE = 'application/pdf';
+
+// Receipts live in the same bucket as reports, under their own prefix.
+function receiptKeyFromUrl(objectUrl: string): string | null {
+  const match = objectUrl.match(/^https:\/\/[^/]+\/(receipts\/.+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
   const authCheck = checkAuthorization(authContext, level, resourceUserId);
@@ -179,6 +194,114 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       });
     }
 
+    // GET /expenditures/upload-url — presigned PUT for a receipt PDF.
+    // Must be matched before GET /expenditures/{id}, which also matches one segment.
+    if ((normalizedPath === '/expenditures/upload-url' || normalizedPath === '/upload-url') && method === 'GET') {
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+      const { user } = authContext;
+
+      const queryParams = event.queryStringParameters || {};
+      const { fileName, projectId: projectIdStr } = queryParams;
+
+      if (!fileName || typeof fileName !== 'string') {
+        return json(400, { message: 'fileName is required' });
+      }
+      if (fileName.split('.').pop()?.toLowerCase() !== 'pdf') {
+        return json(400, { message: 'Only PDF receipts are supported' });
+      }
+      if (!projectIdStr || !/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
+        return json(400, { message: 'projectId must be a positive integer' });
+      }
+      const projectId = parseInt(projectIdStr, 10);
+
+      // Same authorization as POST /expenditures: you may only attach a receipt
+      // to a project you are allowed to file an expenditure against.
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', projectId)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+          return json(403, { message: 'Unable to upload a receipt for this project' });
+        }
+      }
+
+      const key = `receipts/${projectId}/${Date.now()}-${fileName}`;
+      const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        ContentType: RECEIPT_CONTENT_TYPE,
+      }), { expiresIn: 3600 });
+
+      return json(200, {
+        uploadUrl,
+        objectUrl: `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`,
+      });
+    }
+
+    // GET /expenditures/{id}/receipt — presigned GET so the receipt can be read
+    // without the bucket being public.
+    const receiptSegments = normalizedPath.split('/').filter(Boolean);
+    if (receiptSegments.length >= 2 && receiptSegments[receiptSegments.length - 1] === 'receipt' && method === 'GET') {
+      const id = receiptSegments[receiptSegments.length - 2];
+      if (!/^\d+$/.test(id) || parseInt(id, 10) < 1) {
+        return json(400, { message: 'id must be a positive integer' });
+      }
+
+      const authContext = await authenticateRequest(event);
+      if (!authContext.isAuthenticated || !authContext.user) {
+        return json(401, { message: 'Authentication required' });
+      }
+      const { user } = authContext;
+
+      const expenditure = await db
+        .selectFrom('branch.expenditures')
+        .where('expenditure_id', '=', Number(id))
+        .selectAll()
+        .executeTakeFirst();
+
+      if (!expenditure) return json(404, { message: 'Expenditure not found' });
+
+      // Mirrors GET /expenditures/{id}: admin, or any membership on the project.
+      if (!user.isAdmin) {
+        const membership = await db
+          .selectFrom('branch.project_memberships')
+          .where('project_id', '=', expenditure.project_id)
+          .where('user_id', '=', user.userId!)
+          .select('role')
+          .executeTakeFirst();
+
+        if (!membership) {
+          return json(403, { message: 'Unable to view this receipt' });
+        }
+      }
+
+      if (!expenditure.receipt_url) {
+        return json(404, { message: 'Expenditure has no receipt' });
+      }
+
+      const key = receiptKeyFromUrl(expenditure.receipt_url);
+      if (!key) {
+        return json(422, { message: 'Receipt is not stored in the receipts bucket' });
+      }
+
+      const downloadUrl = await getSignedUrl(s3, new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+      }), { expiresIn: 300 });
+
+      return json(200, {
+        downloadUrl,
+        fileName: key.split('/').pop(),
+      });
+    }
+
     // GET /expenditures/{id}
     if (/^\/[^\/]+$/.test(normalizedPath) && method === 'GET') {
       const id = normalizedPath.split('/')[1];
@@ -211,6 +334,21 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         }
       }
 
+      // "Submitted By" in the review modal needs a name, not an id.
+      const submitter = expenditure.entered_by
+        ? await db
+            .selectFrom('branch.users')
+            .where('user_id', '=', expenditure.entered_by)
+            .select(['name'])
+            .executeTakeFirst()
+        : undefined;
+
+      const project = await db
+        .selectFrom('branch.projects')
+        .where('project_id', '=', expenditure.project_id)
+        .select(['name'])
+        .executeTakeFirst();
+
       return json(200, {
         ok: true,
         route: 'GET /expenditures/{id}',
@@ -218,11 +356,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         body: {
           expenditureId: expenditure.expenditure_id,
           projectId: expenditure.project_id,
+          projectName: project?.name ?? null,
           enteredBy: expenditure.entered_by,
+          submittedByName: submitter?.name ?? null,
           amount: expenditure.amount,
           category: expenditure.category,
           description: expenditure.description,
           status: expenditure.status,
+          adminNotes: expenditure.admin_notes,
           receiptUrl: expenditure.receipt_url,
           spent_on: expenditure.spent_on,
           createdAt: expenditure.created_at,
@@ -292,10 +433,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
-      // Only 'approved' or 'denied' may be set through this endpoint
       const statusResult = ExpenditureValidationUtils.validateApprovalStatus(body.status);
       if (statusResult instanceof Error) {
         return json(400, { message: statusResult.message });
+      }
+
+      const adminNotesResult = ExpenditureValidationUtils.validateAdminNotes(body.adminNotes);
+      if (adminNotesResult instanceof Error) {
+        return json(400, { message: adminNotesResult.message });
       }
 
       // make sure expenditure exists
@@ -312,7 +457,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       // update
       await db
         .updateTable('branch.expenditures')
-        .set({ status: statusResult })
+        .set(
+          adminNotesResult === undefined
+            ? { status: statusResult }
+            : { status: statusResult, admin_notes: adminNotesResult },
+        )
         .where('expenditure_id', '=', Number(id))
         .execute();
 
@@ -327,7 +476,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ok: true,
         route: 'PATCH /expenditures/{id}/status',
         pathParams: { id },
-        body: { expenditureId: updated!.expenditure_id, status: updated!.status },
+        body: {
+          expenditureId: updated!.expenditure_id,
+          status: updated!.status,
+          adminNotes: updated!.admin_notes,
+        },
       });
     }
     // <<< ROUTES-END

@@ -46,6 +46,27 @@ resource "aws_iam_role_policy" "lambda_cognito_admin" {
   })
 }
 
+# The expenditures lambda presigns receipt uploads and downloads. A presigned
+# URL carries the signer's permissions, so the role needs both PutObject and
+# GetObject or the browser's PUT/GET fails AccessDenied.
+resource "aws_iam_role_policy" "lambda_s3_objects" {
+  name = "branch-lambda-s3-objects"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "LambdaReportsBucketObjects"
+      Effect = "Allow"
+      Action = [
+        "s3:PutObject",
+        "s3:GetObject",
+      ]
+      Resource = "${aws_s3_bucket.reports_bucket.arn}/*"
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 

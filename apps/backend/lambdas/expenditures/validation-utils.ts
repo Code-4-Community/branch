@@ -88,6 +88,18 @@ export class ExpenditureValidationUtils {
         return status as ExpenditureStatus;
     }
 
+    static validateAdminNotes(adminNotes: unknown): string | undefined | Error {
+        if (adminNotes === undefined || adminNotes === null) {
+            return undefined;
+        }
+
+        if (typeof adminNotes !== 'string' || adminNotes.trim() === '') {
+            return new Error('adminNotes must be a non-empty string');
+        }
+
+        return adminNotes;
+    }
+
     static validateReceiptUrl(receiptUrl: unknown): string | undefined | Error {
         if (receiptUrl === undefined || receiptUrl === null) {
             return undefined;
@@ -140,7 +152,8 @@ export class ExpenditureValidationUtils {
             return status;
         }
 
-        const receiptUrl = this.validateReceiptUrl(body.receipt_url);
+        // Callers send camelCase; `receipt_url` is still accepted for older clients.
+        const receiptUrl = this.validateReceiptUrl(body.receiptUrl ?? body.receipt_url);
         if (receiptUrl instanceof Error) {
             return receiptUrl;
         }

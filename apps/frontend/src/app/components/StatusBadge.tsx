@@ -1,0 +1,65 @@
+'use client';
+
+import { EXPENDITURE_STATUS_LABELS, type ExpenditureStatus } from '@/types';
+
+const STATUS_COLORS: Record<ExpenditureStatus, string> = {
+  approved: 'var(--color-accent-light-green)',
+  pending: 'var(--color-status-pending)',
+  needs_more_info: 'var(--color-error-light-red)',
+};
+
+/**
+ * The DB check constraint still permits the legacy `denied` value, so rows
+ * written before this flow existed must render as something rather than an
+ * empty pill.
+ */
+function describe(status: ExpenditureStatus) {
+  return {
+    color: STATUS_COLORS[status] ?? 'var(--color-black-200)',
+    label: EXPENDITURE_STATUS_LABELS[status] ?? String(status).replace(/_/g, ' '),
+  };
+}
+
+interface StatusBadgeProps {
+  status: ExpenditureStatus;
+  /** Renders as a button when the badge is a choice, e.g. Admin Decision. */
+  onClick?: () => void;
+  selected?: boolean;
+}
+
+export default function StatusBadge({ status, onClick, selected }: StatusBadgeProps) {
+  const { color, label } = describe(status);
+
+  const style: React.CSSProperties = {
+    backgroundColor: color,
+    color: 'var(--color-core-black)',
+    fontFamily: 'var(--font-body)',
+    fontSize: '16px',
+    width: '81px',
+    height: '29px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    whiteSpace: 'nowrap',
+  };
+
+  if (!onClick) {
+    return <span style={style}>{label}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      style={{
+        ...style,
+        cursor: 'pointer',
+        border: selected ? '2px solid var(--color-core-black)' : '2px solid transparent',
+        opacity: selected ? 1 : 0.55,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
