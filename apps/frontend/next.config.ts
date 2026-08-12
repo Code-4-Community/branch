@@ -11,15 +11,8 @@ import type { NextConfig } from 'next';
 // Unset for prod builds, so the production deploy path is unchanged.
 const previewBasePath = process.env.PREVIEW_BASE_PATH;
 
-// `next dev` inherits `output: 'export'`, and export rejects any dynamic route
-// whose param is not listed in generateStaticParams — so /projects/42 throws
-// locally even though production serves it fine via the CloudFront SPA
-// fallback. Opt out for local runs (see mock-api/README.md); builds and CI
-// never set this, so the deployed output is unchanged.
-const disableStaticExport = process.env.NEXT_DISABLE_STATIC_EXPORT === 'true';
-
 const nextConfig: NextConfig = {
-  ...(disableStaticExport ? {} : { output: 'export' }),
+  output: 'export',
   trailingSlash: true, // emit /route/index.html — clean S3 key mapping
   images: { unoptimized: true }, // no server image optimizer in export
   // basePath already prefixes emitted /_next/* asset URLs, but Next does NOT
