@@ -10,7 +10,6 @@ jest.mock('../../src/lib/authClient', () => ({
 }));
 
 jest.mock('next/navigation', () => ({
-    useParams: () => ({ id: '1' }),
     useRouter: jest.fn(() => ({
         push: jest.fn(),
         replace: jest.fn(),
@@ -19,7 +18,7 @@ jest.mock('next/navigation', () => ({
         forward: jest.fn(),
         refresh: jest.fn(),
     })),
-    usePathname: jest.fn(() => '/'),
+    usePathname: jest.fn(() => '/projects/1/'),
     useSearchParams: jest.fn(() => new URLSearchParams()),
 }));
 
@@ -79,6 +78,9 @@ const overview: ProjectOverview = {
 let resolvers: Array<() => void> = [];
 
 beforeEach(() => {
+    // The page takes the id from the address bar rather than from useParams,
+    // because the static export serves one prerendered shell for every id.
+    window.history.replaceState({}, '', '/projects/1/');
     resolvers = [];
     mockApiFetch.mockImplementation((url: string) => {
         return new Promise((resolve) => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { LuCircleDollarSign, LuDollarSign, LuUsers } from 'react-icons/lu';
 import { FaRegEdit } from 'react-icons/fa';
 import NavBar from '../../components/Navbar';
@@ -20,8 +20,29 @@ import type { ProjectOverview } from '@/types';
 const PREVIEW_EXPENSES = 4;
 const PREVIEW_STAFF = 4;
 
+/**
+ * The project id as it appears in the address bar.
+ *
+ * `useParams()` is wrong here. `output: 'export'` prerenders this route for the
+ * single id in generateStaticParams, and CloudFront serves that one shell for
+ * every /projects/<id>, so on a hard load or deep link the router reports the
+ * placeholder id rather than the one the user asked for — the page would fetch
+ * the wrong project. The pathname is the only source that survives that.
+ *
+ * Undefined until the effect runs, which keeps the prerendered HTML free of any
+ * id and leaves the page in its loading state until the real id is known.
+ */
+function useProjectIdFromUrl(): string | undefined {
+  const pathname = usePathname();
+  const [id, setId] = useState<string>();
+  useEffect(() => {
+    setId(window.location.pathname.split('/').filter(Boolean).pop());
+  }, [pathname]);
+  return id;
+}
+
 export default function ProjectPage() {
-  const { id } = useParams<{ id: string }>();
+  const id = useProjectIdFromUrl();
   const api = useApi();
 
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
