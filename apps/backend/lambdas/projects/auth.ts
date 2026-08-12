@@ -58,7 +58,7 @@ export async function canEditProject(
 
     if (!membership) return false;
 
-    const editableRoles = ['PI', 'Accountant', 'Admin'];
+    const editableRoles = ['Director', 'Admin'];
     return editableRoles.includes(membership.role);
   } catch (error) {
     console.error('Error checking edit access:', error);
@@ -86,7 +86,7 @@ export async function canCreateProject(userId: number): Promise<boolean> {
  *
  * Deleting a project cascades to project_memberships, project_donations,
  * expenditures and reports (ON DELETE CASCADE, see db/migrations/), destroying
- * financial history. A PI may edit a project but must not be able to erase it.
+ * financial history. A Director may edit a project but must not be able to erase it.
  */
 export async function canDeleteProject(userId: number): Promise<boolean> {
   try {

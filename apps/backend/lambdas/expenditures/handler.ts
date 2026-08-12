@@ -118,7 +118,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const { projectID, amount, category, description, status, receiptUrl, spentOn } = validationResult;
 
-      // Authorize: must be global admin, or PI/Accountant/Admin on this project
+      // Authorize: must be global admin, or Director/Admin on this project
       if (!user.isAdmin) {
         const membership = await db
           .selectFrom('branch.project_memberships')
@@ -127,7 +127,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           .select('role')
           .executeTakeFirst();
 
-        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+        if (!membership || !['Director', 'Admin'].includes(membership.role)) {
           return json(403, { message: 'Unable to create expenditure for this project' });
         }
       }
@@ -254,7 +254,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Expenditure not found' });
       }
 
-      // (mirrors POST endpoint) Authorize: must be global admin, or PI/Accountant/Admin on this expenditure's project
+      // (mirrors POST endpoint) Authorize: must be global admin, or Director/Admin on this expenditure's project
       if (!user.isAdmin) {
         const membership = await db
           .selectFrom('branch.project_memberships')
@@ -263,7 +263,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           .select('role')
           .executeTakeFirst();
 
-        if (!membership || !['PI', 'Accountant', 'Admin'].includes(membership.role)) {
+        if (!membership || !['Director', 'Admin'].includes(membership.role)) {
           return json(403, { message: 'Unable to delete this expenditure' });
         }
       }
