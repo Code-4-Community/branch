@@ -33,7 +33,10 @@
   
     /* Errors */
     --color-error-red: #AD1A00;
-    --color-error-light-red: #D68C80;
+    --color-error-light-red: #E17070;
+
+    /* Status pills */
+    --color-status-pending: #FFD167;
 
   /* Font Families */
     --font-heading: 'Roboto Slab', serif;
