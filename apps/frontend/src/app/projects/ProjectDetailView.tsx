@@ -1,18 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
 import { LuCircleDollarSign, LuDollarSign, LuUsers } from 'react-icons/lu';
 import { FaRegEdit } from 'react-icons/fa';
-import NavBar from '../../components/Navbar';
-import Header from '../../components/Header';
-import Button from '../../components/Button';
-import LoadingState from '../../components/LoadingState';
-import SectionHeading from '../../components/SectionHeading';
-import FundingSummary from '../../components/FundingSummary';
-import ExpensesTable from '../../components/ExpensesTable';
-import StaffCard from '../../components/StaffCard';
-import ProjectFormModal from '../../components/ProjectFormModal';
+import NavBar from '../components/Navbar';
+import Header from '../components/Header';
+import Button from '../components/Button';
+import LoadingState from '../components/LoadingState';
+import SectionHeading from '../components/SectionHeading';
+import FundingSummary from '../components/FundingSummary';
+import ExpensesTable from '../components/ExpensesTable';
+import StaffCard from '../components/StaffCard';
+import ProjectFormModal from '../components/ProjectFormModal';
 import { useApi } from '@/hooks/useApi';
 import type { ProjectOverview } from '@/types';
 
@@ -20,29 +19,7 @@ import type { ProjectOverview } from '@/types';
 const PREVIEW_EXPENSES = 4;
 const PREVIEW_STAFF = 4;
 
-/**
- * The project id as it appears in the address bar.
- *
- * `useParams()` is wrong here. `output: 'export'` prerenders this route for the
- * single id in generateStaticParams, and CloudFront serves that one shell for
- * every /projects/<id>, so on a hard load or deep link the router reports the
- * placeholder id rather than the one the user asked for — the page would fetch
- * the wrong project. The pathname is the only source that survives that.
- *
- * Undefined until the effect runs, which keeps the prerendered HTML free of any
- * id and leaves the page in its loading state until the real id is known.
- */
-function useProjectIdFromUrl(): string | undefined {
-  const pathname = usePathname();
-  const [id, setId] = useState<string>();
-  useEffect(() => {
-    setId(window.location.pathname.split('/').filter(Boolean).pop());
-  }, [pathname]);
-  return id;
-}
-
-export default function ProjectPage() {
-  const id = useProjectIdFromUrl();
+export default function ProjectDetailView({ id }: { id: string }) {
   const api = useApi();
 
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
@@ -72,7 +49,7 @@ export default function ProjectPage() {
 
   const shell = (children: React.ReactNode) => (
     <div className="flex min-h-screen">
-      <NavBar />
+      <NavBar activeProjectId={Number(id)} />
       <main className="min-w-0 flex-1 bg-core-white">
         <Header />
         <div className="flex flex-col !gap-4 !px-4 !py-5 sm:!px-8">

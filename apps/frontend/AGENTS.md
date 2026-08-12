@@ -2,7 +2,9 @@
 
 Next.js 15.5 app (App Router, Turbopack), React 19. Talks to the backend lambda microservices. UI: Chakra UI v3 (unstyled primitives) + Tailwind v4. Auth: JWT in localStorage via a React context.
 
-**Deployed as a static SPA.** `next.config.ts` sets `output: 'export'` — `npm run build` emits `out/`, synced to S3 + served by CloudFront (see `infrastructure/aws/frontend_hosting.tf`, `.github/workflows/frontend-deploy.yml`). No server: everything is client-rendered. Dynamic routes (`projects/[id]`) need `generateStaticParams` in a **Server Component** — the page is a thin server wrapper delegating to a `'use client'` component; deep links resolve via the CloudFront SPA fallback. `NEXT_PUBLIC_API_BASE_URL` (set at build) points the client at API Gateway.
+**Deployed as a static SPA.** `next.config.ts` sets `output: 'export'` — `npm run build` emits `out/`, synced to S3 + served by CloudFront (see `infrastructure/aws/frontend_hosting.tf`, `.github/workflows/frontend-deploy.yml`). No server: everything is client-rendered. `NEXT_PUBLIC_API_BASE_URL` (set at build) points the client at API Gateway.
+
+**Per-record pages take the id as a query param, not a path segment** — `/projects?id=1`, via `projectPath()` in `lib/routes.ts`. A dynamic `/projects/[id]` segment only emits documents for the ids `generateStaticParams` knows at build time, and project ids are database rows: every real id would have no document of its own and would fall back to some other page's shell, which the client router then renders as not-found. A query param is one prerendered document that reads the id at runtime, so deep links and refreshes work with no CloudFront rules. Prefer this for any new per-record page; if you ever do add a dynamic segment, it needs `generateStaticParams` in a **Server Component** and a hosting rule to match.
 
 > `README.md` here is `create-next-app` boilerplate — ignore it.
 
@@ -27,8 +29,8 @@ src/
     globals.css             # Tailwind v4 import + @theme custom tokens
     page.tsx                # routes by session; also absorbs the CloudFront SPA fallback
     dashboard/ login/ forgot-password/ reset-password/ donors/ donations/ expenses/
-    projects/page.tsx       # projects index
-    projects/[id]/page.tsx  # dynamic route
+    projects/page.tsx       # list, or one project when ?id= is present
+    projects/ProjectListView.tsx ProjectDetailView.tsx
     components/             # shared UI (AuthGate, Navbar, Header, tables, modals, form fields)
   context/AuthContext.tsx   # useAuth() — session, login/challenge/logout/reset
   hooks/useApi.ts           # useApi() — authenticated HTTP, the one components should use

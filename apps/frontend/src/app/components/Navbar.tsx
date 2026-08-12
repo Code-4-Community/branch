@@ -8,7 +8,7 @@ import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useAuth } from "@/context/AuthContext";
 import { useApi } from "@/hooks/useApi";
 import { assetPath } from "@/lib/asset";
-import { normalizePath } from "@/lib/routes";
+import { normalizePath, projectPath } from "@/lib/routes";
 import type { ProjectSummary } from "@/types";
 import LoadingState from "./LoadingState";
 
@@ -63,12 +63,6 @@ const ROW_STYLE: React.CSSProperties = {
   fontFamily: "inherit",
   transition: "background-color 0.2s ease",
 };
-
-/** Extracts the project id when the current route is a project detail page. */
-function activeProjectIdFrom(path: string): number | null {
-  const match = /^\/projects\/(\d+)$/.exec(path);
-  return match ? Number(match[1]) : null;
-}
 
 /**
  * Flyout listing every project the user can see, so the sidebar can jump
@@ -130,7 +124,7 @@ function ProjectsSubmenu({
         return (
           <Link
             key={project.project_id}
-            href={`/projects/${project.project_id}`}
+            href={projectPath(project.project_id)}
             role="menuitem"
             onClick={onNavigate}
             aria-current={isCurrent ? "page" : undefined}
@@ -158,9 +152,20 @@ function ProjectsSubmenu({
  * filtering below purely decorative. Hiding a link was never a security control
  * anyway — AuthGate enforces admin routes.
  */
-export const NavBar: React.FC<{ roleOverride?: UserRole; activePath?: string }> = ({
+export const NavBar: React.FC<{
+  roleOverride?: UserRole;
+  activePath?: string;
+  /**
+   * Which project the flyout should mark as current. Passed in rather than
+   * derived from the URL because the id is a query param, and reading it here
+   * with `useSearchParams` would force a Suspense boundary onto every page that
+   * renders the rail.
+   */
+  activeProjectId?: number | null;
+}> = ({
   roleOverride,
-  activePath
+  activePath,
+  activeProjectId = null
 }) => {
   const pathname = usePathname?.() ?? "/";
   const currentPath = normalizePath(activePath ?? pathname);
@@ -171,7 +176,6 @@ export const NavBar: React.FC<{ roleOverride?: UserRole; activePath?: string }> 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  const activeProjectId = activeProjectIdFrom(currentPath);
   // Collapsed by default, including on a project page: the flyout overlaps the
   // content beside the rail, so opening it automatically would cover the very
   // page the user just navigated to.

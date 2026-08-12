@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { render, screen, waitFor } from '../utils';
-import ProjectPage from '@/app/projects/[id]/page';
+import ProjectPage from '@/app/projects/page';
 import type { ProjectOverview } from '@/types';
 
 const mockApiFetch = jest.fn();
@@ -18,8 +18,9 @@ jest.mock('next/navigation', () => ({
         forward: jest.fn(),
         refresh: jest.fn(),
     })),
-    usePathname: jest.fn(() => '/projects/1/'),
-    useSearchParams: jest.fn(() => new URLSearchParams()),
+    usePathname: jest.fn(() => '/projects/'),
+    // The route renders the detail view when ?id is present, the list otherwise.
+    useSearchParams: jest.fn(() => new URLSearchParams('id=1')),
 }));
 
 function makeExpenditure(id: number) {
@@ -78,9 +79,6 @@ const overview: ProjectOverview = {
 let resolvers: Array<() => void> = [];
 
 beforeEach(() => {
-    // The page takes the id from the address bar rather than from useParams,
-    // because the static export serves one prerendered shell for every id.
-    window.history.replaceState({}, '', '/projects/1/');
     resolvers = [];
     mockApiFetch.mockImplementation((url: string) => {
         return new Promise((resolve) => {
