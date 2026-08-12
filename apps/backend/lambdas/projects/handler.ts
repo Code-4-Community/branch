@@ -1,4 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { sql } from 'kysely';
 import db from './db';
 import { ProjectValidationUtils } from './validation-utils';
 import {
@@ -55,13 +56,24 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         const yearEnd = `${year}-12-31`;
         const today = now.toISOString().slice(0, 10);
 
+        // A project is active until its end_date passes; a null end_date never
+        // ends. Shared by the count and by the spend feeding the average so the
+        // two can never drift out of agreement.
+        const isActive = (column: any) => (eb: any) =>
+          eb.or([eb(column, 'is', null), eb(column, '>=', today as any)]);
+
+        // Postgres does the month bucketing. Selecting raw rows and grouping them
+        // in JS moved one row per expenditure into the lambda to produce at most
+        // 12 x categories of them, and read a DATE through the runtime's local
+        // timezone, which only lands on the right month because lambda runs UTC.
+        const monthExpr = sql<string>`to_char(date_trunc('month', spent_on), 'YYYY-MM')`;
+
         const [
           totalSpentRow,
           totalProjectsRow,
           topCategoryRow,
+          activeSpentRow,
           projectRows,
-          spentByProject,
-          staffByProject,
           monthRows,
         ] = await Promise.all([
           db.selectFrom('branch.expenditures')
@@ -71,12 +83,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             .executeTakeFirst(),
           db.selectFrom('branch.projects')
             .select(db.fn.count('project_id').as('count'))
-            .where((eb) =>
-              eb.or([
-                eb('end_date', 'is', null),
-                eb('end_date', '>=', today as any),
-              ]),
-            )
+            .where(isActive('end_date'))
             .executeTakeFirst(),
           db.selectFrom('branch.expenditures')
             .select(['category', db.fn.sum('amount').as('total')])
@@ -87,36 +94,72 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             .orderBy(db.fn.sum('amount'), 'desc')
             .limit(1)
             .executeTakeFirst(),
-          db.selectFrom('branch.projects')
-            .selectAll()
-            .orderBy('project_id', 'asc')
+          // Numerator for the average: this year's spend on the very projects the
+          // denominator counts. expenditures.project_id is NOT NULL against a FK,
+          // so the join can never drop a row.
+          db.selectFrom('branch.expenditures as e')
+            .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
+            .select((eb) => eb.fn.sum('e.amount').as('total'))
+            .where('e.spent_on', '>=', yearStart as any)
+            .where('e.spent_on', '<=', yearEnd as any)
+            .where(isActive('p.end_date'))
+            .executeTakeFirst(),
+          // Spend and headcount arrive as pre-aggregated subqueries. Joining the
+          // raw tables onto projects instead would multiply every expenditure by
+          // the membership count and silently inflate `spent`.
+          db.selectFrom('branch.projects as p')
+            .leftJoin(
+              (eb) =>
+                eb.selectFrom('branch.expenditures')
+                  .select('project_id')
+                  .select((sub) => sub.fn.sum('amount').as('total'))
+                  .groupBy('project_id')
+                  .as('spend'),
+              (join) => join.onRef('spend.project_id', '=', 'p.project_id'),
+            )
+            .leftJoin(
+              (eb) =>
+                eb.selectFrom('branch.project_memberships')
+                  .select('project_id')
+                  .select((sub) => sub.fn.count('user_id').as('count'))
+                  .groupBy('project_id')
+                  .as('staff'),
+              (join) => join.onRef('staff.project_id', '=', 'p.project_id'),
+            )
+            .select([
+              'p.project_id',
+              'p.name',
+              'p.total_budget',
+              'p.currency',
+              'spend.total as spent',
+              'staff.count as staff_count',
+            ])
+            .orderBy('p.project_id', 'asc')
             .execute(),
           db.selectFrom('branch.expenditures')
-            .select(['project_id', db.fn.sum('amount').as('total')])
-            .groupBy('project_id')
-            .execute(),
-          db.selectFrom('branch.project_memberships')
-            .select(['project_id', db.fn.count('user_id').as('count')])
-            .groupBy('project_id')
-            .execute(),
-          db.selectFrom('branch.expenditures')
-            .select(['spent_on', 'category', 'amount'])
+            .select([monthExpr.as('month'), 'category', db.fn.sum('amount').as('total')])
             .where('category', 'is not', null)
             .where('spent_on', '>=', yearStart as any)
             .where('spent_on', '<=', yearEnd as any)
+            .groupBy([monthExpr, 'category'])
+            .orderBy(monthExpr)
+            .orderBy('category')
             .execute(),
         ]);
 
         const totalSpent = Number(totalSpentRow?.total ?? 0);
         const totalProjects = Number(totalProjectsRow?.count ?? 0);
-        const averageSpendPerProject = totalProjects > 0 ? totalSpent / totalProjects : 0;
 
-        const spentMap = new Map(spentByProject.map((r) => [r.project_id, Number(r.total)]));
-        const staffMap = new Map(staffByProject.map((r) => [r.project_id, Number(r.count)]));
+        // A true aggregate over active projects: this year's spend on active
+        // projects divided by how many there are. Dividing the all-projects total
+        // by the active count inflated the figure whenever a project ended
+        // mid-year, since its spend stayed in the numerator.
+        const activeSpent = Number(activeSpentRow?.total ?? 0);
+        const averageSpendPerProject = totalProjects > 0 ? activeSpent / totalProjects : 0;
 
         const projects = projectRows.map((p) => {
           const budget = p.total_budget !== null ? Number(p.total_budget) : null;
-          const spent = spentMap.get(p.project_id) ?? 0;
+          const spent = Number(p.spent ?? 0);
           const spentPercentage = budget && budget > 0 ? (spent / budget) * 100 : 0;
           return {
             project_id: p.project_id,
@@ -124,22 +167,16 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             total_budget: budget,
             currency: p.currency,
             spent,
-            staff_count: staffMap.get(p.project_id) ?? 0,
+            staff_count: Number(p.staff_count ?? 0),
             spent_percentage: Number(spentPercentage.toFixed(2)),
           };
         });
 
-        const monthMap = new Map<string, { month: string; category: string; amount: number }>();
-        for (const row of monthRows) {
-          const d = new Date(row.spent_on as any);
-          const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-          const category = row.category as string;
-          const key = `${month}|${category}`;
-          const prev = monthMap.get(key);
-          if (prev) prev.amount += Number(row.amount);
-          else monthMap.set(key, { month, category, amount: Number(row.amount) });
-        }
-        const expensesByMonth = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
+        const expensesByMonth = monthRows.map((r) => ({
+          month: r.month,
+          category: r.category as string,
+          amount: Number(r.total),
+        }));
 
         // Computed here, not client-side: totalSpent is the divisor and may be 0.
         const topCategoryAmount = Number(topCategoryRow?.total ?? 0);
