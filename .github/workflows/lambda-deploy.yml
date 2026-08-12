@@ -366,6 +366,11 @@ jobs:
       matrix:
         lambda: ${{ fromJson(needs.detect-changes.outputs.lambdas) }}
     steps:
+      # `Thread step (live)` below is a local composite action, so the repo has to
+      # be on disk. First, not last: checkout cleans the workspace and would wipe
+      # the downloaded zip.
+      - uses: actions/checkout@v4
+
       - name: Compute artifact name
         id: artifact
         run: echo "name=lambda-$(basename ${{ matrix.lambda }})" >> $GITHUB_OUTPUT
@@ -463,6 +468,9 @@ jobs:
           component: backend
           total-steps: ${{ needs.prep.outputs.total }}
           results-dir: lambda-results
+          # The artifacts only carry the aws-cli step's outcome, so a job that
+          # failed elsewhere would still finalize as a green deploy.
+          force-failure: ${{ needs.migrate.result == 'failure' || needs.deploy.result == 'failure' }}
           ts: ${{ needs.prep.outputs.ts }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
