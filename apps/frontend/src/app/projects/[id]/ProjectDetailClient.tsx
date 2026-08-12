@@ -133,7 +133,7 @@ export default function ProjectPage() {
               <div className="!border !border-black-200 !overflow-hidden">
                 <ExpensesTable
                   expenditures={expenditures.slice(0, PREVIEW_EXPENSES)}
-                  showDescription={false}
+                  showProject={false}
                 />
               </div>
             )}

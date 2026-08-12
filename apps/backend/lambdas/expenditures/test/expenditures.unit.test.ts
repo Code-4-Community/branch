@@ -4,6 +4,11 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 jest.mock('../db');
 jest.mock('../auth');
 
+// Presigning must not reach AWS in unit tests.
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn(async () => 'https://signed.example/url'),
+}));
+
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest, checkAuthorization } from '../auth';
@@ -90,11 +95,15 @@ const fakeExpenditure = {
 };
 
 // Mocks the query chain used by the handler to fetch a single expenditure
-function mockSelectExpenditure(result: any) {
+function mockSelectExpenditure(result: any, name?: string) {
   return {
     where: jest.fn().mockReturnValue({
       selectAll: jest.fn().mockReturnValue({
         executeTakeFirst: jest.fn().mockReturnValue(result),
+      }),
+      // GET /expenditures/{id} also looks up the submitter and project names.
+      select: jest.fn().mockReturnValue({
+        executeTakeFirst: jest.fn().mockReturnValue(name ? { name } : undefined),
       }),
     }),
   };
@@ -1003,5 +1012,169 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
 
     expect(res.statusCode).toBe(404);
     expect(JSON.parse(res.body).message).toContain('not found');
+  });
+
+  test('200: admin notes are persisted alongside the status', async () => {
+    const setSpy: any = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ execute: (jest.fn() as any).mockResolvedValue(undefined) }),
+    });
+    mockDb.selectFrom.mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: (jest.fn() as any)
+            .mockResolvedValueOnce({ expenditure_id: 5, status: 'pending' })
+            .mockResolvedValueOnce({
+              expenditure_id: 5,
+              status: 'needs_more_info',
+              admin_notes: 'Need the itemised receipt',
+            }),
+        }),
+      }),
+    });
+    mockDb.updateTable.mockReturnValue({ set: setSpy });
+
+    const res = await handler(
+      patchStatusEvent(5, { status: 'needs_more_info', adminNotes: 'Need the itemised receipt' }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(setSpy).toHaveBeenCalledWith({
+      status: 'needs_more_info',
+      admin_notes: 'Need the itemised receipt',
+    });
+    expect(JSON.parse(res.body).body.adminNotes).toBe('Need the itemised receipt');
+  });
+
+  test('400: adminNotes present but blank', async () => {
+    const res = await handler(patchStatusEvent(5, { status: 'approved', adminNotes: '   ' }));
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('adminNotes');
+  });
+});
+
+describe('GET /expenditures/upload-url unit tests', () => {
+  function uploadUrlEvent(queryStringParameters: Record<string, string>) {
+    return {
+      rawPath: '/expenditures/upload-url',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  test('200: admin gets a presigned PUT and the object URL', async () => {
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: '1' }));
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.uploadUrl).toBe('https://signed.example/url');
+    expect(json.objectUrl).toContain('/receipts/1/');
+    expect(json.objectUrl).toContain('receipt.pdf');
+  });
+
+  test('400: non-PDF is rejected', async () => {
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.png', projectId: '1' }));
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('PDF');
+  });
+
+  test('400: missing fileName', async () => {
+    const res = await handler(uploadUrlEvent({ projectId: '1' }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('400: invalid projectId', async () => {
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: 'abc' }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('401: unauthenticated request', async () => {
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
+
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: '1' }));
+    expect(res.statusCode).toBe(401);
+  });
+
+  test('403: non-admin without a qualifying role on the project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+    mockDb.selectFrom.mockReturnValue(mockMembership({ role: 'Staff' }));
+
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: '1' }));
+
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('GET /expenditures/{id}/receipt unit tests', () => {
+  function receiptEvent(id: string | number) {
+    return {
+      rawPath: `/expenditures/${id}/receipt`,
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  test('200: returns a presigned download URL for a stored receipt', async () => {
+    mockDb.selectFrom.mockReturnValue(
+      mockSelectExpenditure({
+        ...fakeExpenditure,
+        receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/1/12345-receipt.pdf',
+      }),
+    );
+
+    const res = await handler(receiptEvent(5));
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.downloadUrl).toBe('https://signed.example/url');
+    expect(json.fileName).toBe('12345-receipt.pdf');
+  });
+
+  test('404: expenditure has no receipt', async () => {
+    mockDb.selectFrom.mockReturnValue(
+      mockSelectExpenditure({ ...fakeExpenditure, receipt_url: null }),
+    );
+
+    const res = await handler(receiptEvent(5));
+
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).message).toContain('no receipt');
+  });
+
+  test('404: expenditure does not exist', async () => {
+    mockDb.selectFrom.mockReturnValue(mockSelectExpenditure(null));
+
+    const res = await handler(receiptEvent(999));
+    expect(res.statusCode).toBe(404);
+  });
+
+  test('403: non-admin with no membership on the project', async () => {
+    mockAuthenticateRequest.mockResolvedValue(staffAuthContext);
+    mockDb.selectFrom
+      .mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure))
+      .mockReturnValueOnce(mockMembership(null));
+
+    const res = await handler(receiptEvent(5));
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  test('401: unauthenticated request', async () => {
+    mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false } as any);
+
+    const res = await handler(receiptEvent(5));
+    expect(res.statusCode).toBe(401);
   });
 });

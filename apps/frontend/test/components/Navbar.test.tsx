@@ -53,20 +53,19 @@ describe("NavBar", () => {
 
   it("hides admin-only items for standard role", () => {
     render(<NavBar roleOverride="standard" activePath="/dashboard" />);
-    expect(screen.queryByText("Expenses")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
   it("hides admin-only items for limited role", () => {
     render(<NavBar roleOverride="limited" activePath="/dashboard" />);
-    expect(screen.queryByText("Expenses")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
   it("shows shared items for all roles", () => {
-    const sharedItems = ["Dashboard", "Projects", "Donors", "Donations", "Log Out"];
+    // Expenses is shared: non-admins submit expenses there.
+    const sharedItems = ["Dashboard", "Projects", "Donors", "Donations", "Expenses", "Log Out"];
     const roles: UserRole[] = ["admin", "standard", "limited"];
 
     roles.forEach((role) => {
