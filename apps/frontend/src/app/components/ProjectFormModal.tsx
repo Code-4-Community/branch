@@ -371,7 +371,7 @@ export default function ProjectFormModal({
                   isLoading={saving}
                   loadingText="Saving…"
                 >
-                  Submit for Review
+                  Save
                 </Button>
               </div>
             </Dialog.Footer>

@@ -53,7 +53,7 @@ export default function StaffPicker({
   } = useAnchoredPopover<HTMLDivElement, HTMLDivElement, HTMLDivElement>({
     open,
     onDismiss: () => setOpen(false),
-    estimatedHeight: LISTBOX_MAX_HEIGHT,
+    maxHeight: LISTBOX_MAX_HEIGHT,
   });
 
   const byId = useMemo(
@@ -138,8 +138,8 @@ export default function StaffPicker({
               role="listbox"
               aria-label={label}
               ref={listboxRef}
-              style={{ ...position, maxHeight: LISTBOX_MAX_HEIGHT }}
-              className="fixed z-[1500] overflow-y-auto rounded-[4px] !border-[1px] !border-solid !border-black-500 bg-core-white shadow-lg"
+              style={position}
+              className="fixed overflow-y-auto rounded-[4px] !border-[1px] !border-solid !border-black-500 bg-core-white shadow-lg"
             >
               {isLoading && (
                 <LoadingState

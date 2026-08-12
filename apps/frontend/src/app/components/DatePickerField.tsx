@@ -71,7 +71,7 @@ export default function DatePickerField({
   } = useAnchoredPopover<HTMLButtonElement, HTMLDivElement, HTMLDivElement>({
     open,
     onDismiss: () => setOpen(false),
-    estimatedHeight: CALENDAR_HEIGHT,
+    maxHeight: CALENDAR_HEIGHT,
     width: CALENDAR_WIDTH,
   });
 
@@ -143,7 +143,7 @@ export default function DatePickerField({
               aria-label={`Choose ${label}`}
               ref={popoverRef}
               style={position}
-              className="fixed z-[1500] rounded-[4px] !border-[1px] !border-solid !border-black-500 bg-core-white !p-2.5 shadow-lg"
+              className="fixed overflow-y-auto rounded-[4px] !border-[1px] !border-solid !border-black-500 bg-core-white !p-2.5 shadow-lg"
             >
               <div className="flex items-center justify-between !gap-2">
                 <button

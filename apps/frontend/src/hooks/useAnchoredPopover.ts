@@ -11,21 +11,42 @@ import {
 const VIEWPORT_MARGIN = 8;
 const ANCHOR_GAP = 4;
 
+/**
+ * Chakra's dialog layer is also 1500, and on a tie paint order comes down to
+ * which portal happens to be appended last. Sitting one above it keeps that
+ * from being a coin flip.
+ */
+const POPOVER_Z_INDEX = 1600;
+
+/** Below this the popover is too short to be worth opening on that side. */
+const MIN_USABLE_HEIGHT = 96;
+
+/**
+ * Spread straight into the popover's `style`. Exactly one of `top`/`bottom` is
+ * set: a flipped popover is pinned by its bottom edge so it stays against the
+ * anchor whatever its content height turns out to be.
+ */
 export interface AnchoredPopoverPosition {
-  top: number;
+  top?: number;
+  bottom?: number;
   left: number;
   width: number;
+  maxHeight: number;
+  zIndex: number;
+  /**
+   * While a modal dialog is open Chakra makes every other child of `body`
+   * non-interactive, and a portalled popover is one of those children. Without
+   * this the popover renders but silently swallows every click.
+   */
+  pointerEvents: 'auto';
 }
 
 interface UseAnchoredPopoverOptions {
   open: boolean;
   /** Called on an outside click or Escape. */
   onDismiss: () => void;
-  /**
-   * Used only to decide whether the popover should flip above the anchor, so an
-   * approximation of the tallest state is fine.
-   */
-  estimatedHeight: number;
+  /** The popover's preferred height. Trimmed when the viewport is tighter. */
+  maxHeight: number;
   /** Fixed width in px. Omitted, the popover matches the anchor's width. */
   width?: number;
 }
@@ -43,7 +64,7 @@ export function useAnchoredPopover<
   A extends HTMLElement,
   P extends HTMLElement,
   B extends HTMLElement = A,
->({ open, onDismiss, estimatedHeight, width }: UseAnchoredPopoverOptions) {
+>({ open, onDismiss, maxHeight, width }: UseAnchoredPopoverOptions) {
   const anchorRef = useRef<A | null>(null);
   const popoverRef = useRef<P | null>(null);
   /** Optional wider region that also counts as "inside" for dismissal. */
@@ -65,19 +86,27 @@ export function useAnchoredPopover<
 
     const rect = anchor.getBoundingClientRect();
     const popoverWidth = width ?? rect.width;
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const flipAbove =
-      spaceBelow < estimatedHeight + VIEWPORT_MARGIN && rect.top > spaceBelow;
     const maxLeft = window.innerWidth - popoverWidth - VIEWPORT_MARGIN;
 
+    const spaceBelow =
+      window.innerHeight - rect.bottom - ANCHOR_GAP - VIEWPORT_MARGIN;
+    const spaceAbove = rect.top - ANCHOR_GAP - VIEWPORT_MARGIN;
+    // Opening downwards keeps the popover next to what the user just clicked,
+    // so only flip when staying put would leave it unusably short.
+    const flipAbove = spaceBelow < MIN_USABLE_HEIGHT && spaceAbove > spaceBelow;
+    const available = flipAbove ? spaceAbove : spaceBelow;
+
     setPosition({
-      top: flipAbove
-        ? Math.max(VIEWPORT_MARGIN, rect.top - ANCHOR_GAP - estimatedHeight)
-        : rect.bottom + ANCHOR_GAP,
+      ...(flipAbove
+        ? { bottom: window.innerHeight - rect.top + ANCHOR_GAP }
+        : { top: rect.bottom + ANCHOR_GAP }),
       left: Math.max(VIEWPORT_MARGIN, Math.min(rect.left, maxLeft)),
       width: popoverWidth,
+      maxHeight: Math.max(MIN_USABLE_HEIGHT, Math.min(maxHeight, available)),
+      zIndex: POPOVER_Z_INDEX,
+      pointerEvents: 'auto',
     });
-  }, [estimatedHeight, width]);
+  }, [maxHeight, width]);
 
   useLayoutEffect(() => {
     if (!open) return;

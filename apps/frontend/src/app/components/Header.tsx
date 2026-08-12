@@ -25,9 +25,11 @@ const Header: React.FC<HeaderProps> = ({
   // particular exists only in Postgres and is not a JWT claim.
   const { user, isAdmin } = useAuth();
 
+  // Padding utilities need the ! prefix here: Chakra's reset zeroes padding on
+  // bare elements and outranks unprefixed Tailwind utilities.
   return (
     <header
-      className="flex w-full h-12 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 sm:px-8"
+      className="flex w-full h-12 items-center justify-between gap-3 border-b border-gray-200 bg-white !px-4 sm:!px-8"
       style={{paddingTop: 20, paddingBottom: 12}}
     >
       {/* Dynamic Text Section */}
@@ -47,7 +49,7 @@ const Header: React.FC<HeaderProps> = ({
             </div>
             {isAdmin && (
               <span
-                className="hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold sm:inline"
+                className="hidden shrink-0 rounded-full !px-2 !py-0.5 text-xs font-semibold sm:inline"
                 style={{ backgroundColor: '#e6f0e8', color: '#2E6038' }}
               >
                 Admin
