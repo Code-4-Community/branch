@@ -73,6 +73,21 @@ Import direction is one-way and must stay that way: `api.ts` ← `authClient.ts`
 - Tailwind v4 via `@tailwindcss/postcss` (`postcss.config.mjs`), `@import "tailwindcss"` in `globals.css`. Custom theme tokens in the `@theme` block (`--color-core-green`, `--color-primary-*`, fonts Roboto Slab / PT Sans, heading/body sizes).
 - Chakra UI v3 unstyled components (`Table.Root`, `Dialog`, `Field`, `Button`, `Input`, ...) under `ChakraProvider defaultSystem`. Emotion is a Chakra dep. Inline styles appear alongside Tailwind classes in layout components.
 
+## Shared UI
+
+Two families of component are **the** way to do their job — don't hand-roll a second one.
+
+**Tables — `components/DataTable.tsx`.** Every list view (expenses, reports, donors, donations) renders through it, so the green header row, column widths, empty state, row-click behaviour and loading skeleton stay identical. Columns are data: `{ key, header, width, align, cell, skeleton }`. Pass `selection` (see `reports/page.tsx`) for the leading checkbox column — the page keeps owning the selected ids, since that is what its bulk actions need. `ExpensesTable` is a thin wrapper that fixes the expense column set; add domain wrappers like that rather than re-deriving columns per page.
+
+**Loading — `Spinner` / `LoadingState` / `Skeleton` / `TableSkeletonRows`.** No more `<p>Loading…</p>`.
+
+- `LoadingState` for a region whose content has not arrived (`variant="section"` reserves height; `"inline"` for menus and dialog bodies). The label is the accessible name and is hidden unless `showLabel`.
+- `DataTable isLoading` for tables — skeleton rows keep the header and column widths on screen. Set `skeletonRows` to the page size so nothing resizes when data lands.
+- Chakra's `Button loading` prop for in-flight actions; it renders its own spinner.
+- `Spinner` is the primitive; it takes its colour from `currentColor` and only gets a `label` when nothing around it is already `role="status"`.
+
+The animations live in `globals.css` (`.branch-spinner`, `.branch-skeleton`, and their keyframes), not in the components — one timing curve for the whole app, and `FullPageSpinner` can render before any component library is mounted. Both honour `prefers-reduced-motion`.
+
 ## Conventions
 
 - Page/interactive components start with `'use client'`.

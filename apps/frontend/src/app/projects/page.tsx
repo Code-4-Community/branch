@@ -5,6 +5,7 @@ import Link from 'next/link';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
 import ProjectCard from '../components/ProjectCard';
+import LoadingState from '../components/LoadingState';
 import { useApi } from '@/hooks/useApi';
 
 /**
@@ -65,7 +66,7 @@ export default function ProjectsListPage() {
             Projects
           </h1>
 
-          {isLoading && <p>Loading projects…</p>}
+          {isLoading && <LoadingState label="Loading projects…" />}
           {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
           {!isLoading && !error && projects.length === 0 && (
             <p>No projects to show.</p>

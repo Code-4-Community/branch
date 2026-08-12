@@ -13,6 +13,7 @@ import {
   type ExpenditureDetail,
   type ExpenditureStatus,
 } from '@/types';
+import LoadingState from './LoadingState';
 import StatusBadge from './StatusBadge';
 
 interface ReviewExpenseModalProps {
@@ -157,7 +158,7 @@ export default function ReviewExpenseModal({
             </Dialog.Header>
 
             <Dialog.Body>
-              {loading && <p>Loading expense...</p>}
+              {loading && <LoadingState label="Loading expense…" size="sm" variant="inline" />}
               {loadError && <p style={{ color: 'var(--color-error-red)' }}>{loadError}</p>}
 
               {!loading && !loadError && detail && (

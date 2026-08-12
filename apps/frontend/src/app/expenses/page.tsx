@@ -296,13 +296,14 @@ function ExpensePageContent() {
             </HStack>
           </HStack>
 
-          {/* Loading / Error */}
-          {loading && <p>Loading expenditures...</p>}
           {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
 
-          {/* Table */}
-          {!loading && !error && (
+          {/* Table — the skeleton lives inside it, so the header and column
+              widths stay put while the rows load. */}
+          {!error && (
             <ExpensesTable
+              isLoading={loading}
+              skeletonRows={ROWS_PER_PAGE}
               expenditures={paginatedData}
               projectNames={projectNames}
               onViewReceipt={handleViewReceipt}

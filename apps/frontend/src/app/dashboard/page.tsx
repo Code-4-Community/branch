@@ -5,6 +5,7 @@ import Link from 'next/link';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
 import ProjectCard from '../components/ProjectCard';
+import LoadingState from '../components/LoadingState';
 import { useApi } from '@/hooks/useApi';
 import { useAuth } from '@/context/AuthContext';
 
@@ -67,7 +68,7 @@ export default function DashboardPage() {
             {firstName ? `Welcome back, ${firstName}` : 'Dashboard'}
           </h1>
 
-          {isLoading && <p>Loading projects…</p>}
+          {isLoading && <LoadingState label="Loading projects…" />}
           {error && <p style={{ color: '#b91c1c' }}>{error}</p>}
           {!isLoading && !error && projects.length === 0 && (
             <p>You are not a member of any projects yet.</p>
