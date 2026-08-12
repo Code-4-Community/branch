@@ -77,7 +77,7 @@ export default function ExpenseFilterMenu({ groups }: ExpenseFilterMenuProps) {
           display: 'flex',
           alignItems: 'center',
           gap: '9px',
-          height: '40px',
+          minHeight: '40px',
           padding: '2px 12px',
           borderRadius: '4px',
           border: '1px solid var(--color-black-500)',
@@ -153,7 +153,7 @@ export default function ExpenseFilterMenu({ groups }: ExpenseFilterMenuProps) {
                 backgroundColor: 'var(--color-core-white)',
                 marginLeft: '4px',
                 minWidth: '138px',
-                maxHeight: '260px',
+                maxHeight: 'min(260px, 50vh)',
                 overflowY: 'auto',
               }}
             >

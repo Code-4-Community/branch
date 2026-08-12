@@ -34,13 +34,16 @@ export default function StatusBadge({ status, onClick, selected }: StatusBadgePr
     backgroundColor: color,
     color: 'var(--color-core-black)',
     fontFamily: 'var(--font-body)',
-    fontSize: '16px',
-    width: '81px',
-    height: '29px',
+    fontSize: 'var(--font-size-subtitle-2)',
+    // Figma draws the pill at 81x29, but the label drives the real width so
+    // longer statuses cannot clip. 81px becomes the floor, not the size.
+    minWidth: '81px',
+    padding: '0.25rem 0.75rem',
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
     whiteSpace: 'nowrap',
+    boxSizing: 'border-box',
   };
 
   if (!onClick) {

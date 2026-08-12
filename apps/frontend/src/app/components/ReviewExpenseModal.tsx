@@ -38,7 +38,7 @@ const VALUE_STYLE: React.CSSProperties = {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-      <span style={{ ...LABEL_STYLE, width: '120px', flexShrink: 0 }}>{label}</span>
+      <span style={{ ...LABEL_STYLE, flex: '0 0 8.5rem', maxWidth: '45%' }}>{label}</span>
       <span style={{ ...VALUE_STYLE, flex: 1 }}>{children}</span>
     </div>
   );
@@ -138,7 +138,8 @@ export default function ReviewExpenseModal({
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxWidth="485px">
+          {/* 485px is the Figma width; it shrinks with the viewport below that. */}
+          <Dialog.Content width="100%" maxWidth="485px" marginX="4">
             <Dialog.Header
               display="flex"
               justifyContent="space-between"
@@ -186,10 +187,20 @@ export default function ReviewExpenseModal({
                           gap: '12px',
                         }}
                       >
-                        <span style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '14px' }}>
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-body)',
+                            fontWeight: 700,
+                            fontSize: 'var(--font-size-callout)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            minWidth: 0,
+                          }}
+                        >
                           {detail.receiptUrl.split('/').pop()}
                         </span>
-                        <span style={{ display: 'flex', gap: '24px' }}>
+                        <span style={{ display: 'flex', gap: '24px', flexShrink: 0 }}>
                           <button
                             type="button"
                             onClick={openReceipt}
