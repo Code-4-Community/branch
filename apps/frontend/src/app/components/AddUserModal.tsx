@@ -3,16 +3,16 @@
 import { useState } from 'react';
 import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
 import TextInputField from './TextInputField';
-import { apiFetch } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 
 interface AddUserModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  token: string;
 }
 
-export default function AddUserModal({ open, onClose, onSuccess, token }: AddUserModalProps) {
+export default function AddUserModal({ open, onClose, onSuccess }: AddUserModalProps) {
+  const api = useApi();
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -47,11 +47,7 @@ export default function AddUserModal({ open, onClose, onSuccess, token }: AddUse
 
     setIsLoading(true);
     try {
-      await apiFetch('/users/', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({ email: email.toLowerCase(), name: name.trim(), isAdmin }),
-      });
+      await api.post('/users/', { email: email.toLowerCase(), name: name.trim(), isAdmin });
       resetForm();
       onSuccess();
     } catch (err) {

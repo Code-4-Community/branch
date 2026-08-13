@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import StaffCard from '../components/StaffCard';
 import AddUserModal from '../components/AddUserModal';
 import { Button } from '@chakra-ui/react';
-import { getAccessToken } from '@/lib/authTokens';
 import { facilitationTeam, teamMembers } from './mockUsers';
 
 export default function AccountsPage() {
@@ -38,7 +37,6 @@ export default function AccountsPage() {
                 open={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSuccess={() => setIsModalOpen(false)}
-                token={getAccessToken() ?? ''}
             />
         </div>
     );
