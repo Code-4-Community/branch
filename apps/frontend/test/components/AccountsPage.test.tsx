@@ -33,4 +33,14 @@ describe('AccountsPage', () => {
             expect(cards?.length).toBeGreaterThan(0);
         }
     });
+
+    // Regression guard for #300: the accounts page is a signed-in app route, so
+    // it must keep the sidebar the way every other app page does. It used to
+    // render only its content with no NavBar, which stranded the user with no
+    // way to navigate away.
+    it('renders the sidebar so it persists on the accounts page', () => {
+        render(<AccountsPage />);
+        expect(screen.getByRole('navigation')).toBeInTheDocument();
+        expect(screen.getAllByText('BRANCH').length).toBeGreaterThan(0);
+    });
 });
