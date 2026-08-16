@@ -25,7 +25,7 @@ function LoginPageContent() {
     const next = safeNextPath(searchParams.get('next'), '/');
 
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [password, setPasswordValue] = useState('');
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const [formError, setFormError] = useState('');
@@ -68,6 +68,9 @@ function LoginPageContent() {
             return;
         }
         // fetch rejects with a TypeError when the request never reached a server.
+        // Logged because that's not the only way to land here — any non-ApiError
+        // throw (e.g. a bug elsewhere in the login path) shows this same message.
+        console.error('Login failed with a non-ApiError:', err);
         setFormError('Cannot reach the server. Check your connection and try again.');
     }
 
@@ -159,7 +162,7 @@ function LoginPageContent() {
                     errorMessage={passwordError}
                     isError={!!passwordError}
                     value={password}
-                    onChange={(value) => setPassword(value)}
+                    onChange={(value) => setPasswordValue(value)}
                 />
             </div>
             <Button

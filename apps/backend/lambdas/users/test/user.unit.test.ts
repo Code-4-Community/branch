@@ -336,6 +336,9 @@ describe('POST /users unit tests', () => {
   describe('Success Cases', () => {
     beforeEach(() => {
       mockAdminAuth();
+      (mockSend as any).mockResolvedValue({
+        User: { Attributes: [{ Name: 'sub', Value: 'test-cognito-sub-123' }] },
+      });
     });
 
     test('201: successful POST returns 201 status and correct response shape', async () => {

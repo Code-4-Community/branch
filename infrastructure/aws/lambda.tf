@@ -28,6 +28,9 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
 # ForgotPassword, ConfirmForgotPassword, GlobalSignOut) is modelled
 # smithy.api#noAuth in the AWS SDK and needs no IAM at all -- which is also why
 # local docker-compose auth works with no AWS credentials.
+#
+# AdminCreateUser is additionally needed by the users lambda (POST /users) to
+# provision new Cognito accounts at invitation time.
 resource "aws_iam_role_policy" "lambda_cognito_admin" {
   name = "branch-lambda-cognito-admin"
   role = aws_iam_role.lambda_role.id
@@ -38,6 +41,7 @@ resource "aws_iam_role_policy" "lambda_cognito_admin" {
       Sid    = "AuthLambdaUserPoolAdmin"
       Effect = "Allow"
       Action = [
+        "cognito-idp:AdminCreateUser",
         "cognito-idp:AdminDeleteUser",
         "cognito-idp:AdminGetUser",
       ]
