@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
+  AdminCreateUserCommand,
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import db from './db'
@@ -253,7 +254,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const isAdmin = isAdminResult.value as boolean;
       const profile_image = profileImageResult.value ?? undefined;
 
-      // Check if user with this email already exists
+      // Check if user with this email already exists in DB
       const existingUser = await db
         .selectFrom('branch.users')
         .where('email', '=', email)
@@ -263,15 +264,49 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (existingUser) {
         return json(409, { message: 'User with this email already exists' });
       }
-        
-      // insert new user (user_id auto-increments)
+
+      // Create user in Cognito via AdminCreateUser — sends invite email with temp password
+      let cognitoSub: string;
+      try {
+        const cognitoResponse = await cognitoClient.send(new AdminCreateUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: email,
+          DesiredDeliveryMediums: ['EMAIL'],
+          UserAttributes: [
+            { Name: 'email', Value: email },
+            { Name: 'email_verified', Value: 'true' },
+            { Name: 'name', Value: name },
+          ],
+        }));
+        const sub = cognitoResponse.User?.Attributes?.find(a => a.Name === 'sub')?.Value;
+        if (!sub) throw new Error('No sub returned from AdminCreateUser');
+        cognitoSub = sub;
+      } catch (err: any) {
+        console.error('Cognito AdminCreateUser error:', err);
+        if (err.name === 'UsernameExistsException') {
+          return json(409, { message: 'User with this email already exists' });
+        }
+        return json(500, { message: 'Failed to create user in authentication service' });
+      }
+
+      // Insert into database with cognito_sub
       try {
         await db
           .insertInto('branch.users')
-          .values({ email, name, is_admin: isAdmin, profile_image })
+          .values({ cognito_sub: cognitoSub, email, name, is_admin: isAdmin, profile_image })
           .execute();
-      } catch (err) {
+      } catch (err: any) {
         console.error('Database insert error:', err);
+        // Rollback: delete Cognito user to keep systems in sync
+        try {
+          await cognitoClient.send(new AdminDeleteUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: email,
+          }));
+          console.log('Rolled back Cognito user after database failure');
+        } catch (rollbackErr) {
+          console.error('Failed to rollback Cognito user:', rollbackErr);
+        }
         return json(500, { message: 'Failed to create user' });
       }
 

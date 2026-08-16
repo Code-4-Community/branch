@@ -113,13 +113,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
     // >>> ROUTES-START (do not remove this marker)
     // CLI-generated routes will be inserted here
-    
+
     // POST /register
     if (normalizedPath === '/register' && method === 'POST') {
       return await handleRegister(event);
     }
 
-    
+
     // POST /login
     if (normalizedPath === '/login' && method === 'POST') {
       return await handleLogin(event);
@@ -200,7 +200,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to resend verification code' });
       }
     }
-    
+
     // POST /logout
     if (normalizedPath === '/logout' && method === 'POST') {
       const authHeader = event.headers?.authorization || event.headers?.Authorization;
@@ -209,8 +209,8 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
 
       // Extract token (remove "Bearer " prefix if present)
-      const accessToken = authHeader.startsWith('Bearer ') 
-        ? authHeader.slice(7) 
+      const accessToken = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
         : authHeader;
 
       if (!accessToken) {
@@ -234,7 +234,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to logout' });
       }
     }
-    
+
     // POST /forgot-password
     if (normalizedPath === '/forgot-password' && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
@@ -270,7 +270,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to initiate password reset' });
       }
     }
-    
+
     // POST /reset-password
     if (normalizedPath === '/reset-password' && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
@@ -309,7 +309,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(500, { message: 'Failed to reset password' });
       }
     }
-    // <<< ROUTES-END       
+    // <<< ROUTES-END
 
     return json(404, { message: 'Not Found', path: normalizedPath, method });
   } catch (err) {
