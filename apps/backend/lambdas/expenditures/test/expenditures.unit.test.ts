@@ -131,6 +131,52 @@ function mockDelete(numDeletedRows: bigint) {
   };
 }
 
+
+jest.mock('../mailer');
+
+import { sendExpenseStatusEmail } from '../mailer';
+const mockSendExpenseStatusEmail = sendExpenseStatusEmail as jest.MockedFunction<typeof sendExpenseStatusEmail>;
+
+function mockExpenditureForPatch(
+  existing: Record<string, unknown> | null,
+  updated?: Record<string, unknown>,
+  submitter?: { name: string; email: string } | null,
+) {
+  const executeTakeFirstForExpenditure = (jest.fn() as any)
+    .mockResolvedValueOnce(existing)
+    .mockResolvedValueOnce(updated ?? existing);
+
+  mockDb.selectFrom.mockImplementation((table: string) => {
+    if (table === 'branch.expenditures') {
+      return {
+        where: jest.fn().mockReturnValue({
+          selectAll: jest.fn().mockReturnValue({
+            executeTakeFirst: executeTakeFirstForExpenditure,
+          }),
+        }),
+      };
+    }
+    if (table === 'branch.users') {
+      return {
+        where: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            executeTakeFirst: (jest.fn() as any).mockResolvedValue(submitter ?? undefined),
+          }),
+        }),
+      };
+    }
+    throw new Error(`mockExpenditureForPatch: unexpected table "${table}"`);
+  });
+
+  mockDb.updateTable.mockReturnValue({
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        execute: (jest.fn() as any).mockResolvedValue(undefined),
+      }),
+    }),
+  });
+}
+
 // Default authenticated admin user
 const adminAuthContext = {
   isAuthenticated: true as const,
@@ -914,26 +960,6 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
     };
   }
 
-  // Sets up selectFrom (existing + updated lookups) and updateTable chains.
-  function mockExpenditureForPatch(existing: Record<string, unknown> | null, updated?: Record<string, unknown>) {
-    mockDb.selectFrom.mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: (jest.fn() as any)
-            .mockResolvedValueOnce(existing)
-            .mockResolvedValueOnce(updated ?? existing),
-        }),
-      }),
-    });
-
-    mockDb.updateTable.mockReturnValue({
-      set: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          execute: (jest.fn() as any).mockResolvedValue(undefined),
-        }),
-      }),
-    });
-  }
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -1050,6 +1076,88 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
 
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).message).toContain('adminNotes');
+  });
+
+  test('sends an approval email to the submitter', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending', entered_by: 2 },
+      { expenditure_id: 5, status: 'approved', amount: '1200', category: 'Travel', admin_notes: null },
+      { name: 'Student User', email: 'student@example.com' },
+    );
+  
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+  
+    expect(res.statusCode).toBe(200);
+    expect(mockSendExpenseStatusEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'student@example.com', submitterName: 'Student User', status: 'approved' }),
+    );
+  });
+  
+  test('sends a denial email with adminNotes passed through', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending', entered_by: 2 },
+      { expenditure_id: 5, status: 'denied', amount: '1200', category: 'Travel', admin_notes: 'Missing receipt' },
+      { name: 'Student User', email: 'student@example.com' },
+    );
+  
+    const res = await handler(patchStatusEvent(5, { status: 'denied', adminNotes: 'Missing receipt' }));
+  
+    expect(res.statusCode).toBe(200);
+    expect(mockSendExpenseStatusEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'denied', adminNotes: 'Missing receipt' }),
+    );
+  });
+  
+  test('does not send an email when status is needs_more_info', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending', entered_by: 2 },
+      { expenditure_id: 5, status: 'needs_more_info' },
+      { name: 'Student User', email: 'student@example.com' },
+    );
+  
+    const res = await handler(patchStatusEvent(5, { status: 'needs_more_info' }));
+  
+    expect(res.statusCode).toBe(200);
+    expect(mockSendExpenseStatusEmail).not.toHaveBeenCalled();
+  });
+  
+  test('does not send an email when the expenditure has no entered_by', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending', entered_by: null },
+      { expenditure_id: 5, status: 'approved' },
+    );
+  
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+  
+    expect(res.statusCode).toBe(200);
+    expect(mockSendExpenseStatusEmail).not.toHaveBeenCalled();
+  });
+  
+  test('skips sending when the submitter has no email on file', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending', entered_by: 2 },
+      { expenditure_id: 5, status: 'approved' },
+      { name: 'Student User', email: null } as any,
+    );
+  
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+  
+    expect(res.statusCode).toBe(200);
+    expect(mockSendExpenseStatusEmail).not.toHaveBeenCalled();
+  });
+  
+  test('200: still succeeds even if the email send throws', async () => {
+    mockExpenditureForPatch(
+      { expenditure_id: 5, status: 'pending', entered_by: 2 },
+      { expenditure_id: 5, status: 'approved' },
+      { name: 'Student User', email: 'student@example.com' },
+    );
+    mockSendExpenseStatusEmail.mockRejectedValueOnce(new Error('SES unavailable'));
+  
+    const res = await handler(patchStatusEvent(5, { status: 'approved' }));
+  
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).body.status).toBe('approved');
   });
 });
 

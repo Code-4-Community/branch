@@ -13,12 +13,12 @@
   "devDependencies": {
     "@branch/types": "file:../../../../shared/types",
     "@jest/globals": "^30.2.0",
-    "esbuild": "^0.25.12",
-    "jest": "^30.2.0",
     "@types/aws-lambda": "^8.10.131",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.11.30",
     "@types/pg": "^8.15.6",
+    "esbuild": "^0.25.12",
+    "jest": "^30.2.0",
     "js-yaml": "^4.1.0",
     "start-server-and-test": "^2.1.1",
     "ts-jest": "^29.4.5",
@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",
+    "@aws-sdk/client-ses": "^3.1113.0",
     "@aws-sdk/s3-request-presigner": "^3.995.0",
     "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
     "aws-jwt-verify": "^5.1.1",

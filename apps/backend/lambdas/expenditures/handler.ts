@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
+import { sendExpenseStatusEmail } from './mailer';
 
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
@@ -471,6 +472,31 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         .where('expenditure_id', '=', Number(id))
         .selectAll()
         .executeTakeFirst();
+
+      // email on approve/denial
+      const submitter = expenditure.entered_by 
+          ? await db
+            .selectFrom('branch.users')
+            .where('user_id', '=', expenditure.entered_by)
+            .select(['name', 'email'])
+            .executeTakeFirst() 
+          : undefined;
+
+
+      if (submitter?.email && (updated!.status === 'approved' || updated!.status === 'denied')) {
+        try {
+          await sendExpenseStatusEmail({
+            to: submitter.email,
+            submitterName: submitter.name,
+            status: updated!.status, // 'approved' | 'denied'
+            amount: Number(updated!.amount),
+            category: updated!.category,
+            adminNotes: updated!.admin_notes,
+          });
+        } catch (err) {
+          console.error('Failed to send status email:', err);
+        }
+      }
 
       return json(200, {
         ok: true,

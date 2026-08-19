@@ -1,3 +1,33 @@
+# Verified sender identity for expense approval/denial emails
+# (lambdas/expenditures/mailer.ts). SES starts in sandbox mode in a new
+# account/region -- can only send to verified addresses until production
+# access is requested via the AWS console/support case.
+resource "aws_ses_email_identity" "no_reply" {
+  email = "no-reply@branch.org"
+}
+
+# expenditures lambda's mailer.ts calls SES SendEmail on approve/deny; without
+# this the send throws AccessDeniedException (caught and logged, so it fails
+# silently as a missing email rather than a loud error -- same shape as the
+# S3 permission gap above).
+resource "aws_iam_role_policy" "lambda_ses_send" {
+  name = "branch-lambda-ses-send"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "LambdaSesSendEmail"
+      Effect = "Allow"
+      Action = [
+        "ses:SendEmail",
+        "ses:SendRawEmail",
+      ]
+      Resource = aws_ses_email_identity.no_reply.arn
+    }]
+  })
+}
+
 # IAM role for Lambda functions
 resource "aws_iam_role" "lambda_role" {
   name = "branch-lambda-role"
@@ -179,6 +209,9 @@ resource "aws_lambda_function" "functions" {
       # on branch-reports only; listed here so this authoritative block does not
       # wipe it. Harmless on the other five functions.
       REPORTS_BUCKET_NAME = aws_s3_bucket.reports_bucket.id
+
+      # Read by lambdas/expenditures/mailer.ts. Harmless on the other five functions.
+      SES_FROM_ADDRESS = aws_ses_email_identity.no_reply.email
     }
   }
 }
