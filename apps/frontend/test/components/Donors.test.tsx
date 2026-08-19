@@ -13,7 +13,7 @@ describe('Donors Page', () => {
                 return Promise.resolve({ ok: true, status: 200, json: async () => ({ userId: 1, cognitoSub: 'sub-test', email: 'test@example.com', name: 'Test User', isAdmin: false }) } as unknown as Response);
             }
             if (url.includes('/donors')) {
-                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ donor_id: 1, organization: 'Org A', contact_name: null, contact_email: null, num_projects: 1, last_donation: '2026-01-01' }]) } as unknown as Response);
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ donor_id: 1, organization: 'Org A', contact_name: null, contact_email: null }] }) } as unknown as Response);
             }
             return Promise.resolve({ ok: true, status: 200, json: async () => [] } as unknown as Response);
         });
@@ -45,8 +45,8 @@ describe('Donors Page', () => {
         render(<Donors />);
         expect(await screen.findByText('Donor ID')).toBeInTheDocument();
         expect(await screen.findByText('Donor Name')).toBeInTheDocument();
-        expect(await screen.findByText('# of Projects')).toBeInTheDocument();
-        expect(await screen.findByText('Last Donation')).toBeInTheDocument();
+        expect(await screen.findByText('Contact Name')).toBeInTheDocument();
+        expect(await screen.findByText('Contact Email')).toBeInTheDocument();
     });
 
     it('renders left and right pagination arrows', () => {

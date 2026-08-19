@@ -11,22 +11,24 @@ import DataTable, { type DataTableColumn } from '../components/DataTable';
 
 type Donation = {
     donor_id: number;
-    date: string | null;
+    donated_at: string | null;
+    project_id: number;
     project_name: string;
-    amount: number;
+    amount: number | string;
 };
 import { useApi } from '@/hooks/useApi';
 
-const donorsBase = 'http://localhost:3003';
-const projectsBase = 'http://localhost:3002';
+type ApiDonation = Omit<Donation, 'project_name'>;
+type ApiDonor = { donor_id: number; organization: string };
+type ApiProject = { project_id: number; name: string };
 
 
 const donationColumns: DataTableColumn<Donation>[] = [
     {
-        key: 'date',
+        key: 'donated_at',
         header: 'Date',
         width: '15%',
-        cell: (donation) => donation.date ?? '—',
+        cell: (donation) => donation.donated_at ?? '—',
         skeleton: { width: '70%' },
     },
     {
@@ -41,7 +43,7 @@ const donationColumns: DataTableColumn<Donation>[] = [
         key: 'amount',
         header: 'Amount',
         width: '15%',
-        cell: (donation) => `$${donation.amount.toLocaleString()}`,
+        cell: (donation) => `$${Number(donation.amount).toLocaleString()}`,
         skeleton: { width: '55%' },
     },
 ];
@@ -61,43 +63,22 @@ export default function DonationsPage() {
         async function loadAll() {
             try {
                 const [donationsJson, donorsJson, projectsJson] = await Promise.all([
-                    api.get<Donation[] | { data: Donation[] }>(`${donorsBase}/donations`),
-                    api.get<string[] | { data: unknown[] }>(`${donorsBase}/donors`),
-                    api.get<string[] | { data: unknown[] }>(`${projectsBase}/projects`),
+                    api.get<ApiDonation[] | { data: ApiDonation[] }>('/donors/donations'),
+                    api.get<ApiDonor[] | { data: ApiDonor[] }>('/donors'),
+                    api.get<ApiProject[]>('/projects'),
                 ]);
 
-                const dList = Array.isArray(donationsJson) ? donationsJson : (donationsJson && 'data' in donationsJson ? donationsJson.data : []);
-                const dn = Array.isArray(donorsJson) ? donorsJson : (donorsJson && 'data' in donorsJson ? donorsJson.data : []);
-                const pn = Array.isArray(projectsJson) ? projectsJson : (projectsJson && 'data' in projectsJson ? projectsJson.data : []);
+                const donations = Array.isArray(donationsJson) ? donationsJson : donationsJson.data;
+                const donors = Array.isArray(donorsJson) ? donorsJson : donorsJson.data;
+                const projects = projectsJson;
+                const projectNamesById = new Map(projects.map((project) => [project.project_id, project.name]));
 
-                setDonations(dList);
-                // donors API may return objects; if so map to organization names
-                const dnArray: unknown[] = dn as unknown[];
-                const donorNamesMapped = dnArray
-                    .map((d) => {
-                        if (typeof d === 'string') return d;
-                        if (d && typeof d === 'object' && 'organization' in d) {
-                            const maybeOrg = (d as { [key: string]: unknown })['organization'];
-                            if (typeof maybeOrg === 'string') return maybeOrg;
-                        }
-                        return '';
-                    })
-                    .filter((s): s is string => Boolean(s));
-
-                const pnArray: unknown[] = pn as unknown[];
-                const projectNamesMapped = pnArray
-                    .map((p) => {
-                        if (typeof p === 'string') return p;
-                        if (p && typeof p === 'object' && 'name' in p) {
-                            const maybeName = (p as { [key: string]: unknown })['name'];
-                            if (typeof maybeName === 'string') return maybeName;
-                        }
-                        return '';
-                    })
-                    .filter((s): s is string => Boolean(s));
-
-                setDonorNames(donorNamesMapped);
-                setProjectNames(projectNamesMapped);
+                setDonations(donations.map((donation) => ({
+                    ...donation,
+                    project_name: projectNamesById.get(donation.project_id) ?? `Project #${donation.project_id}`,
+                })));
+                setDonorNames(donors.map((donor) => donor.organization));
+                setProjectNames(projects.map((project) => project.name));
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load donations data');
                 setDonations([]);

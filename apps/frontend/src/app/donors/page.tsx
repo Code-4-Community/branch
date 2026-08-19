@@ -14,13 +14,8 @@ type Donor = {
     organization: string;
     contact_name: string | null;
     contact_email: string | null;
-    num_projects: number;
-    last_donation: string | null;
 };
 import { useApi } from '@/hooks/useApi';
-
-// fetched from API
-const apiBase = 'http://localhost:3003';
 
 
 const donorColumns: DataTableColumn<Donor>[] = [
@@ -31,19 +26,19 @@ const donorColumns: DataTableColumn<Donor>[] = [
         cell: (donor) => `#${String(donor.donor_id).padStart(6, '0')}`,
         skeleton: { width: '80%' },
     },
-    { key: 'organization', header: 'Donor Name', width: '55%', cell: (donor) => donor.organization },
+    { key: 'organization', header: 'Donor Name', width: '35%', cell: (donor) => donor.organization },
     {
-        key: 'projects',
-        header: '# of Projects',
-        width: '15%',
-        cell: (donor) => donor.num_projects,
-        skeleton: { width: '35%' },
+        key: 'contact_name',
+        header: 'Contact Name',
+        width: '25%',
+        cell: (donor) => donor.contact_name ?? '—',
+        skeleton: { width: '70%' },
     },
     {
-        key: 'last_donation',
-        header: 'Last Donation',
-        width: '15%',
-        cell: (donor) => donor.last_donation ?? '—',
+        key: 'contact_email',
+        header: 'Contact Email',
+        width: '25%',
+        cell: (donor) => donor.contact_email ?? '—',
         skeleton: { width: '70%' },
     },
 ];
@@ -60,7 +55,7 @@ export default function DonorsPage() {
     useEffect(() => {
         async function fetchDonors() {
             try {
-                const json = await api.get<Donor[] | { data: Donor[] }>(`${apiBase}/donors`);
+                const json = await api.get<Donor[] | { data: Donor[] }>('/donors');
                 const list = Array.isArray(json) ? json : (json && 'data' in json ? json.data : []);
                 setDonors(list);
             } catch (err) {

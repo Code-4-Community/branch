@@ -13,7 +13,10 @@ describe('AccountsPage', () => {
             if (url.includes('/auth/me')) {
                 return Promise.resolve({ ok: true, status: 200, json: async () => ({ userId: 1, cognitoSub: 'sub-test', email: 'test@example.com', name: 'Test User', isAdmin: false }) } as unknown as Response);
             }
-            return Promise.resolve({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+            if (url.includes('/users')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ users: [...facilitationTeam, ...teamMembers] }) } as unknown as Response);
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as unknown as Response);
         });
     });
 
@@ -33,14 +36,10 @@ describe('AccountsPage', () => {
         render(<AccountsPage />);
         const sectionHeader = await screen.findByText('Core BRANCH Facilitation Team');
         await waitFor(() => {
-            const section = sectionHeader.closest('div');
+            const section = sectionHeader.nextElementSibling;
             const cards = section?.querySelectorAll('[data-testid="staff-card"]');
 
-            if (facilitationTeam.length === 0) {
-                expect(cards?.length).toBe(0);
-            } else {
-                expect(cards?.length).toBeGreaterThan(0);
-            }
+            expect(cards?.length).toBe(facilitationTeam.length);
         });
     });
 
@@ -48,14 +47,10 @@ describe('AccountsPage', () => {
         render(<AccountsPage />);
         const sectionHeader = await screen.findByText('BRANCH Team Members');
         await waitFor(() => {
-            const section = sectionHeader.closest('div');
+            const section = sectionHeader.nextElementSibling;
             const cards = section?.querySelectorAll('[data-testid="staff-card"]');
 
-            if (teamMembers.length === 0) {
-                expect(cards?.length).toBe(0);
-            } else {
-                expect(cards?.length).toBeGreaterThan(0);
-            }
+            expect(cards?.length).toBe(teamMembers.length);
         });
     });
 });

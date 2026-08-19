@@ -14,13 +14,13 @@ describe('Donations Page Component', () => {
                 return Promise.resolve({ ok: true, status: 200, json: async () => ({ userId: 1, cognitoSub: 'sub-test', email: 'test@example.com', name: 'Test User', isAdmin: false }) } as unknown as Response);
             }
             if (url.includes('/donations')) {
-                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ donor_id: 1, date: '2026-01-01', project_name: 'Proj Alpha', amount: 100 }]) } as unknown as Response);
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ donation_id: 1, donor_id: 1, project_id: 1, donated_at: '2026-01-01', amount: 100 }] }) } as unknown as Response);
             }
             if (url.includes('/donors')) {
-                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ donor_id: 1, organization: 'Org A' }]) } as unknown as Response);
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ donor_id: 1, organization: 'Org A' }] }) } as unknown as Response);
             }
             if (url.includes('/projects')) {
-                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ name: 'Proj Alpha' }]) } as unknown as Response);
+                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ project_id: 1, name: 'Proj Alpha' }]) } as unknown as Response);
             }
             return Promise.resolve({ ok: true, status: 200, json: async () => [] } as unknown as Response);
         });
