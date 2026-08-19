@@ -5,7 +5,7 @@ import type { ExpenseResource } from '@branch/rbac';
 import { ExpenditureValidationUtils } from '../validation-utils';
 import * as expendituresService from '../services/expenditures';
 import { expenditureScope } from '../services/scope';
-
+import { sendExpenseStatusEmail } from '../mailer';
 // Authentication and each route's declared permission are enforced by dispatch
 // before any of these run — see routes.ts. What is left here is the part the
 // routing layer cannot do: checks that need the row in hand.
@@ -355,6 +355,25 @@ export const patchExpenditureStatus: RouteHandler = async ({ event, params }) =>
   );
   if (!updated) {
     return json(404, { message: 'Expenditure not found' });
+  }
+
+  // Email on approve/denial — best-effort, never blocks the response.
+  if (updated.entered_by && (updated.status === 'approved' || updated.status === 'denied')) {
+    const submitter = await expendituresService.getUserContact(updated.entered_by);
+    if (submitter?.email) {
+      try {
+        await sendExpenseStatusEmail({
+          to: submitter.email,
+          submitterName: submitter.name,
+          status: updated.status,
+          amount: Number(updated.amount),
+          category: updated.category,
+          adminNotes: updated.admin_notes,
+        });
+      } catch (err) {
+        console.error('Failed to send status email:', err);
+      }
+    }
   }
 
   return json(200, {

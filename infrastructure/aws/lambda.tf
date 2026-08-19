@@ -89,6 +89,26 @@ resource "aws_iam_role_policy" "lambda_s3_objects" {
   })
 }
 
+# The role had no SES permissions at all, so mailer.ts's SendEmailCommand would
+# throw AccessDeniedException on every approve/decline -- caught by the PATCH
+# /expenditures/{id}/status handler's try/catch, so it fails silently rather
+# than surfacing as a request error. Scoped to SendEmail only: this role never
+# needs to manage identities, templates, or receipt rules.
+resource "aws_iam_role_policy" "lambda_ses_send" {
+  name = "branch-lambda-ses-send"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "LambdaSesSendEmail"
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+      Resource = "*"
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 

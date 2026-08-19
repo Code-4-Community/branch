@@ -33,6 +33,10 @@ import { authenticateRequest } from '../auth';
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
 
+jest.mock('../mailer');
+import { sendExpenseStatusEmail } from '../mailer';
+const mockSendExpenseStatusEmail = sendExpenseStatusEmail as jest.MockedFunction<typeof sendExpenseStatusEmail>;
+
 const pool = new Pool({
   host: 'localhost',
   port: Number(5432),
@@ -735,6 +739,28 @@ describe('Expenditures integration tests', () => {
       const res = await handler(patchStatusEvent('abc', { status: 'approved' }));
 
       expect(res.statusCode).toBe(400);
+    });
+
+    test('sends an approval email to the seeded submitter', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const id = await firstExpenditureId(1); // entered_by = 1 → ashley@branch.org
+    
+      const res = await handler(patchStatusEvent(id, { status: 'approved' }));
+    
+      expect(res.statusCode).toBe(200);
+      expect(mockSendExpenseStatusEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'ashley@branch.org', status: 'approved' }),
+      );
+    });
+    
+    test('does not send an email on needs_more_info', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const id = await firstExpenditureId(1);
+    
+      const res = await handler(patchStatusEvent(id, { status: 'needs_more_info' }));
+    
+      expect(res.statusCode).toBe(200);
+      expect(mockSendExpenseStatusEmail).not.toHaveBeenCalled();
     });
   });
 });
