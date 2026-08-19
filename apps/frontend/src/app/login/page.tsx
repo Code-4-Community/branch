@@ -31,11 +31,13 @@ function LoginPageContent() {
     const [formError, setFormError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    // 'credentials' -> optionally 'newPassword'. Adding a TOTP step later is one
-    // more value here and one more case in handleResult — the context already
-    // returns the challenge and chains further ones.
-    const [step, setStep] = useState<'credentials' | 'newPassword'>('credentials');
+    // 'credentials' -> optionally 'newPassword' or 'mfaCode'. The context
+    // already returns the challenge and chains further ones, so a NEW_PASSWORD
+    // step followed by an MFA step just works.
+    const [step, setStep] = useState<'credentials' | 'newPassword' | 'mfaCode'>('credentials');
     const [challenge, setChallenge] = useState<Challenge | null>(null);
+    const [mfaCode, setMfaCode] = useState('');
+    const [mfaCodeError, setMfaCodeError] = useState('');
 
     function validate(): boolean {
         let valid = true;
@@ -86,6 +88,14 @@ function LoginPageContent() {
             return;
         }
 
+        if (result.challengeName === 'SOFTWARE_TOKEN_MFA') {
+            setChallenge(result);
+            setMfaCode('');
+            setMfaCodeError('');
+            setStep('mfaCode');
+            return;
+        }
+
         setFormError(
             `This account requires ${result.challengeName}, which isn't supported yet. Contact an administrator.`,
         );
@@ -118,6 +128,31 @@ function LoginPageContent() {
         }
     }
 
+    async function handleMfaCode() {
+        if (!challenge) return;
+        if (!mfaCode) {
+            setMfaCodeError('Please enter the 6-digit code from your authenticator app');
+            return;
+        }
+        setMfaCodeError('');
+        setIsLoading(true);
+        try {
+            handleResult(await respondToChallenge({ ...challenge, code: mfaCode }));
+        } catch (err) {
+            // Not reportError(): that helper assumes a credentials-step 400/401
+            // means a wrong password, which would mislabel an expired session or
+            // wrong TOTP code here.
+            if (err instanceof ApiError) {
+                setMfaCodeError(err.message);
+            } else {
+                console.error('MFA verification failed with a non-ApiError:', err);
+                setMfaCodeError('Cannot reach the server. Check your connection and try again.');
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
     if (step === 'newPassword') {
         return (
             <div className="flex min-h-screen items-center justify-center px-4">
@@ -132,6 +167,38 @@ function LoginPageContent() {
                         error={formError || null}
                         isLoading={isLoading}
                     />
+                </div>
+            </div>
+        );
+    }
+
+    if (step === 'mfaCode') {
+        return (
+            <div className="flex min-h-screen items-center justify-center px-4">
+                <div className="flex flex-col items-center text-center w-80">
+                    <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">
+                        Enter your code
+                    </h1>
+                    <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-6">
+                        Enter the 6-digit code from your authenticator app.
+                    </h5>
+                    <div className="flex flex-col gap-4 w-full !mb-10">
+                        <TextInputField
+                            label="Authentication code *"
+                            placeholder="123456"
+                            errorMessage={mfaCodeError}
+                            isError={!!mfaCodeError}
+                            value={mfaCode}
+                            onChange={(value) => setMfaCode(value)}
+                        />
+                    </div>
+                    <Button
+                        className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10"
+                        onClick={handleMfaCode}
+                        loading={isLoading}
+                    >
+                        Verify
+                    </Button>
                 </div>
             </div>
         );
