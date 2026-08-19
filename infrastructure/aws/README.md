@@ -65,6 +65,7 @@
 | [aws_iam_role_policy.ci_preview](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.lambda_cognito_admin](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.lambda_s3_objects](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
+| [aws_iam_role_policy.lambda_ses_send](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy_attachment.ci_apply_admin](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.ci_plan_readonly](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_iam_role_policy_attachment.lambda_basic](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
@@ -85,6 +86,7 @@
 | [aws_s3_bucket_versioning.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_versioning) | resource |
 | [aws_s3_object.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_object) | resource |
 | [aws_security_group.rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/security_group) | resource |
+| [aws_ses_email_identity.no_reply](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_email_identity) | resource |
 | [aws_vpc_security_group_egress_rule.rds_all](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_egress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.rds_postgres](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [archive_file.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
