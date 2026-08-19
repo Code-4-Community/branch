@@ -4,6 +4,17 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 jest.mock('../db');
 jest.mock('../auth');
 
+// The DELETE route calls AdminDeleteUser; never let a test reach a real pool.
+const mockSend = jest.fn();
+
+jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
+  const actual = jest.requireActual('@aws-sdk/client-cognito-identity-provider') as object;
+  return {
+    ...actual,
+    CognitoIdentityProviderClient: jest.fn(() => ({ send: mockSend })),
+  };
+});
+
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest, checkAuthorization } from '../auth';
@@ -325,6 +336,9 @@ describe('POST /users unit tests', () => {
   describe('Success Cases', () => {
     beforeEach(() => {
       mockAdminAuth();
+      (mockSend as any).mockResolvedValue({
+        User: { Attributes: [{ Name: 'sub', Value: 'test-cognito-sub-123' }] },
+      });
     });
 
     test('201: successful POST returns 201 status and correct response shape', async () => {
@@ -501,19 +515,19 @@ describe('PATCH /users/{userId} unit tests', () => {
       mockExistingUserForPatch({
         user_id: 1,
         name: 'Existing User',
-        email: 'new@example.com',
+        email: 'existing@example.com',
         is_admin: true,
         profile_image: null,
       });
 
-      const res = await handler(patchEvent(1, { email: 'new@example.com', isAdmin: true }));
+      const res = await handler(patchEvent(1, { isAdmin: true }));
 
       expect(res.statusCode).toBe(200);
       const json = JSON.parse(res.body);
       expect(json).toHaveProperty('ok');
       expect(json).toHaveProperty('route');
       expect(json).toHaveProperty('body');
-      expect(json.body.email).toBe('new@example.com');
+      expect(json.body.email).toBe('existing@example.com');
       expect(json.body.isAdmin).toBe(true);
     });
 

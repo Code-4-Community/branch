@@ -1,3 +1,17 @@
+// DELETE /users/{userId} calls AdminDeleteUser, and CI supplies a real user
+// pool id -- the client must never be the real one here.
+const mockSend = jest.fn();
+
+jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
+  // Keep the real command classes so mockSend.mock.calls[n][0].input is
+  // assertable and constructor-level input validation still runs.
+  const actual = jest.requireActual('@aws-sdk/client-cognito-identity-provider');
+  return {
+    ...actual,
+    CognitoIdentityProviderClient: jest.fn(() => ({ send: mockSend })),
+  };
+});
+
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 import { handler } from '../handler';
@@ -5,6 +19,16 @@ import { authenticateRequest, checkAuthorization } from '../auth';
 
 
 jest.mock('../auth');
+
+jest.mock('@aws-sdk/client-cognito-identity-provider', () => ({
+  CognitoIdentityProviderClient: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockResolvedValue({
+      User: { Attributes: [{ Name: 'sub', Value: 'test-cognito-sub-123' }] },
+    }),
+  })),
+  AdminCreateUserCommand: jest.fn().mockImplementation((args) => args),
+  AdminDeleteUserCommand: jest.fn().mockImplementation((args) => args),
+}));
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
@@ -145,16 +169,15 @@ test("patch user test 🌞", async () => {
       path: '/1',
       body: {
         name: "John Branch",
-        email: "mrbranch@example.com",
         isAdmin: false
       },
     });
-    
+
     const res = await handler(patchEvent);
     expect(res.statusCode).toBe(200);
-    
+
     const body = JSON.parse(res.body).body;
-    expect(body.email).toBe("mrbranch@example.com");
+    expect(body.email).toBe(originalBody.email);
     expect(body.name).toBe("John Branch");
     expect(body.isAdmin).toBe(false);
   } finally {
@@ -164,7 +187,6 @@ test("patch user test 🌞", async () => {
       path: '/1',
       body: {
         name: originalBody.name,
-        email: originalBody.email,
         isAdmin: originalBody.isAdmin
       },
     });
@@ -180,7 +202,6 @@ test("patch user profile_image test 🌞", async () => {
     path: '/1',
     body: {
       name: "Ashley Duggan",
-      email: "ashley@branch.org",
       isAdmin: true,
       profileImage: "https://s3.amazonaws.com/branch-avatars/ashley.png"
     },

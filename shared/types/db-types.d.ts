@@ -30,6 +30,7 @@ export interface BranchDonors {
 }
 
 export interface BranchExpenditures {
+  admin_notes: string | null;
   amount: Numeric;
   category: string | null;
   created_at: Generated<Timestamp | null>;

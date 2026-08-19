@@ -9,9 +9,14 @@ Shared type definitions for the Branch lambdas. This replaces the per-lambda cop
 | `db-types.d.ts` | Kysely row types generated from `apps/backend/db/migrations/**` (`DB`, `BranchUsers`, `BranchProjects`, ...) |
 | `auth-types.d.ts` | Auth DTOs (`AuthenticatedUser`, `AuthContext`, `AccessLevel`, `AuthorizationCheck`) |
 
+`auth-types.d.ts` is the **single declaration** of those DTOs. `@branch/lambda-auth` depends on this
+package and re-exports them from its own `src/types.ts`, so both packages always agree by
+construction. Never add a second copy — a previous duplicate had already drifted (`isAdmin` was
+optional here and required there).
+
 ## How it works
 
-The package is **types-only** — it contains no runtime code and has no dependencies. Each lambda references it via a `file:` dependency in its `package.json`:
+The package is **types-only** — it contains no runtime code and has no dependencies, which is what lets `@branch/lambda-auth` depend on it without creating a cycle. Keep it a leaf. Each lambda references it via a `file:` dependency in its `package.json`:
 
 ```json
 "devDependencies": {

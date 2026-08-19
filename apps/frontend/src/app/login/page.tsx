@@ -20,10 +20,12 @@ function LoginPageContent() {
     // Where to land after signing in. AuthGate sets ?next= when it bounces an
     // unauthenticated user off a protected page; safeNextPath rejects anything
     // that isn't a same-origin path, so a crafted link can't redirect offsite.
-    const next = safeNextPath(searchParams.get('next'));
+    // With no ?next= we hand off to "/" rather than naming a page: the landing
+    // route depends on isAdmin, which only arrives with GET /auth/me.
+    const next = safeNextPath(searchParams.get('next'), '/');
 
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [password, setPasswordValue] = useState('');
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const [formError, setFormError] = useState('');
@@ -66,6 +68,9 @@ function LoginPageContent() {
             return;
         }
         // fetch rejects with a TypeError when the request never reached a server.
+        // Logged because that's not the only way to land here — any non-ApiError
+        // throw (e.g. a bug elsewhere in the login path) shows this same message.
+        console.error('Login failed with a non-ApiError:', err);
         setFormError('Cannot reach the server. Check your connection and try again.');
     }
 
@@ -157,7 +162,7 @@ function LoginPageContent() {
                     errorMessage={passwordError}
                     isError={!!passwordError}
                     value={password}
-                    onChange={(value) => setPassword(value)}
+                    onChange={(value) => setPasswordValue(value)}
                 />
             </div>
             <Button

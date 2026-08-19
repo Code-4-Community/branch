@@ -85,33 +85,33 @@ const adminUser = {
   },
 };
 
-// Non-admin user 1: has PI role on project 1
-const piUser = {
+// Non-admin user 1: has Director role on project 1
+const directorUser = {
   isAuthenticated: true as const,
   user: {
-    cognitoSub: 'pi-sub',
+    cognitoSub: 'director-sub',
     userId: 1,
     email: 'ashley@branch.org',
     isAdmin: false,
   },
 };
 
-// Non-admin user 2: has Accountant role on project 1
-const accountantUser = {
+// Non-admin user 2: also has Director role on project 1
+const secondDirectorUser = {
   isAuthenticated: true as const,
   user: {
-    cognitoSub: 'accountant-sub',
+    cognitoSub: 'second-director-sub',
     userId: 2,
     email: 'renee@branch.org',
     isAdmin: false,
   },
 };
 
-// Non-admin user 3: has Staff role on project 2, no role on project 1
-const staffUser = {
+// Non-admin user 3: has Student role on project 2, no role on project 1
+const studentUser = {
   isAuthenticated: true as const,
   user: {
-    cognitoSub: 'staff-sub',
+    cognitoSub: 'student-sub',
     userId: 3,
     email: 'nour@branch.org',
     isAdmin: false,
@@ -205,31 +205,31 @@ describe('Expenditures integration tests', () => {
   });
 
   describe('Authorization', () => {
-    test('201: PI can create expenditure on their project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(piUser);
+    test('201: Director can create expenditure on their project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(directorUser);
 
       const res = await handler(postEvent({ projectID: 1, amount: 500 }));
       expect(res.statusCode).toBe(201);
     });
 
-    test('201: Accountant can create expenditure on their project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(accountantUser);
+    test('201: a second Director on the same project can create expenditure', async () => {
+      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser);
 
-      // User 2 is Accountant on project 1
+      // User 2 is also a Director on project 1
       const res = await handler(postEvent({ projectID: 1, amount: 750 }));
       expect(res.statusCode).toBe(201);
       expect(JSON.parse(res.body).body.enteredBy).toBe(2);
     });
 
-    test('403: Staff cannot create expenditure on their project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
+    test('403: Student cannot create expenditure on their project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
 
       const res = await handler(postEvent({ projectID: 2, amount: 500 }));
       expect(res.statusCode).toBe(403);
     });
 
     test('403: user with no membership on project is rejected', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
 
       // User 3 has no membership on project 1
       const res = await handler(postEvent({ projectID: 1, amount: 500 }));
@@ -508,17 +508,17 @@ describe('Expenditures integration tests', () => {
       expect(body.body.projectId).toBe(1);
     });
 
-    test('403: staff with no membership on the project cannot read it', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
-      const id = await firstExpenditureId(1); // staffUser has no role on project 1
+    test('403: student with no membership on the project cannot read it', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+      const id = await firstExpenditureId(1); // studentUser has no role on project 1
     
       const res = await handler(idRequestEvent('GET', id));
       expect(res.statusCode).toBe(403);
     });
     
-    test('200: staff can read an expenditure on a project they have a role on', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
-      const id = await firstExpenditureId(2); // staffUser is Staff on project 2
+    test('200: student can read an expenditure on a project they have a role on', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+      const id = await firstExpenditureId(2); // studentUser is Student on project 2
     
       const res = await handler(idRequestEvent('GET', id));
       expect(res.statusCode).toBe(200);
@@ -545,26 +545,26 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    test('403: Staff cannot delete an expenditure on a project they have no role on', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
-      const id = await firstExpenditureId(1); // staffUser has no membership on project 1
+    test('403: Student cannot delete an expenditure on a project they have no role on', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+      const id = await firstExpenditureId(1); // studentUser has no membership on project 1
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(403);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('403: Staff role on their own project is still not sufficient to delete', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
-      const id = await firstExpenditureId(2); // staffUser is Staff on project 2
+    test('403: Student role on their own project is still not sufficient to delete', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+      const id = await firstExpenditureId(2); // studentUser is Student on project 2
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(403);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('200: PI can delete an expenditure on their own project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(piUser);
+    test('200: Director can delete an expenditure on their own project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(directorUser);
       const id = await firstExpenditureId(1);
 
       const res = await handler(idRequestEvent('DELETE', id));
@@ -572,8 +572,8 @@ describe('Expenditures integration tests', () => {
       expect(await expenditureExists(id)).toBe(false);
     });
 
-    test('200: Accountant can delete an expenditure on their own project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(accountantUser);
+    test('200: a second Director can delete an expenditure on their own project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser);
       const id = await firstExpenditureId(1);
 
       const res = await handler(idRequestEvent('DELETE', id));
@@ -656,7 +656,7 @@ describe('Expenditures integration tests', () => {
     });
 
     test('403: non-admin user is rejected', async () => {
-      mockAuthenticateRequest.mockResolvedValue(staffUser);
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
       const res = await handler(patchStatusEvent(1, { status: 'approved' }));
 
       expect(res.statusCode).toBe(403);

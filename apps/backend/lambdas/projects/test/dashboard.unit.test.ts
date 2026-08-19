@@ -81,33 +81,26 @@ describe('GET /dashboard unit tests', () => {
   describe('Response shape', () => {
     beforeEach(() => {
       mockDb.selectFrom = jest.fn();
-      // 1) totalSpent
+      // 1) totalSpent (every project, this year)
       mockDb.selectFrom.mockReturnValueOnce(chain({ total: '18000.00' }));
-      // 2) totalProjects
+      // 2) totalProjects (active only)
       mockDb.selectFrom.mockReturnValueOnce(chain({ count: '4' }));
       // 3) topCategory
       mockDb.selectFrom.mockReturnValueOnce(chain({ category: 'Travel', total: '6800.00' }));
-      // 4) projectRows
+      // 4) activeSpent — numerator of the average. Every project is active here,
+      //    so it matches totalSpent and the average stays 18000/4.
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '18000.00' }));
+      // 5) projectRows, with spend/headcount already joined by the database.
+      //    P3 carries the LEFT JOIN misses as nulls.
       mockDb.selectFrom.mockReturnValueOnce(chain([
-        { project_id: 1, name: 'P1', total_budget: '500000.00', currency: 'USD' },
-        { project_id: 2, name: 'P2', total_budget: '300000.00', currency: 'USD' },
-        { project_id: 3, name: 'P3', total_budget: null, currency: 'USD' },
+        { project_id: 1, name: 'P1', total_budget: '500000.00', currency: 'USD', spent: '9200.00', staff_count: '2' },
+        { project_id: 2, name: 'P2', total_budget: '300000.00', currency: 'USD', spent: '4500.00', staff_count: '1' },
+        { project_id: 3, name: 'P3', total_budget: null, currency: 'USD', spent: '4300.00', staff_count: null },
       ]));
-      // 5) spentByProject
+      // 6) expenses already grouped into YYYY-MM x category by the database
       mockDb.selectFrom.mockReturnValueOnce(chain([
-        { project_id: 1, total: '9200.00' },
-        { project_id: 2, total: '4500.00' },
-        { project_id: 3, total: '4300.00' },
-      ]));
-      // 6) staffByProject
-      mockDb.selectFrom.mockReturnValueOnce(chain([
-        { project_id: 1, count: '2' },
-        { project_id: 2, count: '1' },
-      ]));
-      // 7) raw expenditure rows (handler buckets by YYYY-MM in JS)
-      mockDb.selectFrom.mockReturnValueOnce(chain([
-        { spent_on: new Date('2025-02-10'), category: 'Travel', amount: '5000.00' },
-        { spent_on: new Date('2025-03-22'), category: 'Travel Foreign', amount: '4200.00' },
+        { month: '2025-02', category: 'Travel', total: '5000.00' },
+        { month: '2025-03', category: 'Travel Foreign', total: '4200.00' },
       ]));
     });
 
@@ -119,7 +112,16 @@ describe('GET /dashboard unit tests', () => {
       expect(body.summary.totalSpent).toBe(18000);
       expect(body.summary.totalProjects).toBe(4);
       expect(body.summary.averageSpendPerProject).toBe(4500);
-      expect(body.summary.topExpenseCategory).toEqual({ category: 'Travel', amount: 6800 });
+      expect(body.summary.topExpenseCategory).toEqual({
+        category: 'Travel',
+        amount: 6800,
+        percentage: 37.78,
+      });
+    });
+
+    test('200: response is stamped with the year the aggregates cover', async () => {
+      const res = await handler(getEvent());
+      expect(JSON.parse(res.body).year).toBe(new Date().getUTCFullYear());
     });
 
     test('200: projects breakdown joins spent and staff_count by project_id', async () => {
@@ -142,7 +144,7 @@ describe('GET /dashboard unit tests', () => {
       expect(body.projects[2].spent_percentage).toBe(0);
     });
 
-    test('200: expensesByMonth buckets raw rows into YYYY-MM', async () => {
+    test('200: expensesByMonth passes through the database buckets', async () => {
       const res = await handler(getEvent());
       const body = JSON.parse(res.body);
       expect(body.expensesByMonth).toEqual([
@@ -164,8 +166,7 @@ describe('GET /dashboard unit tests', () => {
       mockDb.selectFrom.mockReturnValueOnce(chain({ total: null }));
       mockDb.selectFrom.mockReturnValueOnce(chain({ count: '0' }));
       mockDb.selectFrom.mockReturnValueOnce(chain(undefined));
-      mockDb.selectFrom.mockReturnValueOnce(chain([]));
-      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: null }));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
 
@@ -178,6 +179,53 @@ describe('GET /dashboard unit tests', () => {
       expect(body.summary.topExpenseCategory).toBeNull();
       expect(body.projects).toEqual([]);
       expect(body.expensesByMonth).toEqual([]);
+    });
+
+    test('200: top category percentage is 0 rather than NaN when nothing was spent', async () => {
+      mockDb.selectFrom = jest.fn();
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '0' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '2' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ category: 'Travel', total: '0' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '0' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
+      const res = await handler(getEvent());
+      const body = JSON.parse(res.body);
+      expect(body.summary.topExpenseCategory.percentage).toBe(0);
+    });
+
+    test('200: average aggregates active projects only, on both sides of the divide', async () => {
+      mockDb.selectFrom = jest.fn();
+      // 18000 spent this year across every project...
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '18000.00' }));
+      // ...but only 4 projects are still active...
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '4' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ category: 'Travel', total: '6800.00' }));
+      // ...and only 12000 of that spend belongs to them.
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '12000.00' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
+      const body = JSON.parse((await handler(getEvent())).body);
+      // 12000/4, not 18000/4: the 6000 belonging to projects that have already
+      // ended is out of the numerator, matching the denominator.
+      expect(body.summary.averageSpendPerProject).toBe(3000);
+      // The headline total still reports every project's spend.
+      expect(body.summary.totalSpent).toBe(18000);
+    });
+
+    test('200: average is 0 when active projects exist but none of them spent', async () => {
+      mockDb.selectFrom = jest.fn();
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: '5000.00' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '3' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ category: 'Travel', total: '5000.00' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ total: null }));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
+      const body = JSON.parse((await handler(getEvent())).body);
+      expect(body.summary.averageSpendPerProject).toBe(0);
     });
 
     test('500: db failure surfaces as 500', async () => {

@@ -1,5 +1,5 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { authenticateRequest } from './auth';
@@ -10,18 +10,23 @@ import {
   generateDocx,
   uploadToS3,
   saveReportRecord,
+  objectUrlFor,
+  keyFromObjectUrl,
+  reportKeyPrefix,
 } from './report-service';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
-const REGION = process.env.AWS_REGION ?? 'us-east-2';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx'] as const;
 const MIME_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 };
+const REPORT_TYPES = ['technical', 'narrative'] as const;
+const DOWNLOAD_URL_TTL_SECONDS = 900;
 const REPORT_ID_ROUTE = /^\/(\d+)$/;
+const REPORT_DOWNLOAD_ROUTE = /^(?:\/reports)?\/(\d+)\/download$/;
 
 async function requireAuth(
   event: any
@@ -34,6 +39,7 @@ async function requireAuth(
 }
 
 type FileType = typeof ALLOWED_EXTENSIONS[number];
+type ReportType = typeof REPORT_TYPES[number];
 
 export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
   try {
@@ -44,7 +50,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     const normalizedPath = rawPath.replace(/\/$/, '');
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
 
-    // CORS preflight — must return 2xx or the browser blocks the request.
+    // CORS preflight
     if (method === 'OPTIONS') {
       return json(200, {});
     }
@@ -76,6 +82,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(400, { message: `file_type must be one of: ${ALLOWED_EXTENSIONS.join(', ')}` });
       }
 
+      const reportType = (body.report_type ?? 'technical') as ReportType;
+      if (!REPORT_TYPES.includes(reportType)) {
+        return json(400, { message: `report_type must be one of: ${REPORT_TYPES.join(', ')}` });
+      }
+
       const reportData = await fetchReportData(projectId);
       if (!reportData) {
         return json(404, { message: 'Project not found' });
@@ -103,13 +114,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       }
 
       const title = `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
-      const record = await saveReportRecord(projectId, objectUrl, title);
+      const record = await saveReportRecord(projectId, objectUrl, title, reportType);
 
       return json(201, {
         ok: true,
         report_id: record.report_id,
         object_url: record.object_url,
         report_type: record.report_type,
+        file_type: fileType,
       });
     }
 
@@ -184,7 +196,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!fileName || typeof fileName !== 'string') {
         return json(400, { message: 'fileName is required' });
       }
-      const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+      const safeFileName = fileName.replace(/^.*[\\/]/, '').replace(/[^A-Za-z0-9._-]/g, '_');
+      if (!/[A-Za-z0-9]/.test(safeFileName)) {
+        return json(400, { message: 'Invalid fileName' });
+      }
+      const ext = safeFileName.split('.').pop()?.toLowerCase() ?? '';
       if (!ALLOWED_EXTENSIONS.includes(ext as typeof ALLOWED_EXTENSIONS[number])) {
         return json(400, { message: 'Only PDF and DOCX files are supported' });
       }
@@ -204,16 +220,14 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(403, { message: 'You do not have access to upload reports for this project' });
       }
 
-      const key = `reports/${projectId}/${Date.now()}-${fileName}`;
+      const key = `${reportKeyPrefix(projectId)}${Date.now()}-${safeFileName}`;
       const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
         Bucket: BUCKET,
         Key: key,
         ContentType: MIME_TYPES[ext],
       }), { expiresIn: 3600 });
 
-      const objectUrl = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;
-
-      return json(200, { uploadUrl, objectUrl });
+      return json(200, { uploadUrl, objectUrl: objectUrlFor(key) });
     }
 
     // POST /reports
@@ -240,8 +254,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       if (!objectUrl || typeof objectUrl !== 'string') {
         return json(400, { message: 'objectUrl is required' });
       }
-      const REPORT_TYPES = ['technical', 'narrative'] as const;
-      type ReportType = typeof REPORT_TYPES[number];
+      const postedKey = keyFromObjectUrl(objectUrl);
+      if (!postedKey) {
+        return json(400, { message: 'objectUrl must point at the reports bucket' });
+      }
       const resolvedReportType: ReportType = (reportType && REPORT_TYPES.includes(reportType as ReportType)) ? reportType as ReportType : 'technical';
 
       const projectExists = await db.selectFrom('branch.projects')
@@ -255,6 +271,13 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(403, { message: 'You do not have access to upload reports for this project' });
       }
 
+      // Checked after authorization: the key must sit under this project's prefix,
+      // or a caller with access to one project could register another project's
+      // object and then read it back through GET /reports/{id}/download.
+      if (!postedKey.startsWith(reportKeyPrefix(projectId))) {
+        return json(400, { message: "objectUrl must point at this project's prefix in the reports bucket" });
+      }
+
       const report = await db
         .insertInto('branch.reports')
         .values({ project_id: projectId, title: (title as string).trim(), object_url: objectUrl as string, report_type: resolvedReportType })
@@ -264,6 +287,36 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       return json(201, report);
     }
     
+    // GET /reports/{id}/download
+    const downloadMatch = method === 'GET' ? normalizedPath.match(REPORT_DOWNLOAD_ROUTE) : null;
+    if (downloadMatch) {
+      const id = downloadMatch[1];
+
+      const authResult = await requireAuth(event);
+      if ('errorResponse' in authResult) return authResult.errorResponse;
+      const { user } = authResult;
+
+      const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+      if (!report) return json(404, { message: 'Report not found' });
+
+      const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
+      if (!hasAccess) {
+        return json(403, { message: 'You do not have access to this report' });
+      }
+
+      const key = keyFromObjectUrl(report.object_url);
+      if (!key || !key.startsWith(reportKeyPrefix(report.project_id))) {
+        return json(409, { message: 'Report is not stored in the reports bucket' });
+      }
+
+      const downloadUrl = await getSignedUrl(s3, new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+      }), { expiresIn: DOWNLOAD_URL_TTL_SECONDS });
+
+      return json(200, { downloadUrl, expiresIn: DOWNLOAD_URL_TTL_SECONDS });
+    }
+
     // GET /reports/{id}
     const getIdMatch = method === 'GET' ? normalizedPath.match(REPORT_ID_ROUTE) : null;
     if (getIdMatch) {      

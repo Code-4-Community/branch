@@ -1,12 +1,13 @@
 'use client'
 import React, { useEffect, useState } from 'react';
 import NavBar from "../components/Navbar";
-import { HStack, Input, Button, Table, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
+import { HStack, Input, Button, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from '../components/TextInputField';
 import { CiFilter } from "react-icons/ci";
 import { LuArrowDownUp } from "react-icons/lu";
 import { FaPlus, FaAngleLeft, FaAngleRight } from "react-icons/fa";
 import DropdownSelector from '../components/DropdownSelector';
+import DataTable, { type DataTableColumn } from '../components/DataTable';
 
 type Donation = {
     donor_id: number;
@@ -19,6 +20,31 @@ import { useApi } from '@/hooks/useApi';
 const donorsBase = 'http://localhost:3003';
 const projectsBase = 'http://localhost:3002';
 
+
+const donationColumns: DataTableColumn<Donation>[] = [
+    {
+        key: 'date',
+        header: 'Date',
+        width: '15%',
+        cell: (donation) => donation.date ?? '—',
+        skeleton: { width: '70%' },
+    },
+    {
+        key: 'donor',
+        header: 'Donor ID',
+        width: '15%',
+        cell: (donation) => `#${String(donation.donor_id).padStart(6, '0')}`,
+        skeleton: { width: '80%' },
+    },
+    { key: 'project', header: 'Project Name', width: '55%', cell: (donation) => donation.project_name },
+    {
+        key: 'amount',
+        header: 'Amount',
+        width: '15%',
+        cell: (donation) => `$${donation.amount.toLocaleString()}`,
+        skeleton: { width: '55%' },
+    },
+];
 
 export default function DonationsPage() {
     const [currentPage, setCurrentPage] = useState(1);
@@ -91,8 +117,8 @@ export default function DonationsPage() {
         currentPage * rowsPerPage
     );
 
-    const getPageNumbers = () => {
-        if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const getPageNumbers = (): Array<number | '...'> => {
+        if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
         if (currentPage <= 3) return [1, 2, 3, '...', totalPages];
         if (currentPage >= totalPages - 2) return [1, '...', totalPages - 2, totalPages - 1, totalPages];
         return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
@@ -258,54 +284,32 @@ export default function DonationsPage() {
                         </Portal>
                     </Dialog.Root>
 
-                    {loading && <p>Loading donations...</p>}
                     {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
-                    {!loading && !error && (
-                    <Table.Root>
-                        <Table.ColumnGroup>
-                            <Table.Column width="15%" />
-                            <Table.Column width="15%" />
-                            <Table.Column width="55%" />
-                            <Table.Column width="15%" />
-                        </Table.ColumnGroup>
-                        <Table.Header>
-                            <Table.Row backgroundColor={'var(--color-primary-800)'}>
-                                <Table.ColumnHeader color={'var(--color-core-white)'}>Date</Table.ColumnHeader>
-                                <Table.ColumnHeader color={'var(--color-core-white)'}>Donor ID</Table.ColumnHeader>
-                                <Table.ColumnHeader color={'var(--color-core-white)'}>Project Name</Table.ColumnHeader>
-                                <Table.ColumnHeader color={'var(--color-core-white)'}>Amount</Table.ColumnHeader>
-                            </Table.Row>
-                        </Table.Header>
-                        <Table.Body>
-                            {currentDonations.map((donation) => (
-                                <Table.Row key={donation.donor_id}>
-                                    <Table.Cell>{donation.date ?? '—'}</Table.Cell>
-                                    <Table.Cell>#{String(donation.donor_id).padStart(6, '0')}</Table.Cell>
-                                    <Table.Cell>{donation.project_name}</Table.Cell>
-                                    <Table.Cell>${donation.amount.toLocaleString()}</Table.Cell>
-                                </Table.Row>
-                            ))}
-                        </Table.Body>
-                    </Table.Root>
+                    {!error && (
+                        <DataTable
+                            columns={donationColumns}
+                            rows={currentDonations}
+                            rowKey={(donation) => donation.donor_id}
+                            isLoading={loading}
+                            skeletonRows={rowsPerPage}
+                            emptyMessage="No donations found."
+                        />
                     )}
-
-                    <div style={{ marginTop: 'auto' }}>
-                        <HStack width="100%" justify="center" paddingTop="3%" paddingBottom="3%" gap="6">
-                            <FaAngleLeft
-                                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                                style={{ cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.3 : 1, color: 'var(--color-core-green)' }}
-                            />
-                            {getPageNumbers().map((page, index) => (
-                                page === '...'
-                                    ? <Button key={`ellipsis-${index}`} backgroundColor={'var(--color-core-white)'} color={'var(--color-core-green)'} border={'1px solid'} borderColor={'var(--color-core-green)'} cursor={'default'}> ... </Button>
-                                    : <Button key={page} onClick={() => setCurrentPage(page as number)} backgroundColor={currentPage === page ? 'var(--color-core-green)' : 'var(--color-core-white)'} color={currentPage === page ? 'var(--color-core-white)' : 'var(--color-core-green)'} border={'1px solid'} borderColor={'var(--color-core-green)'}>{page}</Button>
-                            ))}
-                            <FaAngleRight
-                                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                                style={{ cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.3 : 1, color: 'var(--color-core-green)' }}
-                            />
-                        </HStack>
-                    </div>
+                    <HStack width="100%" justify="center" paddingTop="3%" paddingBottom="3%" gap="6">
+                        <FaAngleLeft
+                            onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                            style={{ cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.3 : 1, color: 'var(--color-core-green)' }}
+                        />
+                        {getPageNumbers().map((page, index) => (
+                            page === '...'
+                                ? <Button key={`ellipsis-${index}`} backgroundColor="var(--color-core-white)" color="var(--color-core-green)" border="1px solid" borderColor="var(--color-core-green)" cursor="default">...</Button>
+                                : <Button key={page} onClick={() => setCurrentPage(page as number)} backgroundColor={currentPage === page ? 'var(--color-core-green)' : 'var(--color-core-white)'} color={currentPage === page ? 'var(--color-core-white)' : 'var(--color-core-green)'} border="1px solid" borderColor="var(--color-core-green)">{page}</Button>
+                        ))}
+                        <FaAngleRight
+                            onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+                            style={{ cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.3 : 1, color: 'var(--color-core-green)' }}
+                        />
+                    </HStack>
                 </div>
             </main>
         </div>

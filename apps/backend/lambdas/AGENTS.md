@@ -73,6 +73,10 @@ await db.selectFrom('branch.users').where('cognito_sub', '=', sub).selectAll().e
 await db.selectFrom('branch.users').select(db.fn.count('user_id').as('count')).executeTakeFirst();
 ```
 
+**Aggregate and filter in SQL, not in the lambda.** Pulling rows over the wire to sum, group or filter them in JS costs a full table scan that no index can fix, and it grows with the table. Use `db.fn.sum`/`db.fn.count` + `groupBy`, and push every filter into `where`. `GET /projects/dashboard` (`projects/handler.ts:83`) is the counter-example: it selects every expenditure row and buckets it by month in a JS loop.
+
+**Check your new query has an index.** Filter, join and `ORDER BY` columns need one — Postgres does not index foreign keys for you. `project_memberships` and `project_donations` in particular have UNIQUE constraints whose *leading* column is not the one most queries filter on, so those don't help. Add the index in the same PR (see `db/README.md`).
+
 ## Validation
 
 `projects` and `expenditures` have `validation-utils.ts` with static-method classes (`ProjectValidationUtils`, `ExpenditureValidationUtils`) returning either a `ValidationResult<T>` (`{ isValid, value?, error? }`) or an `Error` instance. Validate before DB writes; return `json(400, { message })` on failure. Integer params validated with `/^\d+$/` + positivity; dates with `/^\d{4}-\d{2}-\d{2}$/`.

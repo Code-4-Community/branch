@@ -4,9 +4,10 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import {
+  DEFAULT_LANDING_PATH,
   LOGIN_PATH,
-  POST_LOGIN_PATH,
   classifyRoute,
+  landingPathFor,
   requiresAdmin,
 } from '@/lib/routes';
 import FullPageSpinner from './FullPageSpinner';
@@ -46,9 +47,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     }
 
     if (access === 'public' && isAuthenticated) {
-      router.replace(POST_LOGIN_PATH);
+      router.replace(landingPathFor(isAdmin));
     }
-  }, [isLoading, isAuthenticated, access, pathname, router]);
+  }, [isLoading, isAuthenticated, isAdmin, access, pathname, router]);
 
   if (isLoading) return <FullPageSpinner />;
 
@@ -91,10 +92,10 @@ function NoAccessPanel() {
         access, ask an admin to update your account.
       </p>
       <a
-        href={POST_LOGIN_PATH}
+        href={DEFAULT_LANDING_PATH}
         style={{ color: '#2E6038', textDecoration: 'underline' }}
       >
-        Back to dashboard
+        Back to projects
       </a>
     </div>
   );

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
 import DropdownSelector from './DropdownSelector';
 import { useApi } from '@/hooks/useApi';
 import FileUpload from './FileUpload';
 import { FiDollarSign } from 'react-icons/fi';
+import { getReceiptUploadUrl, uploadReceiptToS3 } from '@/lib/expenditures';
 import { Project } from '@/types';
 interface AddExpenseModalProps {
   open: boolean;
@@ -30,6 +31,7 @@ export default function AddExpenseModal({
   const [newAmount, setNewAmount] = useState('');
   const [newProject, setNewProject] = useState('');
   const [newFile, setNewFile] = useState<File | null>(null);
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
 
   const [dateError, setDateError] = useState(false);
   const [typeError, setTypeError] = useState(false);
@@ -45,6 +47,8 @@ export default function AddExpenseModal({
     setNewDescription('');
     setNewAmount('');
     setNewProject('');
+    setNewFile(null);
+    setReceiptUrl(null);
     setDateError(false);
     setTypeError(false);
     setDescError(false);
@@ -59,25 +63,41 @@ export default function AddExpenseModal({
     onClose();
   }
 
+  const selectedProject = projects.find((p) => p.name === newProject);
+
+  // The receipt is stored under its project's prefix, so the project has to be
+  // chosen before the file can go anywhere.
+  const uploadReceipt = useCallback(
+    async (file: File, onProgress: (transferredBytes: number) => void) => {
+      if (!selectedProject) throw new Error('Select a project first');
+      const { uploadUrl, objectUrl } = await getReceiptUploadUrl(
+        file.name,
+        selectedProject.project_id,
+      );
+      await uploadReceiptToS3(uploadUrl, file, onProgress);
+      return objectUrl;
+    },
+    [selectedProject],
+  );
+
   async function handleSubmit() {
     const hasDateError = !newDate.trim();
     const hasTypeError = !newType.trim();
     const hasDescError = !newDescription.trim();
     const hasAmountError = !newAmount.trim() || isNaN(Number(newAmount)) || Number(newAmount) < 0;
     const hasProjectError = !newProject.trim();
-    const hasFileError = !newFile;
+    const hasFileError = !newFile || !receiptUrl;
 
     setDateError(hasDateError);
     setTypeError(hasTypeError);
     setDescError(hasDescError);
     setAmountError(hasAmountError);
     setProjectError(hasProjectError);
-    setFileError(hasFileError ? 'File type not supported' : null);
+    setFileError(hasFileError ? 'Please upload an image of the receipt' : null);
 
 
     if (hasDateError || hasTypeError || hasDescError || hasAmountError || hasProjectError || hasFileError) return;
 
-    const selectedProject = projects.find((p) => p.name === newProject);
     if (!selectedProject) {
       setProjectError(true);
       return;
@@ -90,6 +110,7 @@ export default function AddExpenseModal({
         category: newType,
         description: newDescription,
         spentOn: newDate,
+        receiptUrl,
       });
 
       resetForm();
@@ -299,8 +320,11 @@ export default function AddExpenseModal({
                   <label style={{ fontSize: '14px', fontWeight: 500 }}>Upload Receipt</label>
                   <FileUpload
                     value={newFile}
-                    onChange={(file) => {
+                    upload={uploadReceipt}
+                    disabledReason={selectedProject ? undefined : 'Select a project first'}
+                    onChange={(file, objectUrl) => {
                       setNewFile(file);
+                      setReceiptUrl(objectUrl);
                       setFileError(null);
                     }}
                     onReject={() => setFileError('File type not supported')}

@@ -5,7 +5,7 @@ import AuthGate from '@/app/components/AuthGate';
 // jest.setup.ts returns a fresh router spy on every call, so redirects need a
 // local mock with stable spies and a mutable pathname.
 const mockReplace = jest.fn();
-let currentPath = '/dashboard';
+let currentPath = '/projects';
 
 // Stable object: the real useRouter returns a stable reference, and returning a
 // fresh one here would re-run effects that list `router` as a dependency.
@@ -34,7 +34,7 @@ function renderGate() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  currentPath = '/dashboard';
+  currentPath = '/projects';
   authState = { isAuthenticated: false, isAdmin: false, isLoading: false };
 });
 
@@ -59,6 +59,15 @@ describe('AuthGate', () => {
       expect(mockReplace).toHaveBeenCalledWith('/login?next=%2Fexpenses');
     });
 
+    it('keeps the dashboard behind the admin flag', () => {
+      currentPath = '/dashboard';
+      authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      renderGate();
+
+      expect(screen.getByText(/don't have access to this page/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument();
+    });
+
     it('does not render protected children to an anonymous visitor', () => {
       // The redirect is asynchronous; without render suppression the page would
       // mount and start fetching in the meantime.
@@ -77,9 +86,17 @@ describe('AuthGate', () => {
   });
 
   describe('public routes', () => {
-    it('bounces an authenticated user off /login', () => {
+    it('bounces an authenticated non-admin off /login to a page they can load', () => {
       currentPath = '/login';
       authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      renderGate();
+
+      expect(mockReplace).toHaveBeenCalledWith('/projects');
+    });
+
+    it('bounces an authenticated admin off /login to the dashboard', () => {
+      currentPath = '/login';
+      authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
       renderGate();
 
       expect(mockReplace).toHaveBeenCalledWith('/dashboard');
@@ -134,7 +151,7 @@ describe('AuthGate', () => {
     it('classifies production-style paths the same as dev ones', () => {
       // next.config.ts sets trailingSlash: true, so production emits "/login/".
       currentPath = '/login/';
-      authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
       renderGate();
 
       expect(mockReplace).toHaveBeenCalledWith('/dashboard');
