@@ -48,6 +48,6 @@ Per-app build/test/dev commands live in each app's `package.json` and AGENTS.md.
 ## Conventions
 
 - TypeScript strict everywhere. Prettier + ESLint enforced on push (husky + lint-staged).
-- Squash-merge only; 2 approvals required; PR merge queue. Branch protection requires `frontend-ci`, `lambda-tests`, `terraform-plan-summary` checks to pass.
+- Squash-merge only; 1 approval required; PR merge queue. Branch protection requires `frontend-ci`, `lambda-tests`, `terraform-plan-summary` checks to pass.
 - Schema changes are migrations: `make new-migration NAME=x` in `apps/backend`, write SQL, `make migrate`. Applied to prod automatically on merge, before the lambda deploy — so additive changes only in a single PR. See `apps/backend/db/README.md`.
 - Don't commit secrets — all secrets flow through Infisical → GitHub Actions / Terraform.
