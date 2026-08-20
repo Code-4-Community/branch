@@ -26,7 +26,7 @@ State lives on the **`bot-state`** branch (provisioned by `infrastructure/github
 | Workflow | Trigger | Does |
 |----------|---------|------|
 | `pr-reviewer-assign.yml` | PR opened/ready/reopened/unlabeled (not draft, not `no-review`) | Round-robin pick reviewer(s) skipping author (+ always-reviewer), request review, post Slack message, persist cursor + per-PR file. Idempotent. |
-| `pr-review-status.yml` | review submitted (approved/changes_requested) | Recompute per-reviewer status, update Slack message + thread reply, DM author when all done, mark `reviewed`. |
+| `pr-review-status.yml` | review submitted (approved/changes_requested) | Recompute per-reviewer status, update Slack message + thread reply, DM author when at least one reviewer approves (and no active changes-requested state), mark `reviewed` when approval requirement is met or all reviewers finish. |
 | `pr-reviewer-remind.yml` | cron `0 */6 * * *`, or manual | For open PRs with pending reviewers and 36h+ since last reminder → Slack reminder; GC terminal PR files after 7 days. |
 | `pr-closed.yml` | PR closed | Strikethrough Slack header, mark file `merged`/`closed`. |
 | `pr-no-review-label.yml` | `no-review` label added | Remove the bot's review requests, delete the Slack message + thread replies, delete the per-PR file. |
