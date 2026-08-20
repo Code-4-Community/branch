@@ -34,7 +34,8 @@ resource "github_branch_protection" "main" {
   required_pull_request_reviews {
     required_approving_review_count = 1
     dismiss_stale_reviews           = false
-    require_code_owner_reviews      = true
+    require_code_owner_reviews      = false
+    pull_request_bypassers          = ["/nourshoreibah"]
   }
 
   required_status_checks {
