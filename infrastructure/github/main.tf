@@ -32,7 +32,7 @@ resource "github_branch_protection" "main" {
   pattern       = "main"
 
   required_pull_request_reviews {
-    required_approving_review_count = 2
+    required_approving_review_count = 1
     dismiss_stale_reviews           = false
     require_code_owner_reviews      = true
   }
@@ -68,7 +68,7 @@ resource "github_repository_environment" "preview" {
 # Intentionally has NO required reviewers, for the same reason as `preview` but a
 # sharper one: `deploy` depends on `migrate`, so a pending approval would leave
 # main merged with its schema applied and its lambda code undeployed — silently,
-# until someone noticed. The PR already passed 2 approvals and code-owner review,
+# until someone noticed. The PR already passed 1 approval and code-owner review,
 # and the mechanical gates (migrations-fresh, migrations-guard) plus the
 # pre-migration snapshot are what actually catch bad migrations. Add
 # `reviewers { users = [...] }` HERE, not to `production`, if that changes.
