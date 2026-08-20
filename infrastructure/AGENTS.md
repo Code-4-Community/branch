@@ -19,7 +19,7 @@ Application infra. Providers: AWS 6.14.1, Infisical.
 
 ### `github/` (state key `github/terraform.tfstate`)
 Repo + automation config. Providers: integrations/github ~6.6, Infisical.
-- `main.tf` — repo settings (squash-only, auto-merge, delete-branch-on-merge, merge queue, vuln alerts), main branch protection (required checks: `terraform-plan-summary`, `lambda-tests`, `frontend-ci`; 2 code-owner approvals), collaborators.
+- `main.tf` — repo settings (squash-only, auto-merge, delete-branch-on-merge, merge queue, vuln alerts), main branch protection (required checks: `terraform-plan-summary`, `lambda-tests`, `frontend-ci`; 1 required approval with code-owner review), collaborators.
 - `review-bot.tf` — provisions the **`bot-state` branch** used by the PR review bot. Terraform owns `config.json` (reviewer roster, GitHub→Slack mappings, always-reviewer, Slack channel, timezone). The bot owns `state.json` (round-robin cursor) and `prs/*.json` (per-PR tracking) — TF does not manage those. Lightweight branch protection (no force-push/delete, no approval needed for bot pushes).
 - `secrets.tf` — GitHub Actions secrets synced from Infisical (`INFISICAL_*`, `GH_PAT`, `COGNITO_*`, `SLACK_BOT_TOKEN`). AWS access in CI uses OIDC roles (`infrastructure/aws/oidc.tf`), not static keys.
 - `variables.tf` — roster + Slack mapping values.

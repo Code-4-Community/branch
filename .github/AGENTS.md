@@ -39,7 +39,7 @@ assignment, no Slack post, no reminders. It works before *and* after assignment 
 if the bot already ran, `pr-no-review-label.yml` unwinds it. Removing the label
 re-runs assignment (via the `unlabeled` trigger on `pr-reviewer-assign.yml`).
 The label is created in the GitHub UI, not Terraform. Note this only silences the
-bot — `main` branch protection still requires 2 approvals.
+bot — `main` branch protection still requires 1 approval.
 
 ## Editing notes
 
