@@ -77,13 +77,15 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
     advanced_security_mode = "AUDIT"
   }
 
-  # MFA is off for now, stated explicitly rather than left to the default.
-  # Turning it on later is config-only on the backend: set "OPTIONAL" and add
-  # software_token_mfa_configuration { enabled = true }. POST
-  # /auth/respond-challenge already handles SOFTWARE_TOKEN_MFA / SMS_MFA /
-  # EMAIL_OTP / SELECT_MFA_TYPE, and POST /auth/login returns the challenge
-  # instead of hanging; only TOTP *enrollment* endpoints would need adding.
-  mfa_configuration = "OFF"
+  # TOTP MFA is optional, opt-in per user via POST /auth/mfa-setup +
+  # /auth/mfa-verify (apps/backend/lambdas/auth/handler.ts) -- never forced at
+  # login. POST /auth/respond-challenge already handles SOFTWARE_TOKEN_MFA /
+  # SMS_MFA / EMAIL_OTP / SELECT_MFA_TYPE for the sign-in side.
+  mfa_configuration = "OPTIONAL"
+
+  software_token_mfa_configuration {
+    enabled = true
+  }
 
   # Prevent accidental deletion
   deletion_protection = "ACTIVE"
