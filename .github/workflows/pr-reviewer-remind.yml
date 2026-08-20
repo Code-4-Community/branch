@@ -141,15 +141,45 @@ jobs:
               }
 
               const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
-              const hasReviewed = (login) => reviews.some(
-                r => r.user.login.toLowerCase() === login.toLowerCase() && REVIEW_STATES.includes(r.state)
-              );
+              const latestStateFor = (login) => {
+                if (!login) return null;
+                const reviewerReviews = reviews.filter(
+                  r => r.user.login.toLowerCase() === login.toLowerCase() && REVIEW_STATES.includes(r.state)
+                );
+                if (reviewerReviews.length === 0) return null;
+                return reviewerReviews[reviewerReviews.length - 1].state;
+              };
 
-              const mainDone = hasReviewed(prData.main_reviewer);
-              const secondDone = !prData.second_reviewer || hasReviewed(prData.second_reviewer);
+              const mainState = latestStateFor(prData.main_reviewer);
+              const secondState = prData.second_reviewer ? latestStateFor(prData.second_reviewer) : null;
 
-              if (mainDone && secondDone) {
-                console.log(`PR #${prData.pr_number}: all assigned reviewers have reviewed. Done.`);
+              const authorSlackId = config.github_to_slack[prData.author];
+              const authorIsAlways = authorSlackId === config.always_reviewer_slack;
+              let alwaysState = null;
+              if (!authorIsAlways) {
+                const alwaysEntry = Object.entries(config.github_to_slack).find(
+                  ([, slackId]) => slackId === config.always_reviewer_slack
+                );
+                if (alwaysEntry) {
+                  alwaysState = latestStateFor(alwaysEntry[0]);
+                }
+              }
+
+              const participantStates = [
+                mainState,
+                secondState,
+                alwaysState,
+              ].filter(Boolean);
+
+              const mainDone = mainState !== null;
+              const secondDone = !prData.second_reviewer || secondState !== null;
+              const alwaysDone = authorIsAlways || alwaysState !== null;
+              const allDone = mainDone && secondDone && alwaysDone;
+              const anyChangesRequested = participantStates.includes('CHANGES_REQUESTED');
+              const approvalMet = participantStates.includes('APPROVED') && !anyChangesRequested;
+
+              if (approvalMet || allDone) {
+                console.log(`PR #${prData.pr_number}: completion criteria reached. Done.`);
                 prData.status = 'reviewed';
                 prData.resolved_at = new Date().toISOString();
                 fs.writeFileSync(filePath, JSON.stringify(prData, null, 2) + '\n');
@@ -193,7 +223,6 @@ jobs:
               );
               // Only cc the always-reviewer if they aren't the PR author
               // (if they are the author, they're not reviewing this one)
-              const authorSlackId = config.github_to_slack[prData.author];
               if (authorSlackId !== config.always_reviewer_slack) {
                 mentionLines.push(`:eyes: cc <@${config.always_reviewer_slack}>`);
               }
