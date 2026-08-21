@@ -1,14 +1,16 @@
-'use client';
+"use client";
 
 import React, { useState } from 'react';
+import { useUsers } from '@/hooks/useUsers';
 import StaffCard from '../components/StaffCard';
 import AddUserModal from '../components/AddUserModal';
 import { Button } from '@chakra-ui/react';
-import { facilitationTeam, teamMembers } from './mockUsers';
 
 export default function AccountsPage() {
+    const { users, loading, error } = useUsers();
+    const shownFacilitation = users.filter(u => u.is_admin);
+    const shownTeam = users.filter(u => !u.is_admin);
     const [isModalOpen, setIsModalOpen] = useState(false);
-
     return (
         <div className="!p-6">
             <div className="flex items-center justify-between !mb-4">
@@ -23,13 +25,15 @@ export default function AccountsPage() {
             </div>
             <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">Core BRANCH Facilitation Team</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 !pt-3 !pb-7">
-                {facilitationTeam.map(user => (
+                {loading && <p>Loading users...</p>}
+                {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+                {!loading && !error && shownFacilitation.map(user => (
                     <StaffCard key={user.user_id} name={user.name} email={user.email} />
                 ))}
             </div>
             <h3 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-3)] !font-semibold">BRANCH Team Members</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 !pt-3 !pb-7">
-                {teamMembers.map(user => (
+                {!loading && !error && shownTeam.map(user => (
                     <StaffCard key={user.user_id} name={user.name} email={user.email} />
                 ))}
             </div>

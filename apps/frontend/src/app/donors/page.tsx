@@ -1,36 +1,22 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import NavBar from "../components/Navbar";
 import { HStack, Input, Button, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from '../components/TextInputField';
 import { CiFilter } from "react-icons/ci";
 import { LuArrowDownUp } from "react-icons/lu";
-import { FaPlus } from "react-icons/fa";
+import { FaPlus, FaAngleLeft, FaAngleRight } from "react-icons/fa";
 import DropdownSelector from '../components/DropdownSelector';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
-import Pagination from '../components/Pagination';
 
 type Donor = {
     donor_id: number;
     organization: string;
     contact_name: string | null;
     contact_email: string | null;
-    num_projects: number;
-    last_donation: string | null;
 };
+import { useApi } from '@/hooks/useApi';
 
-const mockDonors: Donor[] = [
-    { donor_id: 1, organization: 'Green Future Foundation', contact_name: 'Alice Chen', contact_email: 'alice@greenfuture.org', num_projects: 4, last_donation: '03/12/2024' },
-    { donor_id: 2, organization: 'Horizon Trust', contact_name: 'James Patel', contact_email: 'james@horizontrust.org', num_projects: 2, last_donation: '01/05/2024' },
-    { donor_id: 3, organization: 'Bright Path Nonprofit', contact_name: null, contact_email: null, num_projects: 7, last_donation: '02/28/2024' },
-    { donor_id: 4, organization: 'Unity Giving Circle', contact_name: 'Maria Lopez', contact_email: 'maria@unitygiving.org', num_projects: 1, last_donation: '03/30/2024' },
-    { donor_id: 5, organization: 'Sunrise Community Fund', contact_name: 'David Kim', contact_email: 'david@sunrisefund.org', num_projects: 3, last_donation: '04/01/2024' },
-    { donor_id: 6, organization: 'Blue Ridge Giving', contact_name: 'Sarah Thompson', contact_email: 'sarah@blueridge.org', num_projects: 5, last_donation: '02/14/2024' },
-    { donor_id: 7, organization: 'Maple Leaf Charitable Trust', contact_name: null, contact_email: null, num_projects: 2, last_donation: '01/20/2024' },
-    { donor_id: 8, organization: 'Evergreen Partners', contact_name: 'Rachel Singh', contact_email: 'rachel@evergreenpartners.org', num_projects: 6, last_donation: '03/05/2024' },
-    { donor_id: 9, organization: 'New Horizons Society', contact_name: 'Tom Bradley', contact_email: 'tom@newhorizons.org', num_projects: 9, last_donation: '04/10/2024' },
-    { donor_id: 10, organization: 'Coastal Care Foundation', contact_name: 'Nina Rossi', contact_email: 'nina@coastalcare.org', num_projects: 3, last_donation: '03/22/2024' },
-];
 
 const donorColumns: DataTableColumn<Donor>[] = [
     {
@@ -40,19 +26,19 @@ const donorColumns: DataTableColumn<Donor>[] = [
         cell: (donor) => `#${String(donor.donor_id).padStart(6, '0')}`,
         skeleton: { width: '80%' },
     },
-    { key: 'organization', header: 'Donor Name', width: '55%', cell: (donor) => donor.organization },
+    { key: 'organization', header: 'Donor Name', width: '35%', cell: (donor) => donor.organization },
     {
-        key: 'projects',
-        header: '# of Projects',
-        width: '15%',
-        cell: (donor) => donor.num_projects,
-        skeleton: { width: '35%' },
+        key: 'contact_name',
+        header: 'Contact Name',
+        width: '25%',
+        cell: (donor) => donor.contact_name ?? '—',
+        skeleton: { width: '70%' },
     },
     {
-        key: 'last_donation',
-        header: 'Last Donation',
-        width: '15%',
-        cell: (donor) => donor.last_donation ?? '—',
+        key: 'contact_email',
+        header: 'Contact Email',
+        width: '25%',
+        cell: (donor) => donor.contact_email ?? '—',
         skeleton: { width: '70%' },
     },
 ];
@@ -61,15 +47,44 @@ export default function DonorsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const rowsPerPage = 10;
 
-    const totalPages = Math.ceil(mockDonors.length / rowsPerPage);
-    const currentDonors = mockDonors.slice(
+    const api = useApi();
+    const [donors, setDonors] = useState<Donor[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function fetchDonors() {
+            try {
+                const json = await api.get<Donor[] | { data: Donor[] }>('/donors');
+                const list = Array.isArray(json) ? json : (json && 'data' in json ? json.data : []);
+                setDonors(list);
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load donors');
+                setDonors([]);
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchDonors();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const totalPages = Math.max(1, Math.ceil(donors.length / rowsPerPage));
+    const currentDonors = donors.slice(
         (currentPage - 1) * rowsPerPage,
         currentPage * rowsPerPage
     );
 
+    const getPageNumbers = (): Array<number | '...'> => {
+        if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
+        if (currentPage <= 3) return [1, 2, 3, '...', totalPages];
+        if (currentPage >= totalPages - 2) return [1, '...', totalPages - 2, totalPages - 1, totalPages];
+        return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+    };
+
     const [showFilter, setShowFilter] = useState(false);
     const [selectedDonor, setSelectedDonor] = useState<string>('');
-    const donorNames = mockDonors.map(d => d.organization);
+    const donorNames = donors.map(d => d.organization);
 
     const [showSort, setShowSort] = useState(false);
     const [selectedSort, setSelectedSort] = useState<string>('');
@@ -206,18 +221,32 @@ export default function DonorsPage() {
                         </Portal>
                     </Dialog.Root>
 
-                    <DataTable
-                        columns={donorColumns}
-                        rows={currentDonors}
-                        rowKey={(donor) => donor.donor_id}
-                        emptyMessage="No donors found."
-                    />
-
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        onPageChange={setCurrentPage}
-                    />
+                    {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+                    {!error && (
+                        <DataTable
+                            columns={donorColumns}
+                            rows={currentDonors}
+                            rowKey={(donor) => donor.donor_id}
+                            isLoading={loading}
+                            skeletonRows={rowsPerPage}
+                            emptyMessage="No donors found."
+                        />
+                    )}
+                    <HStack width="100%" justify="center" paddingTop="3%" paddingBottom="3%" gap="6">
+                        <FaAngleLeft
+                            onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                            style={{ cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.3 : 1, color: 'var(--color-core-green)' }}
+                        />
+                        {getPageNumbers().map((page, index) => (
+                            page === '...'
+                                ? <Button key={`ellipsis-${index}`} backgroundColor="var(--color-core-white)" color="var(--color-core-green)" border="1px solid" borderColor="var(--color-core-green)" cursor="default">...</Button>
+                                : <Button key={page} onClick={() => setCurrentPage(page as number)} backgroundColor={currentPage === page ? 'var(--color-core-green)' : 'var(--color-core-white)'} color={currentPage === page ? 'var(--color-core-white)' : 'var(--color-core-green)'} border="1px solid" borderColor="var(--color-core-green)">{page}</Button>
+                        ))}
+                        <FaAngleRight
+                            onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+                            style={{ cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.3 : 1, color: 'var(--color-core-green)' }}
+                        />
+                    </HStack>
                 </div>
             </main>
         </div>

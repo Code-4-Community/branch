@@ -2,6 +2,35 @@ import { render, screen, fireEvent, waitFor } from '../utils';
 import Donations from '@/app/donations/page';
 
 describe('Donations Page Component', () => {
+    beforeEach(() => {
+        // seed tokens expected by the app
+        localStorage.setItem('branch_access_token', 'fake.access.token');
+        localStorage.setItem('branch_id_token', 'fake.id.token');
+        localStorage.setItem('branch_refresh_token', 'fake.refresh');
+
+        global.fetch = jest.fn().mockImplementation((input: RequestInfo) => {
+            const url = typeof input === 'string' ? input : (input as Request).url;
+            if (url.includes('/auth/me')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ userId: 1, cognitoSub: 'sub-test', email: 'test@example.com', name: 'Test User', isAdmin: false }) } as unknown as Response);
+            }
+            if (url.includes('/donations')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ donation_id: 1, donor_id: 1, project_id: 1, donated_at: '2026-01-01', amount: 100 }] }) } as unknown as Response);
+            }
+            if (url.includes('/donors')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ({ data: [{ donor_id: 1, organization: 'Org A' }] }) } as unknown as Response);
+            }
+            if (url.includes('/projects')) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => ([{ project_id: 1, name: 'Proj Alpha' }]) } as unknown as Response);
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+        });
+    });
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+        localStorage.clear();
+    });
+
     it('renders the donations heading', () => {
         render(<Donations />);
         expect(screen.getByText('Donations', { selector: 'h1' })).toBeInTheDocument();
@@ -19,12 +48,12 @@ describe('Donations Page Component', () => {
         expect(screen.getByText('New Donation')).toBeInTheDocument();
     });
 
-    it('renders the table with correct headers', () => {
+    it('renders the table with correct headers', async () => {
         render(<Donations />);
-        expect(screen.getByText('Date')).toBeInTheDocument();
-        expect(screen.getByText('Donor ID')).toBeInTheDocument();
-        expect(screen.getByText('Project Name')).toBeInTheDocument();
-        expect(screen.getByText('Amount')).toBeInTheDocument();
+        expect(await screen.findByText('Date')).toBeInTheDocument();
+        expect(await screen.findByText('Donor ID')).toBeInTheDocument();
+        expect(await screen.findByText('Project Name')).toBeInTheDocument();
+        expect(await screen.findByText('Amount')).toBeInTheDocument();
     });
 
     it('renders left and right pagination arrows', () => {

@@ -1,44 +1,34 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import NavBar from "../components/Navbar";
 import { HStack, Input, Button, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from '../components/TextInputField';
 import { CiFilter } from "react-icons/ci";
 import { LuArrowDownUp } from "react-icons/lu";
-import { FaPlus } from "react-icons/fa";
+import { FaPlus, FaAngleLeft, FaAngleRight } from "react-icons/fa";
 import DropdownSelector from '../components/DropdownSelector';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
-import Pagination from '../components/Pagination';
 
 type Donation = {
     donor_id: number;
-    date: string | null;
+    donated_at: string | null;
+    project_id: number;
     project_name: string;
-    amount: number;
+    amount: number | string;
 };
+import { useApi } from '@/hooks/useApi';
 
-const mockDonors = ['Green Future Foundation', 'Horizon Trust', 'Bright Path Nonprofit', 'Unity Giving Circle', 'Sunrise Community Fund'];
-const mockProjects = ['Clean Water Initiative', 'Youth Mentorship Program', 'Food Security Drive', 'Urban Garden Project', 'STEM Education Fund'];
+type ApiDonation = Omit<Donation, 'project_name'>;
+type ApiDonor = { donor_id: number; organization: string };
+type ApiProject = { project_id: number; name: string };
 
-const mockDonations: Donation[] = [
-    { donor_id: 1, date: '03/12/2024', project_name: 'Clean Water Initiative', amount: 5000 },
-    { donor_id: 2, date: '01/05/2024', project_name: 'Youth Mentorship Program', amount: 12000 },
-    { donor_id: 3, date: '02/28/2024', project_name: 'Food Security Drive', amount: 750 },
-    { donor_id: 4, date: '03/30/2024', project_name: 'Urban Garden Project', amount: 3200 },
-    { donor_id: 5, date: '04/01/2024', project_name: 'STEM Education Fund', amount: 8500 },
-    { donor_id: 6, date: '02/14/2024', project_name: 'Shelter Renovation', amount: 1500 },
-    { donor_id: 7, date: '01/20/2024', project_name: 'Mental Health Outreach', amount: 20000 },
-    { donor_id: 8, date: '03/05/2024', project_name: 'Digital Literacy Program', amount: 9750 },
-    { donor_id: 9, date: '04/10/2024', project_name: 'Community Health Fair', amount: 4300 },
-    { donor_id: 10, date: '03/22/2024', project_name: 'After-School Arts', amount: 600 },
-];
 
 const donationColumns: DataTableColumn<Donation>[] = [
     {
-        key: 'date',
+        key: 'donated_at',
         header: 'Date',
         width: '15%',
-        cell: (donation) => donation.date ?? '—',
+        cell: (donation) => donation.donated_at ?? '—',
         skeleton: { width: '70%' },
     },
     {
@@ -53,7 +43,7 @@ const donationColumns: DataTableColumn<Donation>[] = [
         key: 'amount',
         header: 'Amount',
         width: '15%',
-        cell: (donation) => `$${donation.amount.toLocaleString()}`,
+        cell: (donation) => `$${Number(donation.amount).toLocaleString()}`,
         skeleton: { width: '55%' },
     },
 ];
@@ -62,11 +52,58 @@ export default function DonationsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const rowsPerPage = 10;
 
-    const totalPages = Math.ceil(mockDonations.length / rowsPerPage);
-    const currentDonations = mockDonations.slice(
+    const api = useApi();
+    const [donations, setDonations] = useState<Donation[]>([]);
+    const [donorNames, setDonorNames] = useState<string[]>([]);
+    const [projectNames, setProjectNames] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function loadAll() {
+            try {
+                const [donationsJson, donorsJson, projectsJson] = await Promise.all([
+                    api.get<ApiDonation[] | { data: ApiDonation[] }>('/donors/donations'),
+                    api.get<ApiDonor[] | { data: ApiDonor[] }>('/donors'),
+                    api.get<ApiProject[]>('/projects'),
+                ]);
+
+                const donations = Array.isArray(donationsJson) ? donationsJson : donationsJson.data;
+                const donors = Array.isArray(donorsJson) ? donorsJson : donorsJson.data;
+                const projects = projectsJson;
+                const projectNamesById = new Map(projects.map((project) => [project.project_id, project.name]));
+
+                setDonations(donations.map((donation) => ({
+                    ...donation,
+                    project_name: projectNamesById.get(donation.project_id) ?? `Project #${donation.project_id}`,
+                })));
+                setDonorNames(donors.map((donor) => donor.organization));
+                setProjectNames(projects.map((project) => project.name));
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to load donations data');
+                setDonations([]);
+                setDonorNames([]);
+                setProjectNames([]);
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadAll();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const totalPages = Math.max(1, Math.ceil(donations.length / rowsPerPage));
+    const currentDonations = donations.slice(
         (currentPage - 1) * rowsPerPage,
         currentPage * rowsPerPage
     );
+
+    const getPageNumbers = (): Array<number | '...'> => {
+        if (totalPages <= 5) return Array.from({ length: totalPages }, (_, index) => index + 1);
+        if (currentPage <= 3) return [1, 2, 3, '...', totalPages];
+        if (currentPage >= totalPages - 2) return [1, '...', totalPages - 2, totalPages - 1, totalPages];
+        return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+    };
 
     const [showFilter, setShowFilter] = useState(false);
     const [selectedDonor, setSelectedDonor] = useState<string>('');
@@ -124,7 +161,7 @@ export default function DonationsPage() {
                                 {showFilter && (
                                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                                         <DropdownSelector
-                                            options={mockDonors}
+                                            options={donorNames}
                                             placeholder="Filter by donor..."
                                             multiSelect={true}
                                             value={selectedDonor}
@@ -146,13 +183,13 @@ export default function DonationsPage() {
                                 </Button>
                                 {showSort && (
                                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                                        <DropdownSelector
-                                            options={sortOptions}
-                                            placeholder="Sort by..."
-                                            multiSelect={false}
-                                            value={selectedSort}
-                                            onChange={(val: string | string[]) => setSelectedSort(val as string)}
-                                        />
+                                            <DropdownSelector
+                                                options={sortOptions}
+                                                placeholder="Sort by..."
+                                                multiSelect={false}
+                                                value={selectedSort}
+                                                onChange={(val: string | string[]) => setSelectedSort(val as string)}
+                                            />
                                     </div>
                                 )}
                             </div>
@@ -194,7 +231,7 @@ export default function DonationsPage() {
                                                 {dateError && <span style={{ color: 'red', fontSize: '12px' }}>Enter a valid date</span>}
                                             </div>
                                             <DropdownSelector
-                                                options={mockDonors}
+                                                options={donorNames}
                                                 placeholder="Select a donor"
                                                 multiSelect={false}
                                                 value={newDonor}
@@ -202,7 +239,7 @@ export default function DonationsPage() {
                                             />
                                             {donorError && <span style={{ color: 'red', fontSize: '12px' }}>Select a donor</span>}
                                             <DropdownSelector
-                                                options={mockProjects}
+                                                options={projectNames}
                                                 placeholder="Select a project"
                                                 multiSelect={false}
                                                 value={newProject}
@@ -228,18 +265,32 @@ export default function DonationsPage() {
                         </Portal>
                     </Dialog.Root>
 
-                    <DataTable
-                        columns={donationColumns}
-                        rows={currentDonations}
-                        rowKey={(donation) => donation.donor_id}
-                        emptyMessage="No donations found."
-                    />
-
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        onPageChange={setCurrentPage}
-                    />
+                    {error && <p style={{ color: 'var(--color-error-red)' }}>{error}</p>}
+                    {!error && (
+                        <DataTable
+                            columns={donationColumns}
+                            rows={currentDonations}
+                            rowKey={(donation) => donation.donor_id}
+                            isLoading={loading}
+                            skeletonRows={rowsPerPage}
+                            emptyMessage="No donations found."
+                        />
+                    )}
+                    <HStack width="100%" justify="center" paddingTop="3%" paddingBottom="3%" gap="6">
+                        <FaAngleLeft
+                            onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+                            style={{ cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.3 : 1, color: 'var(--color-core-green)' }}
+                        />
+                        {getPageNumbers().map((page, index) => (
+                            page === '...'
+                                ? <Button key={`ellipsis-${index}`} backgroundColor="var(--color-core-white)" color="var(--color-core-green)" border="1px solid" borderColor="var(--color-core-green)" cursor="default">...</Button>
+                                : <Button key={page} onClick={() => setCurrentPage(page as number)} backgroundColor={currentPage === page ? 'var(--color-core-green)' : 'var(--color-core-white)'} color={currentPage === page ? 'var(--color-core-white)' : 'var(--color-core-green)'} border="1px solid" borderColor="var(--color-core-green)">{page}</Button>
+                        ))}
+                        <FaAngleRight
+                            onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+                            style={{ cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.3 : 1, color: 'var(--color-core-green)' }}
+                        />
+                    </HStack>
                 </div>
             </main>
         </div>
