@@ -628,39 +628,53 @@ describe('Expenditures integration tests', () => {
       return result.rows[0]?.status;
     }
 
+    // Seeded pending row, so the two success cases below really do move a
+    // status. Expenditure 1 is seeded approved and is used for the rejection
+    // cases, where the point is that nothing changes.
+    const PENDING_ID = 5;
+
     test('200: admin approves a pending expenditure', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
-      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+      expect(await getStatus(PENDING_ID)).toBe('pending');
+      const res = await handler(patchStatusEvent(PENDING_ID, { status: 'approved' }));
 
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body).body.status).toBe('approved');
       // confirms it persisted to the database
-      expect(await getStatus(1)).toBe('approved');
+      expect(await getStatus(PENDING_ID)).toBe('approved');
     });
 
     test('200: admin declines a pending expenditure', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
-      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
+      expect(await getStatus(PENDING_ID)).toBe('pending');
+      const res = await handler(patchStatusEvent(PENDING_ID, { status: 'denied' }));
 
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body).body.status).toBe('denied');
-      expect(await getStatus(1)).toBe('denied');
+      expect(await getStatus(PENDING_ID)).toBe('denied');
     });
 
+    // The rejection cases each ask for a status the row does not already hold
+    // and assert the stored value is untouched, so they cannot pass merely
+    // because the request happened to match the seed.
     test('401: unauthenticated request is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
-      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+      const before = await getStatus(1);
+      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
 
       expect(res.statusCode).toBe(401);
-      expect(await getStatus(1)).toBe('pending');
+      expect(before).not.toBe('denied');
+      expect(await getStatus(1)).toBe(before);
     });
 
     test('403: non-admin user is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
-      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+      const before = await getStatus(1);
+      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
 
       expect(res.statusCode).toBe(403);
-      expect(await getStatus(1)).toBe('pending');
+      expect(before).not.toBe('denied');
+      expect(await getStatus(1)).toBe(before);
     });
 
     test('404: expenditure not found', async () => {
@@ -672,10 +686,11 @@ describe('Expenditures integration tests', () => {
 
     test('400: status not valid is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const before = await getStatus(1);
       const res = await handler(patchStatusEvent(1, { status: 'pend' }));
 
       expect(res.statusCode).toBe(400);
-      expect(await getStatus(1)).toBe('pending');
+      expect(await getStatus(1)).toBe(before);
     });
 
     test('400: invalid id is rejected', async () => {

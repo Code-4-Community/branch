@@ -81,6 +81,7 @@ paths:
                       properties:
                         total_spent:
                           type: number
+                          description: Approved expenditures only.
                         member_count:
                           type: integer
                         is_active:
@@ -142,6 +143,9 @@ paths:
                     $ref: '#/components/schemas/Project'
                   stats:
                     type: object
+                    description: >-
+                      Counts approved expenditures only; `expenditures` below
+                      still lists every row, including those under review.
                     properties:
                       totalBudget:
                         type: number
@@ -285,6 +289,10 @@ paths:
   /dashboard:
     get:
       summary: GET /dashboard
+      description: >-
+        Admin-only roll-up: this year's totals, the per-project breakdown and
+        the monthly expense series. Every spend figure counts approved
+        expenditures only.
       responses:
         '200':
           description: OK
