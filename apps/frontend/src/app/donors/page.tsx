@@ -3,12 +3,12 @@ import React, { useState } from 'react';
 import NavBar from "../components/Navbar";
 import { HStack, Input, Button, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
 import TextInputField from '../components/TextInputField';
-import { CiFilter } from "react-icons/ci";
 import { LuArrowDownUp } from "react-icons/lu";
 import { FaPlus } from "react-icons/fa";
-import DropdownSelector from '../components/DropdownSelector';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import Pagination from '../components/Pagination';
+import { MdOutlineMail } from "react-icons/md";
+import { useApi } from '@/hooks/useApi';
 
 type Donor = {
     donor_id: number;
@@ -18,6 +18,23 @@ type Donor = {
     num_projects: number;
     last_donation: string | null;
 };
+
+/** Raw shape of a row from GET /donors — no computed fields yet. */
+interface RawDonor {
+    donor_id: number;
+    organization: string;
+    contact_name: string | null;
+    contact_email: string | null;
+}
+
+/** Raw shape of a row from GET /donations. */
+interface RawDonation {
+    donation_id: number;
+    donor_id: number;
+    project_id: number;
+    amount: string;
+    donated_at: string;
+}
 
 const mockDonors: Donor[] = [
     { donor_id: 1, organization: 'Green Future Foundation', contact_name: 'Alice Chen', contact_email: 'alice@greenfuture.org', num_projects: 4, last_donation: '03/12/2024' },
@@ -42,10 +59,10 @@ const donorColumns: DataTableColumn<Donor>[] = [
     },
     { key: 'organization', header: 'Donor Name', width: '55%', cell: (donor) => donor.organization },
     {
-        key: 'projects',
-        header: '# of Projects',
+        key: 'contact_name',
+        header: 'Contact Name',
         width: '15%',
-        cell: (donor) => donor.num_projects,
+        cell: (donor) => donor.contact_name,
         skeleton: { width: '35%' },
     },
     {
@@ -58,22 +75,41 @@ const donorColumns: DataTableColumn<Donor>[] = [
 ];
 
 export default function DonorsPage() {
+    const api = useApi();
+
     const [currentPage, setCurrentPage] = useState(1);
     const rowsPerPage = 10;
 
-    const totalPages = Math.ceil(mockDonors.length / rowsPerPage);
-    const currentDonors = mockDonors.slice(
+    
+    // Sort by last donated.
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | null>(null);
+
+    // Sorted view — does not mutate donors list, so re-sorting or clearing the
+    // sort never loses the original order.
+    const sortedDonors = React.useMemo(() => {
+        if (!sortDirection) return mockDonors;
+        const withDates = [...mockDonors];
+        withDates.sort((a, b) => {
+            const aTime = a.last_donation ? new Date(a.last_donation).getTime() : 0;
+            const bTime = b.last_donation ? new Date(b.last_donation).getTime() : 0;
+            return sortDirection === 'desc' ? bTime - aTime : aTime - bTime;
+        });
+        return withDates;
+    }, [sortDirection]);
+
+
+    const totalPages = Math.max(1, Math.ceil(sortedDonors.length / rowsPerPage));
+    const currentDonors = sortedDonors.slice(
         (currentPage - 1) * rowsPerPage,
         currentPage * rowsPerPage
     );
 
-    const [showFilter, setShowFilter] = useState(false);
-    const [selectedDonor, setSelectedDonor] = useState<string>('');
-    const donorNames = mockDonors.map(d => d.organization);
-
-    const [showSort, setShowSort] = useState(false);
-    const [selectedSort, setSelectedSort] = useState<string>('');
-    const sortOptions = ['# of Projects', 'Last Donated'];
+    // Toggling re-sorts on every click: most recent first, then oldest first,
+    // then back to the original mock order.
+    function handleSortByLastDonated() {
+        setSortDirection((prev) => (prev === 'desc' ? 'asc' : prev === 'asc' ? null : 'desc'));
+        setCurrentPage(1);
+    }
 
     const [showNewDonor, setShowNewDonor] = useState(false);
     const [newOrganization, setNewOrganization] = useState('');
@@ -82,19 +118,61 @@ export default function DonorsPage() {
     const [orgError, setOrgError] = useState(false);
     const [nameError, setNameError] = useState(false);
     const [emailError, setEmailError] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
 
-    const handleSave = () => {
+    const isFormValid =
+        newOrganization.trim().length > 0 &&
+        newContactName.trim().length > 0 &&
+        newContactEmail.trim().length > 0;
+
+    function resetForm() {
+        setNewOrganization('');
+        setNewContactName('');
+        setNewContactEmail('');
+        setOrgError(false);
+        setNameError(false);
+        setEmailError(false);
+        setSubmitError(null);
+    }
+
+    const handleSave = async () => {
         const hasOrgError = !newOrganization.trim();
         const hasNameError = !newContactName.trim();
         const hasEmailError = !newContactEmail.trim();
-
+ 
         setOrgError(hasOrgError);
         setNameError(hasNameError);
         setEmailError(hasEmailError);
-
+ 
         if (hasOrgError || hasNameError || hasEmailError) return;
-        setShowNewDonor(false);
+ 
+        try {
+            setSubmitting(true);
+            setSubmitError(null);
+ 
+            // NOTE: backend expects snake_case for these two fields.
+            await api.post('/donors', {
+                organization: newOrganization.trim(),
+                contact_name: newContactName.trim(),
+                contact_email: newContactEmail.trim(),
+            });
+ 
+            resetForm();
+            setShowNewDonor(false);
+            // Table still reads from mockDonors — another dev is wiring up
+            // the real GET /donors refresh here.
+        } catch (err) {
+            setSubmitError(err instanceof Error ? err.message : 'Failed to create donor');
+        } finally {
+            setSubmitting(false);
+        }
     };
+
+    function handleCloseModal() {
+        resetForm();
+        setShowNewDonor(false);
+    }
 
     return (
         <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -107,67 +185,33 @@ export default function DonorsPage() {
                             <Input placeholder="🔍︎ Search..." variant="outline" />
                         </HStack>
                         <HStack>
-                            <div style={{ position: 'relative' }}>
-                                <Button
-                                    backgroundColor={'var(--color-core-white)'}
-                                    color={'var(--color-core-black)'}
-                                    border={'1px solid'}
-                                    borderColor={'var(--color-black-500)'}
-                                    onClick={() => setShowFilter(prev => !prev)}
-                                >
-                                    <CiFilter />
-                                    Filter By
-                                </Button>
-                                {showFilter && (
-                                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                                        <DropdownSelector
-                                            options={donorNames}
-                                            placeholder="Filter by donor..."
-                                            multiSelect={true}
-                                            value={selectedDonor}
-                                            onChange={(val: string | string[]) => setSelectedDonor(val as string)}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                            <div style={{ position: 'relative' }}>
-                                <Button
-                                    backgroundColor={'var(--color-core-white)'}
-                                    color={'var(--color-core-black)'}
-                                    border={'1px solid'}
-                                    borderColor={'var(--color-black-500)'}
-                                    onClick={() => setShowSort(prev => !prev)}
-                                >
-                                    <LuArrowDownUp />
-                                    Sort By
-                                </Button>
-                                {showSort && (
-                                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
-                                        <DropdownSelector
-                                            options={sortOptions}
-                                            placeholder="Sort by..."
-                                            multiSelect={true}
-                                            value={selectedSort}
-                                            onChange={(val: string | string[]) => setSelectedSort(val as string)}
-                                        />
-                                    </div>
-                                )}
-                            </div>
+                            <Button
+                                backgroundColor={'var(--color-core-white)'}
+                                color={'var(--color-core-black)'}
+                                border={'1px solid'}
+                                borderColor={'var(--color-black-500)'}
+                                onClick={handleSortByLastDonated}
+                            >
+                                <LuArrowDownUp />
+                                Last Donated
+                                {sortDirection === 'desc' && ' ↓'}
+                                {sortDirection === 'asc' && ' ↑'}
+                            </Button>
                             <Button backgroundColor={'var(--color-core-green)'} color={'var(--color-core-white)'} onClick={() => setShowNewDonor(true)}>
                                 <FaPlus />
                                 New Donor
                             </Button>
                         </HStack>
                     </HStack>
-
-                    <Dialog.Root open={showNewDonor} onOpenChange={(e) => setShowNewDonor(e.open)}>
+ 
+                    <Dialog.Root open={showNewDonor} onOpenChange={(e) => { if (!e.open) handleCloseModal(); }}>
                         <Portal>
                             <Dialog.Backdrop />
                             <Dialog.Positioner>
                                 <Dialog.Content>
                                     <Dialog.Header display="flex" justifyContent="space-between" alignItems="center">
                                         <Dialog.Title fontFamily={'var(--font-heading)'} fontSize={'var(--font-size-heading-3)'} fontWeight={600}>Add New Donor</Dialog.Title>
-                                        <CloseButton onClick={() => setShowNewDonor(false)} />
+                                        <CloseButton onClick={handleCloseModal} />
                                     </Dialog.Header>
                                     <Dialog.Body>
                                         <Stack gap={4}>
@@ -190,29 +234,43 @@ export default function DonorsPage() {
                                             <TextInputField
                                                 label="Contact Email*"
                                                 placeholder="Contact email"
+                                                icon={<MdOutlineMail />}
                                                 value={newContactEmail}
                                                 onChange={(val) => { setNewContactEmail(val); setEmailError(false); }}
                                                 isError={emailError}
                                                 errorMessage="Enter valid email"
                                             />
+                                            {submitError && (
+                                                <p style={{ color: 'var(--color-error-red)', fontSize: '14px' }}>
+                                                    {submitError}
+                                                </p>
+                                            )}
                                         </Stack>
                                     </Dialog.Body>
                                     <Dialog.Footer>
-                                        <Button variant="outline" borderColor={'var(--color-core-green)'} onClick={() => setShowNewDonor(false)}>Cancel</Button>
-                                        <Button backgroundColor={'var(--color-core-green)'} color={'var(--color-core-white)'} onClick={handleSave}>Add Donor</Button>
+                                        <Button variant="outline" borderColor={'var(--color-core-green)'} onClick={handleCloseModal}>Cancel</Button>
+                                        <Button
+                                            backgroundColor={isFormValid ? 'var(--color-core-green)' : 'var(--color-primary-500)'}
+                                            color={'var(--color-core-white)'}
+                                            onClick={handleSave}
+                                            disabled={!isFormValid || submitting}
+                                            cursor={isFormValid ? 'pointer' : 'not-allowed'}
+                                        >
+                                            {submitting ? 'Adding…' : 'Add Donor'}
+                                        </Button>
                                     </Dialog.Footer>
                                 </Dialog.Content>
                             </Dialog.Positioner>
                         </Portal>
                     </Dialog.Root>
-
+ 
                     <DataTable
                         columns={donorColumns}
                         rows={currentDonors}
                         rowKey={(donor) => donor.donor_id}
                         emptyMessage="No donors found."
                     />
-
+ 
                     <Pagination
                         currentPage={currentPage}
                         totalPages={totalPages}
