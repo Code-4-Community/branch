@@ -58,6 +58,9 @@ jobs:
           DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
       - name: Build shared lambda-auth package
         run: npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
+      # lambda-http depends on lambda-auth's dist, so it builds second.
+      - name: Build shared lambda-http package
+        run: npm ci --prefix shared/lambda-http && npm run build --prefix shared/lambda-http
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
@@ -253,12 +256,29 @@ jobs:
       - name: Run tests
         run: npm test --prefix shared/lambda-auth
 
+  # Same blind spot as shared-auth: discover only globs the lambdas, so the
+  # shared router would go untested. Every route in every lambda goes through it.
+  shared-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build shared lambda-auth package
+        run: npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
+      - name: Install dependencies
+        run: npm ci --prefix shared/lambda-http
+      - name: Run tests
+        run: npm test --prefix shared/lambda-http
+
   # NOTE: do not rename this job. infrastructure/github/main.tf lists
   # "lambda-tests" as a required status check on main; renaming it here would
   # silently disable the gate rather than fail loudly.
   lambda-tests:
     name: lambda-tests
-    needs: [test, shared-auth, migrations-fresh, migrations-guard]
+    needs: [test, shared-auth, shared-http, migrations-fresh, migrations-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -270,6 +290,10 @@ jobs:
           fi
           if [ "${{ needs.shared-auth.result }}" != "success" ]; then
             echo "shared/lambda-auth tests failed or were cancelled"
+            exit 1
+          fi
+          if [ "${{ needs.shared-http.result }}" != "success" ]; then
+            echo "shared/lambda-http tests failed or were cancelled"
             exit 1
           fi
           # Folded into this gate rather than added to branch protection, so
