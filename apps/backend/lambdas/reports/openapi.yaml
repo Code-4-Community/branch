@@ -163,10 +163,12 @@ paths:
       summary: Auto-generate a PDF report from project data
       description: >
         Generates a report for the given project containing project info,
-        participants and roles, donations, and expenditures. Supports PDF and
-        DOCX output via the `file_type` field (defaults to `pdf`). Uploads the
-        file to S3 and records it in the database. Requires the caller to be a
-        member of the project or a global admin.
+        participants and roles, donations, and approved expenditures. Rows
+        still under review, or denied, appear in neither the expenditures
+        table nor the total beneath it. Supports PDF and DOCX output via the
+        `file_type` field (defaults to `pdf`). Uploads the file to S3 and
+        records it in the database. Requires the caller to be a member of the
+        project or a global admin.
       requestBody:
         required: true
         content:
