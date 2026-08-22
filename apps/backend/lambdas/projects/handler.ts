@@ -2,7 +2,11 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { sql, Transaction } from 'kysely';
 import type { DB } from '@branch/types';
 import db from './db';
-import { MemberAssignment, ProjectValidationUtils } from './validation-utils';
+import {
+  APPROVED_EXPENDITURE_STATUS,
+  MemberAssignment,
+  ProjectValidationUtils,
+} from './validation-utils';
 import {
   authenticateRequest,
   canAccessProject,
@@ -80,6 +84,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         ] = await Promise.all([
           db.selectFrom('branch.expenditures')
             .select(db.fn.sum('amount').as('total'))
+            .where('status', '=', APPROVED_EXPENDITURE_STATUS)
             .where('spent_on', '>=', yearStart as any)
             .where('spent_on', '<=', yearEnd as any)
             .executeTakeFirst(),
@@ -89,6 +94,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             .executeTakeFirst(),
           db.selectFrom('branch.expenditures')
             .select(['category', db.fn.sum('amount').as('total')])
+            .where('status', '=', APPROVED_EXPENDITURE_STATUS)
             .where('category', 'is not', null)
             .where('spent_on', '>=', yearStart as any)
             .where('spent_on', '<=', yearEnd as any)
@@ -102,6 +108,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           db.selectFrom('branch.expenditures as e')
             .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
             .select((eb) => eb.fn.sum('e.amount').as('total'))
+            .where('e.status', '=', APPROVED_EXPENDITURE_STATUS)
             .where('e.spent_on', '>=', yearStart as any)
             .where('e.spent_on', '<=', yearEnd as any)
             .where(isActive('p.end_date'))
@@ -115,6 +122,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
                 eb.selectFrom('branch.expenditures')
                   .select('project_id')
                   .select((sub) => sub.fn.sum('amount').as('total'))
+                  .where('status', '=', APPROVED_EXPENDITURE_STATUS)
                   .groupBy('project_id')
                   .as('spend'),
               (join) => join.onRef('spend.project_id', '=', 'p.project_id'),
@@ -140,6 +148,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             .execute(),
           db.selectFrom('branch.expenditures')
             .select([monthExpr.as('month'), 'category', db.fn.sum('amount').as('total')])
+            .where('status', '=', APPROVED_EXPENDITURE_STATUS)
             .where('category', 'is not', null)
             .where('spent_on', '>=', yearStart as any)
             .where('spent_on', '<=', yearEnd as any)
@@ -325,7 +334,10 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       ]);
 
       const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
-      const totalSpent = expenditures.reduce((sum, e) => sum + Number(e.amount), 0);
+      // The table below lists every expenditure, including the ones still in
+      // review; the stats beside it count only what was approved.
+      const approved = expenditures.filter((e) => e.status === APPROVED_EXPENDITURE_STATUS);
+      const totalSpent = approved.reduce((sum, e) => sum + Number(e.amount), 0);
       // Guarded because a project may legitimately have no budget set yet, and
       // 0/0 would render as NaN% in the donut.
       const spentPercentage = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
@@ -339,7 +351,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
           spentPercentage: Number(spentPercentage.toFixed(2)),
           totalDonated: Number(donationRow?.total ?? 0),
           memberCount: members.length,
-          expenditureCount: expenditures.length,
+          expenditureCount: approved.length,
         },
         members,
         expenditures,
@@ -683,6 +695,7 @@ async function loadProjectAggregates(projectIds: number[]): Promise<{
     db
       .selectFrom('branch.expenditures')
       .select(['project_id', db.fn.sum('amount').as('total')])
+      .where('status', '=', APPROVED_EXPENDITURE_STATUS)
       .where('project_id', 'in', projectIds)
       .groupBy('project_id')
       .execute(),
