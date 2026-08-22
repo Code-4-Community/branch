@@ -17,6 +17,7 @@ import DataTable, { type DataTableColumn } from '../components/DataTable';
 import { useApi } from '@/hooks/useApi';
 import { type Project } from '@/lib/reports';
 import UploadReportModal from '../components/UploadReportModal';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { FaPlus } from 'react-icons/fa';
 import { LuClipboardPenLine } from 'react-icons/lu';
 import { RiDeleteBack2Line } from "react-icons/ri";
@@ -85,6 +86,7 @@ function ReportsPageContent() {
     // Selected rows (checkboxes) for bulk delete
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [deleting, setDeleting] = useState(false);
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
     // report_id whose download URL is currently being fetched
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
@@ -188,13 +190,17 @@ function ReportsPageContent() {
             selectedIds.map((id) => api.del(`/reports/${id}`)),
           );
           const failed = results.filter((r) => r.status === 'rejected').length;
+          // Keep whatever did fail selected so a retry does not re-issue the
+          // deletes that already succeeded.
+          setSelectedIds(
+            selectedIds.filter((_, i) => results[i].status === 'rejected'),
+          );
+          await fetchReports();
           if (failed > 0) {
-            setActionError(
+            throw new Error(
               `Failed to delete ${failed} of ${selectedIds.length} report${selectedIds.length === 1 ? '' : 's'}`,
             );
           }
-          setSelectedIds([]);
-          await fetchReports();
         } finally {
           setDeleting(false);
         }
@@ -310,7 +316,7 @@ function ReportsPageContent() {
                   <Button
                     backgroundColor="var(--color-error-red)"
                     color="var(--color-core-white)"
-                    onClick={handleDeleteSelected}
+                    onClick={() => setConfirmDeleteOpen(true)}
                     loading={deleting}
                     disabled={selectedIds.length === 0 || deleting}
                   >
@@ -498,6 +504,20 @@ function ReportsPageContent() {
                 </Dialog.Positioner>
               </Portal>
             </Dialog.Root>
+
+            <ConfirmDeleteDialog
+              open={confirmDeleteOpen}
+              onClose={() => setConfirmDeleteOpen(false)}
+              onConfirm={handleDeleteSelected}
+              title="Delete Reports"
+              itemName={`${selectedIds.length} report${selectedIds.length === 1 ? '' : 's'}`}
+              confirmLabel="Delete"
+              consequences={
+                <p>
+                  The generated files are deleted too, for everyone.
+                </p>
+              }
+            />
           </main>
         </div>
     );
