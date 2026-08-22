@@ -20,7 +20,6 @@ Lambda for managing projects.
 | DELETE | /projects/{id} |  |
 | POST | /projects |  |
 | GET | /projects/{id}/expenditures |  |
-| GET | /dashboard |  |
 
 ## Setup
 
