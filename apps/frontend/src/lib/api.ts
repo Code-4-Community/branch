@@ -3,6 +3,7 @@ const SERVICE_PORTS: Record<string, string> = {
   users: '3001',
   projects: '3002',
   donors: '3003',
+  donations: '3003',
   expenditures: '3004',
   reports: '3005',
 };

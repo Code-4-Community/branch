@@ -19,6 +19,8 @@ interface TextInputFieldProps {
   rows?: number;
   /** Rendered before the value, e.g. `$` on the budget field. */
   prefix?: string;
+  /** Rendered before the value as an icon, e.g. a mail icon on the email field. Mutually exclusive with `prefix`. */
+  icon?: React.ReactNode;
   inputMode?: 'text' | 'decimal' | 'numeric';
 }
 
@@ -35,6 +37,7 @@ export default function TextInputField({
   multiline = false,
   rows = 4,
   prefix,
+  icon,
   inputMode,
 }: TextInputFieldProps) {
   const [internalValue, setInternalValue] = useState('');
@@ -63,6 +66,8 @@ export default function TextInputField({
     : '!border-black-400 !text-core-black placeholder:!text-black-700';
 
   const sharedClass = `!w-full !rounded !px-3 !py-2 !bg-core-white focus:!outline-none focus:!ring-0 !shadow-none !border !font-body !text-body placeholder:font-body ${inputClass}`;
+
+  const hasLeftAdornment = Boolean(prefix) || Boolean(icon);
 
   return (
     <Field.Root gap="0" className="!w-full font-body text-body">
@@ -97,8 +102,18 @@ export default function TextInputField({
               {prefix}
             </span>
           )}
+          {icon && (
+            <span
+              aria-hidden
+              className={`pointer-events-none absolute left-3 top-1/2 z-10 flex -translate-y-1/2 items-center ${
+                isError ? 'text-error-red' : 'text-black-700'
+              }`}
+            >
+              {icon}
+            </span>
+          )}
           <Input
-            className={`${sharedClass} !h-10 ${prefix ? '!pl-7' : ''}`}
+            className={`${sharedClass} !h-10 ${hasLeftAdornment ? '!pl-9' : ''}`}
             value={currentValue}
             onChange={handleChange}
             placeholder={placeholder}

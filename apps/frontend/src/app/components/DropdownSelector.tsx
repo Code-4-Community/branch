@@ -83,8 +83,7 @@ export default function DropdownSelector({
 
         <Portal>
           <Select.Positioner style={{ width: 'var(--reference-width)', left:"3px" }}>
-            <Select.Content className="!rounded !border !border-black-200 !bg-core-white !shadow-none !p-0 !mt-0.5 !font-body !text-body">
-              {collection.items.map((item) =>
+          <Select.Content className="!rounded !border !border-black-200 !bg-core-white !shadow-none !p-0 !mt-0.5 !font-body !text-body !max-h-[176px] !overflow-y-auto">              {collection.items.map((item) =>
                 multiSelect ? (
                   <Select.Item
                     key={item.value}
