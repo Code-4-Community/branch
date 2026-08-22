@@ -35,7 +35,7 @@ resource "aws_api_gateway_gateway_response" "cors" {
 locals {
   base_methods = {
     auth         = ["GET", "POST"]
-    donors       = ["GET"]
+    donors       = ["GET", "POST"]
     expenditures = ["GET", "POST", "PATCH"]
     projects     = ["GET", "POST"]
     reports      = ["GET"]

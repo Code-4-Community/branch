@@ -97,19 +97,17 @@ jobs:
               commented:         'Commented',
             };
 
-            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer }) {
+            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer, approvalMet, anyChangesRequested }) {
               const participantStatuses = [
                 ...reviewers.map(r => r.status),
                 ...(alwaysReviewer ? [alwaysReviewer.status] : []),
               ];
               const allDone = participantStatuses.every(status => status !== 'pending');
-              const anyChangesRequested = participantStatuses.includes('changes_requested');
-              const approvalMet = participantStatuses.includes('approved') && !anyChangesRequested;
 
               let headerText;
               if (approvalMet) {
                 headerText = ':approved:  Approval Requirement Met';
-              } else if (allDone && anyChangesRequested) {
+              } else if (anyChangesRequested) {
                 headerText = ':git-request-changes:  Changes Requested';
               } else if (allDone) {
                 headerText = ':white_check_mark:  All Reviews Complete';
@@ -158,6 +156,29 @@ jobs:
               console.log(`Could not fetch reviews: ${err.message}`);
             }
 
+            // ── GitHub is the source of truth for "is this approved" ─────────
+            // reviewDecision folds in required_approving_review_count, code-owner
+            // rules, and dismissals — so this tracks branch protection even if
+            // it changes without a corresponding edit here.
+            let reviewDecision = null;
+            try {
+              const result = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                   repository(owner: $owner, name: $repo) {
+                     pullRequest(number: $number) { reviewDecision }
+                   }
+                 }`,
+                { owner: context.repo.owner, repo: context.repo.repo, number: prNumber }
+              );
+              reviewDecision = result.repository.pullRequest.reviewDecision;
+            } catch (err) {
+              console.log(`Could not fetch reviewDecision: ${err.message}`);
+            }
+            console.log(`GitHub reviewDecision for PR #${prNumber}: ${reviewDecision}`);
+
+            const approvalMet = reviewDecision === 'APPROVED';
+            const anyChangesRequested = reviewDecision === 'CHANGES_REQUESTED';
+
             const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
 
             function getLatestStatus(login) {
@@ -194,16 +215,10 @@ jobs:
               }
             }
 
-            const participantStatuses = [
-              ...reviewerObjs.map(r => r.status),
-              ...(alwaysReviewerObj ? [alwaysReviewerObj.status] : []),
-            ];
             const mainDone = mainStatus !== 'pending';
             const secondDone = !prData.second_reviewer || secondStatus !== 'pending';
             const alwaysDone = !alwaysReviewerObj || alwaysReviewerObj.status !== 'pending';
             const allDone = mainDone && secondDone && alwaysDone;
-            const anyChangesRequested = participantStatuses.includes('changes_requested');
-            const approvalMet = participantStatuses.includes('approved') && !anyChangesRequested;
 
             // ── Update original Slack message with current statuses ──────────
             if (prData.slack_thread_ts) {
@@ -211,6 +226,8 @@ jobs:
                 prUrl, prNumber, prTitle, prAuthor: prData.author,
                 reviewers: reviewerObjs,
                 alwaysReviewer: alwaysReviewerObj,
+                approvalMet,
+                anyChangesRequested,
               });
 
               await slackApi('chat.update', {
@@ -241,23 +258,23 @@ jobs:
               const dmBlocks = [
                 {
                   type: 'header',
-                  text: { type: 'plain_text', text: ':approved:  Your PR is Fully Approved', emoji: true },
+                  text: { type: 'plain_text', text: ':approved:  Your PR is Approved', emoji: true },
                 },
                 {
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `*<${prUrl}|#${prNumber} ${prTitle}>* has been approved by all reviewers and is ready to merge!`,
+                    text: `*<${prUrl}|#${prNumber} ${prTitle}>* has met the required approvals and is ready to merge!`,
                   },
                 },
               ];
 
               await slackApi('chat.postMessage', {
                 channel: authorSlackId,
-                text: `PR #${prNumber} is fully approved and ready to merge!`,
+                text: `PR #${prNumber} is approved and ready to merge!`,
                 blocks: dmBlocks,
               });
-              console.log(`DM'd author ${prData.author} (${authorSlackId}) — PR #${prNumber} fully approved`);
+              console.log(`DM'd author ${prData.author} (${authorSlackId}) — PR #${prNumber} approval requirement met`);
             }
 
             // ── Update bot state when approval requirement is met or all done ─

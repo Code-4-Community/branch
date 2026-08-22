@@ -3,6 +3,7 @@
 import { Expenditure } from '@/types';
 import DataTable, { type DataTableColumn } from './DataTable';
 import StatusBadge from './StatusBadge';
+import RowDeleteButton from './RowDeleteButton';
 
 interface ExpensesTableProps {
   expenditures: Expenditure[];
@@ -13,6 +14,8 @@ interface ExpensesTableProps {
   projectNames?: Record<number, string>;
   onViewReceipt?: (expenditure: Expenditure) => void;
   onRowClick?: (expenditure: Expenditure) => void;
+  /** Adds a trailing trash column. Omit it and no delete column renders. */
+  onDelete?: (expenditure: Expenditure) => void;
   /** Fills the body with skeleton rows, keeping the header and widths in place. */
   isLoading?: boolean;
   /** Set this to the page size so the table does not resize when data lands. */
@@ -33,6 +36,7 @@ export default function ExpensesTable({
   projectNames = {},
   onViewReceipt,
   onRowClick,
+  onDelete,
   isLoading = false,
   skeletonRows = 5,
 }: ExpensesTableProps) {
@@ -128,6 +132,25 @@ export default function ExpensesTable({
       // Matches the pill the loaded row shows rather than a text bar.
       skeleton: { width: '81px', height: 29, className: '!rounded-[14px]' },
     },
+    // Fixed px rather than a percentage: the width maps above already account
+    // for 100%, and a px column lets the rest keep their existing proportions.
+    ...(onDelete
+      ? [
+          {
+            key: 'actions',
+            header: '',
+            width: '56px',
+            align: 'center' as const,
+            cell: (e: Expenditure) => (
+              <RowDeleteButton
+                label={`Delete expense #${String(e.expenditure_id).padStart(6, '0')}`}
+                onClick={() => onDelete(e)}
+              />
+            ),
+            skeleton: { width: '32px' },
+          },
+        ]
+      : []),
   ];
 
   return (

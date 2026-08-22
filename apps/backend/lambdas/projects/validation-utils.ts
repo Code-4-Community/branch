@@ -18,6 +18,13 @@ export const DEFAULT_PROJECT_ROLE: ProjectRole = 'Student';
 
 export type MemberAssignment = { user_id: number; role: ProjectRole };
 
+/**
+ * A pending or denied expenditure is a request, not a spend. Every total,
+ * chart series and budget percentage filters on this; the raw lists do not,
+ * because their job is to show what is still awaiting review.
+ */
+export const APPROVED_EXPENDITURE_STATUS = 'approved';
+
 // Utility class for validating project-related input fields
 export class ProjectValidationUtils {
   // Parses numeric input (number or string), converts to fixed 2-decimal string for database storage
