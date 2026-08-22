@@ -1078,6 +1078,19 @@ describe('GET /expenditures/upload-url unit tests', () => {
     expect(json.objectUrl).toContain('receipt.pdf');
   });
 
+  test('route precedence: /expenditures/upload-url reaches the upload-url controller, not /expenditures/:id', async () => {
+    // If route order regressed, this would hit the :id controller with id="upload-url"
+    // and 400 on the digit check instead of presigning.
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: '1' }));
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json).toHaveProperty('uploadUrl');
+    expect(json).toHaveProperty('objectUrl');
+    expect(json).not.toHaveProperty('route');
+    expect(mockDb.selectFrom).not.toHaveBeenCalledWith('branch.expenditures');
+  });
+
   test('400: non-PDF is rejected', async () => {
     const res = await handler(uploadUrlEvent({ fileName: 'receipt.png', projectId: '1' }));
 
