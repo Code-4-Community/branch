@@ -414,6 +414,39 @@ describe('GET /reports/upload-url unit tests', () => {
   });
 });
 
+describe('Route precedence', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  // /reports/upload-url and /reports/:id both have two path segments, so
+  // upload-url must be registered before :id or it gets swallowed as an id lookup.
+  test('GET /reports/upload-url reaches getUploadUrl, not the /reports/:id controller', async () => {
+    const res = await handler({
+      rawPath: '/reports/upload-url',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters: {},
+    });
+    // getUploadUrl-specific validation, not the 404 a numeric-id check on "upload-url" would give.
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toBe('fileName is required');
+  });
+
+  test('POST /reports/generate reaches generateReport, not the generic POST /reports controller', async () => {
+    const res = await handler({
+      rawPath: '/reports/generate',
+      requestContext: { http: { method: 'POST' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      body: JSON.stringify({}),
+    });
+    // generateReport-specific validation, not createReport's 'title is required'.
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toBe('project_id is required');
+  });
+});
+
 describe('POST /reports unit tests', () => {
   const fakeObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/123-report.pdf';
 
