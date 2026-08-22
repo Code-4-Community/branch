@@ -278,6 +278,24 @@ describe("Donor API with data", () => {
     expect(Number(body.data.amount)).toBe(500);
   });
 
+  test("POST /donations honours an explicit donated_at", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 2, project_id: 1, amount: 500, donated_at: '2024-03-12',
+    }));
+    const body = JSON.parse(res.body);
+    expect(res.statusCode).toBe(201);
+    expect(new Date(body.data.donated_at).toISOString()).toContain('2024-03-12');
+  });
+
+  test("POST /donations returns 400 when donated_at is not a date", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 2, project_id: 1, amount: 500, donated_at: 'not-a-date',
+    }));
+    expect(res.statusCode).toBe(400);
+  });
+
   test("POST /donations returns 400 when donor_id is missing", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
     const res = await handler(createEvent('POST', '/donations', { project_id: 1, amount: 100 }));

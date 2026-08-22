@@ -77,7 +77,7 @@ Import direction is one-way and must stay that way: `api.ts` ← `authClient.ts`
 
 ## Shared UI
 
-Three families of component are **the** way to do their job — don't hand-roll a second one.
+Four families of component are **the** way to do their job — don't hand-roll a second one.
 
 **Tables — `components/DataTable.tsx`.** Every list view (expenses, reports, donors, donations) renders through it, so the green header row, column widths, empty state, row-click behaviour and loading skeleton stay identical. Columns are data: `{ key, header, width, align, cell, skeleton }`. Pass `selection` (see `reports/page.tsx`) for the leading checkbox column — the page keeps owning the selected ids, since that is what its bulk actions need. `ExpensesTable` is a thin wrapper that fixes the expense column set; add domain wrappers like that rather than re-deriving columns per page.
 
@@ -91,6 +91,10 @@ Three families of component are **the** way to do their job — don't hand-roll 
 The animations live in `globals.css` (`.branch-spinner`, `.branch-skeleton`, and their keyframes), not in the components — one timing curve for the whole app, and `FullPageSpinner` can render before any component library is mounted. Both honour `prefers-reduced-motion`.
 
 **Popovers — `hooks/useAnchoredPopover.ts`.** Anything that floats next to a trigger (`DatePickerField`, `StaffPicker`) goes through this hook. The caller owns the open state and passes it in with `onDismiss` and an `estimatedHeight`; the hook returns `{ anchorRef, popoverRef, boundaryRef, position }`, where `position` is viewport coordinates to spread onto a `position: fixed` panel. It flips above the anchor when the viewport would clip it, repositions on scroll and resize, and dismisses on outside-click and `Escape`. Render the panel through `createPortal` into `document.body` — a popover left in normal flow is clipped by the modal body's scroll container, which is the bug this hook exists to prevent.
+
+**Deletes — `components/ConfirmDeleteDialog.tsx` + `components/RowDeleteButton.tsx`.** No destructive action goes straight to the API. The dialog owns its own in-flight and error state: pass an `onConfirm` that returns a promise and it closes on success, or stays open and shows the reason on rejection — so the page never needs its own "failed to delete" banner. Give it `consequences` whenever the delete cascades; every foreign key in the schema is `ON DELETE CASCADE`, so deleting a project also destroys its expenses, donations, memberships and reports, and the user has to be told before it happens, not after. `requireTypedConfirmation` gates the confirm button behind retyping the record's name — use it where the cascade reaches financial history. `RowDeleteButton` is the icon-only trash for a table row or card; it stops click propagation, because every list that has row actions also has an `onRowClick` that opens the record.
+
+Gate the affordance on the same rule the backend enforces, not a looser one — deleting a project is admin-only (`projects/auth.ts`), which is narrower than the `canEdit` that governs the Edit button.
 
 ## Conventions
 

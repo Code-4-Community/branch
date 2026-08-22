@@ -3,8 +3,15 @@
 import { useMemo } from 'react';
 import { createListCollection, Portal, Select } from '@chakra-ui/react';
 
+/**
+ * Options are plain strings where the label *is* the value. Pass the object
+ * form when the two differ — selecting a donor by name has to yield its id,
+ * and organization names are not unique.
+ */
+export type DropdownOption = string | { label: string; value: string };
+
 interface DropdownSelectorProps {
-  options: string[];
+  options: DropdownOption[];
   placeholder?: string;
   multiSelect?: boolean;
   value?: string | string[];
@@ -21,7 +28,12 @@ export default function DropdownSelector({
   hideTrigger = false,
 }: DropdownSelectorProps) {
   const collection = useMemo(
-    () => createListCollection({ items: options.map((o) => ({ label: o, value: o })) }),
+    () =>
+      createListCollection({
+        items: options.map((o) =>
+          typeof o === 'string' ? { label: o, value: o } : o,
+        ),
+      }),
     [options],
   );
 

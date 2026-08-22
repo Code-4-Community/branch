@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { json, parseBody, createAuthGuard } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
@@ -34,6 +34,35 @@ const guard = createAuthGuard(authenticateRequest);
 
 // Numeric-only id, mirroring the old REPORT_ID_ROUTE/REPORT_DOWNLOAD_ROUTE regexes
 // so a non-numeric :id falls through to the same 404 as an unmatched route.
+/**
+ * Best-effort removal of the generated file behind a deleted report.
+ *
+ * Deliberately never throws: the row is already gone by the time this runs, and
+ * the caller must not turn a successful delete into a 500 because S3 was
+ * unreachable or the role is missing `s3:DeleteObject`. A leftover object is
+ * recoverable; a row that cannot be deleted is not.
+ */
+async function deleteReportObject(objectUrl: string | null): Promise<boolean> {
+  if (!objectUrl) return true;
+  const key = keyFromObjectUrl(objectUrl);
+  if (!key) return false;
+  // Read at call time rather than using the module-level BUCKET: the value is
+  // then observable to callers that set it after import, which is what the
+  // unit tests do.
+  const bucket = process.env.REPORTS_BUCKET_NAME ?? '';
+  if (!bucket) {
+    console.error('REPORTS_BUCKET_NAME is not set; leaving report object', key);
+    return false;
+  }
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete report object', key, err);
+    return false;
+  }
+}
+
 function notFoundUnlessNumericId(id: string, path: string, method: string) {
   return /^\d+$/.test(id) ? undefined : json(404, { message: 'Not Found', path, method });
 }
@@ -330,5 +359,9 @@ export const deleteReport: RouteHandler = async ({ event, params, path, method }
     return json(404, { message: 'Report not found' });
   }
 
-  return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
+  // After the row, never before: if the file went first and this delete
+  // failed, the report would be gone with a row still pointing at it.
+  const fileDeleted = await deleteReportObject(report.object_url);
+
+  return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id }, fileDeleted });
 };

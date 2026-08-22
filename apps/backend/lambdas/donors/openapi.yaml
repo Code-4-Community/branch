@@ -58,6 +58,12 @@ paths:
                   type: integer
                 amount:
                   type: number
+                donated_at:
+                  type: string
+                  format: date
+                  description: >-
+                    Optional. Defaults to now(); supply it to backdate a
+                    donation to when it was actually received.
       responses:
         '201':
           description: Success

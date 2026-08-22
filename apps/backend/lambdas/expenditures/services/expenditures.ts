@@ -1,5 +1,5 @@
 import { Insertable } from 'kysely';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { DB } from '@branch/types';
 import db from '../db';
@@ -16,6 +16,35 @@ export const RECEIPT_CONTENT_TYPE = 'application/pdf';
 export function receiptKeyFromUrl(objectUrl: string): string | null {
   const match = objectUrl.match(/^https:\/\/[^/]+\/(receipts\/.+)$/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+/**
+ * Best-effort removal of the receipt behind a deleted expenditure.
+ *
+ * Deliberately never throws: the row is already gone by the time this runs, and
+ * the caller must not turn a successful delete into a 500 because S3 was
+ * unreachable or the role is missing `s3:DeleteObject`. A leftover object is
+ * recoverable; a row that cannot be deleted is not.
+ */
+export async function deleteReceiptObject(receiptUrl: string | null): Promise<boolean> {
+  if (!receiptUrl) return true;
+  const key = receiptKeyFromUrl(receiptUrl);
+  if (!key) return false;
+  // Read at call time rather than using the module-level BUCKET: the value is
+  // then observable to callers that set it after import, which is what the
+  // unit tests do.
+  const bucket = process.env.REPORTS_BUCKET_NAME ?? '';
+  if (!bucket) {
+    console.error('REPORTS_BUCKET_NAME is not set; leaving receipt object', key);
+    return false;
+  }
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete receipt object', key, err);
+    return false;
+  }
 }
 
 export async function countExpenditures(projectId: number | null): Promise<number> {
