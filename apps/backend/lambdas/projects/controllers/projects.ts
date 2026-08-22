@@ -9,6 +9,7 @@ import {
   canEditProject,
 } from '../auth';
 import {
+  deleteProjectObjects,
   findUnknownUserIds,
   isProjectActive,
   loadProjectAggregates,
@@ -174,7 +175,14 @@ export const deleteProject: RouteHandler = async ({ event, params }) => {
     return json(404, { message: 'Project not found' });
   }
 
-  return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id } });
+  // The expenditure and report rows went with the project via ON DELETE
+  // CASCADE, so nothing is left to tell us which files they owned. Both
+  // services key their objects by project id, so clear those prefixes —
+  // otherwise every receipt and report for the project is orphaned at once,
+  // which is the single largest source of unreferenced objects.
+  const filesDeleted = await deleteProjectObjects(Number(id));
+
+  return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id }, filesDeleted });
 };
 
 // POST /projects

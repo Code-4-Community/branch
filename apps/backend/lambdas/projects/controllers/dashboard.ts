@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { json, createAuthGuard, RouteHandler } from '@branch/lambda-http';
 import db from '../db';
 import { authenticateRequest, canAccessProject, canEditProject } from '../auth';
+import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
 import { projectIdFrom, isProjectActive } from '../services/projects';
 
 const guard = createAuthGuard(authenticateRequest);
@@ -48,6 +49,7 @@ export const getDashboard: RouteHandler = async ({ event }) => {
     ] = await Promise.all([
       db.selectFrom('branch.expenditures')
         .select(db.fn.sum('amount').as('total'))
+        .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('spent_on', '>=', yearStart as any)
         .where('spent_on', '<=', yearEnd as any)
         .executeTakeFirst(),
@@ -57,6 +59,7 @@ export const getDashboard: RouteHandler = async ({ event }) => {
         .executeTakeFirst(),
       db.selectFrom('branch.expenditures')
         .select(['category', db.fn.sum('amount').as('total')])
+        .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('category', 'is not', null)
         .where('spent_on', '>=', yearStart as any)
         .where('spent_on', '<=', yearEnd as any)
@@ -70,6 +73,7 @@ export const getDashboard: RouteHandler = async ({ event }) => {
       db.selectFrom('branch.expenditures as e')
         .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
         .select((eb) => eb.fn.sum('e.amount').as('total'))
+        .where('e.status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('e.spent_on', '>=', yearStart as any)
         .where('e.spent_on', '<=', yearEnd as any)
         .where(isActive('p.end_date'))
@@ -83,6 +87,7 @@ export const getDashboard: RouteHandler = async ({ event }) => {
             eb.selectFrom('branch.expenditures')
               .select('project_id')
               .select((sub) => sub.fn.sum('amount').as('total'))
+              .where('status', '=', APPROVED_EXPENDITURE_STATUS)
               .groupBy('project_id')
               .as('spend'),
           (join) => join.onRef('spend.project_id', '=', 'p.project_id'),
@@ -108,6 +113,7 @@ export const getDashboard: RouteHandler = async ({ event }) => {
         .execute(),
       db.selectFrom('branch.expenditures')
         .select([monthExpr.as('month'), 'category', db.fn.sum('amount').as('total')])
+        .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('category', 'is not', null)
         .where('spent_on', '>=', yearStart as any)
         .where('spent_on', '<=', yearEnd as any)
@@ -227,7 +233,10 @@ export const getOverview: RouteHandler = async ({ event, params }) => {
   ]);
 
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
-  const totalSpent = expenditures.reduce((sum, e) => sum + Number(e.amount), 0);
+  // The table below lists every expenditure, including the ones still in
+  // review; the stats beside it count only what was approved.
+  const approved = expenditures.filter((e) => e.status === APPROVED_EXPENDITURE_STATUS);
+  const totalSpent = approved.reduce((sum, e) => sum + Number(e.amount), 0);
   // Guarded because a project may legitimately have no budget set yet, and
   // 0/0 would render as NaN% in the donut.
   const spentPercentage = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
@@ -241,7 +250,7 @@ export const getOverview: RouteHandler = async ({ event, params }) => {
       spentPercentage: Number(spentPercentage.toFixed(2)),
       totalDonated: Number(donationRow?.total ?? 0),
       memberCount: members.length,
-      expenditureCount: expenditures.length,
+      expenditureCount: approved.length,
     },
     members,
     expenditures,

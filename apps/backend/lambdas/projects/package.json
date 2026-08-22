@@ -24,6 +24,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.995.0",
     "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
     "@branch/lambda-http": "file:../../../../shared/lambda-http",
     "aws-jwt-verify": "^5.1.1",

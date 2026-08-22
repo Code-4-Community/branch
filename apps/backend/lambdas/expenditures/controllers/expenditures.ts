@@ -274,7 +274,11 @@ export const deleteExpenditure: RouteHandler = async ({ event, params }) => {
     return json(404, { message: 'Expenditure not found' });
   }
 
-  return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
+  // After the row, never before: if the object went first and the delete
+  // below failed, the receipt would be gone with a row still pointing at it.
+  const receiptDeleted = await expendituresService.deleteReceiptObject(expenditure.receipt_url);
+
+  return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id }, receiptDeleted });
 };
 
 // PATCH /expenditures/{id}/status — approve/decline (admin only)
