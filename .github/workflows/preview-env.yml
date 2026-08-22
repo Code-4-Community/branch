@@ -212,11 +212,14 @@ jobs:
           echo "lambdas=$(echo $lambdas | xargs)" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
 
+      - name: Build shared packages
+        if: steps.detect.outputs.lambdas != ''
+        uses: ./.github/actions/build-shared-packages
+
       - name: Build + deploy lambdas
         if: steps.detect.outputs.lambdas != ''
         run: |
           set -euo pipefail
-          npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
           for svc in ${{ steps.detect.outputs.lambdas }}; do
             echo "::group::lambda $svc"
             ( cd "apps/backend/lambdas/$svc" && npm ci --legacy-peer-deps && npm run package )

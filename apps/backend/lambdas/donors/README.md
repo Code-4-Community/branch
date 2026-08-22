@@ -8,11 +8,14 @@ Lambda for managing donors.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
+| GET | /donors/health | Health check |
 | GET | /donors |  |
-| POST | /donations |  |
+| GET | /donors/donations |  |
+| POST | /donors/donations |  |
 | POST | /donors |  |
 | DELETE | /donors/{id} |  |
+| DELETE | /donors/donations/{id} |  |
+| POST | /donations |  |
 | DELETE | /donations/{id} |  |
 
 ## Setup
