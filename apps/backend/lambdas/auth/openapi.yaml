@@ -3,9 +3,9 @@ info:
   title: auth (Local)
   version: 1.0.0
 servers:
-  - url: /auth
+  - url: http://localhost:3000
 paths:
-  /health:
+  /auth/health:
     get:
       summary: Health check
       responses:
@@ -19,7 +19,7 @@ paths:
                   ok:
                     type: boolean
 
-  /register:
+  /auth/register:
     post:
       summary: Claim an invitation and activate an account
       description: >
@@ -129,7 +129,7 @@ paths:
                     type: string
                     example: Failed to create user account
 
-  /login:
+  /auth/login:
     post:
       summary: Log in a user
       description: >
@@ -194,7 +194,7 @@ paths:
         '500':
           description: Authentication failed
 
-  /respond-challenge:
+  /auth/respond-challenge:
     post:
       summary: Complete a Cognito auth challenge
       description: >
@@ -260,7 +260,7 @@ paths:
         '429':
           description: Too many attempts
 
-  /refresh:
+  /auth/refresh:
     post:
       summary: Exchange a refresh token for new access and ID tokens
       description: >
@@ -304,7 +304,7 @@ paths:
         '429':
           description: Too many requests
 
-  /me:
+  /auth/me:
     get:
       summary: Current session (canonical session bootstrap)
       description: >
@@ -341,7 +341,7 @@ paths:
         '401':
           description: Authentication required
 
-  /verify-email:
+  /auth/verify-email:
     post:
       summary: POST /verify-email
       requestBody:
@@ -359,7 +359,7 @@ paths:
         '200':
           description: OK
 
-  /resend-code:
+  /auth/resend-code:
     post:
       summary: POST /resend-code
       requestBody:
@@ -375,7 +375,7 @@ paths:
         '200':
           description: OK
 
-  /logout:
+  /auth/logout:
     post:
       summary: Sign out everywhere
       description: >
@@ -398,7 +398,7 @@ paths:
         '401':
           description: Missing Authorization header, or invalid/expired token
 
-  /forgot-password:
+  /auth/forgot-password:
     post:
       summary: Request a password reset code
       description: Sends a verification code to the user's email for password reset
@@ -452,7 +452,7 @@ paths:
                     type: string
                     example: Too many requests, please try again later
 
-  /reset-password:
+  /auth/reset-password:
     post:
       summary: Reset password with verification code
       description: Confirms the password reset using the code sent to the user's email
