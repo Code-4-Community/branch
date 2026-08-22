@@ -19,16 +19,6 @@ Lambda for auth handler.
 | POST | /auth/logout |  |
 | POST | /auth/forgot-password |  |
 | POST | /auth/reset-password |  |
-| POST | /register |  |
-| POST | /login |  |
-| POST | /respond-challenge |  |
-| POST | /refresh |  |
-| GET | /me |  |
-| POST | /verify-email |  |
-| POST | /resend-code |  |
-| POST | /logout |  |
-| POST | /forgot-password |  |
-| POST | /reset-password |  |
 
 ## Setup
 
