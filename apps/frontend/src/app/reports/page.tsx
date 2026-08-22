@@ -514,8 +514,7 @@ function ReportsPageContent() {
               confirmLabel="Delete"
               consequences={
                 <p>
-                  The generated files stay in storage, but the reports are
-                  removed from this list for everyone.
+                  The generated files are deleted too, for everyone.
                 </p>
               }
             />

@@ -224,7 +224,9 @@ export default function ProjectDetailView({ id }: { id: string }) {
                 {members.length} staff assignment
                 {members.length === 1 ? '' : 's'}
               </li>
-              <li>its donations and generated reports</li>
+              <li>
+                its donations, and every report and receipt file it owns
+              </li>
             </ul>
           </>
         }

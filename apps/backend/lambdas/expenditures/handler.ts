@@ -1,5 +1,5 @@
 import { APIGatewayProxyResult } from 'aws-lambda';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import db from './db';
 import { ExpenditureValidationUtils } from './validation-utils';
@@ -16,6 +16,35 @@ const RECEIPT_CONTENT_TYPE = 'application/pdf';
 function receiptKeyFromUrl(objectUrl: string): string | null {
   const match = objectUrl.match(/^https:\/\/[^/]+\/(receipts\/.+)$/);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+/**
+ * Best-effort removal of the receipt behind a deleted expenditure.
+ *
+ * Deliberately never throws: the row is already gone by the time this runs, and
+ * the caller must not turn a successful delete into a 500 because S3 was
+ * unreachable or the role is missing `s3:DeleteObject`. A leftover object is
+ * recoverable; a row that cannot be deleted is not.
+ */
+async function deleteReceiptObject(receiptUrl: string | null): Promise<boolean> {
+  if (!receiptUrl) return true;
+  const key = receiptKeyFromUrl(receiptUrl);
+  if (!key) return false;
+  // Read at call time rather than using the module-level BUCKET: the value is
+  // then observable to callers that set it after import, which is what the
+  // unit tests do.
+  const bucket = process.env.REPORTS_BUCKET_NAME ?? '';
+  if (!bucket) {
+    console.error('REPORTS_BUCKET_NAME is not set; leaving receipt object', key);
+    return false;
+  }
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete receipt object', key, err);
+    return false;
+  }
 }
 
 function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAuthorization>[1], resourceUserId?: number | string): APIGatewayProxyResult | undefined {
@@ -415,7 +444,11 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
         return json(404, { message: 'Expenditure not found' });
       }
 
-      return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
+      // After the row, never before: if the object went first and the delete
+      // below failed, the receipt would be gone with a row still pointing at it.
+      const receiptDeleted = await deleteReceiptObject(expenditure.receipt_url);
+
+      return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id }, receiptDeleted });
     }
 
     // PATCH /expenditures/{id}/status — approve/decline (admin only)

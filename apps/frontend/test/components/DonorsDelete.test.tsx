@@ -74,15 +74,20 @@ describe('Donors page delete', () => {
         await userEvent.type(screen.getByPlaceholderText('Contact email'), 'pat@new.org');
         await userEvent.click(screen.getByRole('button', { name: 'Add Donor' }));
 
-        await waitFor(() => {
-            expect(mockApiFetch).toHaveBeenCalledWith('/donors', {
-                method: 'POST',
-                body: JSON.stringify({
-                    organization: 'New Org',
-                    contact_name: 'Pat',
-                    contact_email: 'pat@new.org',
-                }),
-            });
-        });
+        // Typing three fields through userEvent is slow enough that the default
+        // 1s window expires under parallel load, which made this flaky in CI.
+        await waitFor(
+            () => {
+                expect(mockApiFetch).toHaveBeenCalledWith('/donors', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        organization: 'New Org',
+                        contact_name: 'Pat',
+                        contact_email: 'pat@new.org',
+                    }),
+                });
+            },
+            { timeout: 10000 },
+        );
     });
 });

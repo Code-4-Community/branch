@@ -364,8 +364,8 @@ function ExpensePageContent() {
             expenseToDelete ? (
               <p>
                 {formatCurrencyPrecise(expenseToDelete.amount)} —{' '}
-                {expenseToDelete.category ?? 'Uncategorised'}. The uploaded
-                receipt file is not removed.
+                {expenseToDelete.category ?? 'Uncategorised'}
+                {expenseToDelete.receipt_url ? ', and its receipt' : ''}.
               </p>
             ) : undefined
           }
