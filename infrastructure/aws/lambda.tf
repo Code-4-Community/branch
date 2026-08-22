@@ -61,15 +61,31 @@ resource "aws_iam_role_policy" "lambda_s3_objects" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Sid    = "LambdaReportsBucketObjects"
-      Effect = "Allow"
-      Action = [
-        "s3:PutObject",
-        "s3:GetObject",
-      ]
-      Resource = "${aws_s3_bucket.reports_bucket.arn}/*"
-    }]
+    Statement = [
+      {
+        Sid    = "LambdaReportsBucketObjects"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          # DELETE /expenditures/{id}, DELETE /reports/{id} and the cascade from
+          # DELETE /projects/{id} remove the object alongside the row, so the
+          # bucket does not accumulate files no row points at any more.
+          "s3:DeleteObject",
+        ]
+        Resource = "${aws_s3_bucket.reports_bucket.arn}/*"
+      },
+      {
+        # Scoped to the bucket itself, not its objects: ListObjectsV2 authorizes
+        # against the bucket ARN. DELETE /projects/{id} needs it because the
+        # cascade removes the rows naming the files, leaving the receipts/{id}/
+        # and reports/{id}/ prefixes as the only record of what to clean up.
+        Sid      = "LambdaReportsBucketList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.reports_bucket.arn
+      },
+    ]
   })
 }
 

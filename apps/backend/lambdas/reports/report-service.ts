@@ -24,6 +24,13 @@ const URLResolver = require('pdfmake/js/URLResolver').default;
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
 
+/**
+ * A report states what a project spent. Expenditures still in review, or
+ * denied, are requests rather than spend, so they stay out of the table and
+ * out of the total under it.
+ */
+const APPROVED_EXPENDITURE_STATUS = 'approved';
+
 function getBucketName(): string {
   const bucket = process.env.REPORTS_BUCKET_NAME;
   if (!bucket) {
@@ -178,6 +185,7 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
     .selectFrom('branch.expenditures')
     .leftJoin('branch.users', 'branch.users.user_id', 'branch.expenditures.entered_by')
     .where('branch.expenditures.project_id', '=', projectId)
+    .where('branch.expenditures.status', '=', APPROVED_EXPENDITURE_STATUS)
     .select([
       'branch.expenditures.category',
       'branch.expenditures.description',

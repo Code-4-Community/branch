@@ -18,7 +18,9 @@ import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
 import { IoClose } from 'react-icons/io5';
 import ExpensesTable from '../components/ExpensesTable';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { getReceiptDownloadUrl } from '@/lib/expenditures';
+import { formatCurrencyPrecise } from '@/lib/format';
 import {
   EXPENDITURE_STATUSES,
   EXPENDITURE_STATUS_LABELS,
@@ -84,6 +86,7 @@ function ExpensePageContent() {
   // Modals
   const [showNewExpense, setShowNewExpense] = useState(false);
   const [reviewExpenditureId, setReviewExpenditureId] = useState<number | null>(null);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expenditure | null>(null);
 
 
   // Fetch expenditures
@@ -308,6 +311,7 @@ function ExpensePageContent() {
               projectNames={projectNames}
               onViewReceipt={handleViewReceipt}
               onRowClick={(e) => setReviewExpenditureId(e.expenditure_id)}
+              onDelete={setExpenseToDelete}
             />
           )}
 
@@ -340,6 +344,31 @@ function ExpensePageContent() {
             setReviewExpenditureId(null);
             await fetchExpenditures();
           }}
+        />
+
+        <ConfirmDeleteDialog
+          open={expenseToDelete !== null}
+          onClose={() => setExpenseToDelete(null)}
+          onConfirm={async () => {
+            if (!expenseToDelete) return;
+            await api.del(`/expenditures/${expenseToDelete.expenditure_id}`);
+            await fetchExpenditures();
+          }}
+          title="Delete Expense"
+          itemName={
+            expenseToDelete
+              ? `expense #${String(expenseToDelete.expenditure_id).padStart(6, '0')}`
+              : undefined
+          }
+          consequences={
+            expenseToDelete ? (
+              <p>
+                {formatCurrencyPrecise(expenseToDelete.amount)} —{' '}
+                {expenseToDelete.category ?? 'Uncategorised'}
+                {expenseToDelete.receipt_url ? ', and its receipt' : ''}.
+              </p>
+            ) : undefined
+          }
         />
       </main>
     </div>

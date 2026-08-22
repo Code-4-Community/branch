@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useState } from 'react';
 import { PiUserCircleThin } from 'react-icons/pi';
 import { MdOutlineMail } from 'react-icons/md';
+import RowDeleteButton from './RowDeleteButton';
 
 interface StaffCardProps {
   image?: string;
@@ -15,6 +16,10 @@ interface StaffCardProps {
    * default card leaves no width for the name and email.
    */
   compact?: boolean;
+  /** Shows a trash affordance in the card's top-right corner. */
+  onDelete?: () => void;
+  /** Accessible name for that button; defaults to "Delete <name>". */
+  deleteLabel?: string;
 }
 
 export default function StaffCard({
@@ -23,6 +28,8 @@ export default function StaffCard({
   title,
   email,
   compact = false,
+  onDelete,
+  deleteLabel,
 }: StaffCardProps) {
   const [imgError, setImgError] = useState(false);
   const avatarSize = compact ? 96 : 120;
@@ -91,6 +98,15 @@ export default function StaffCard({
           </a>
         </div>
       </div>
+
+      {onDelete && (
+        <div className="absolute right-2 top-2">
+          <RowDeleteButton
+            label={deleteLabel ?? `Delete ${name}`}
+            onClick={onDelete}
+          />
+        </div>
+      )}
     </div>
   );
 }

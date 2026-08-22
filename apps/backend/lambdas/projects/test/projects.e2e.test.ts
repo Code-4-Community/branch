@@ -357,8 +357,10 @@ describe('GET /dashboard (e2e)', () => {
     const body = JSON.parse(res.body);
 
     expect(body.summary.totalProjects).toBe(4);
-    expect(body.summary.totalSpent).toBe(18000);
-    expect(body.summary.averageSpendPerProject).toBe(4500);
+    // 14000, not the 18000 the seed spends: one denied and one pending row are
+    // requests rather than spend and stay out of every total.
+    expect(body.summary.totalSpent).toBe(14000);
+    expect(body.summary.averageSpendPerProject).toBe(3500);
   });
 
   test('topExpenseCategory is highest-summed category 🌞', async () => {

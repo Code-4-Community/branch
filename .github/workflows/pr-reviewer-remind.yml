@@ -165,18 +165,31 @@ jobs:
                 }
               }
 
-              const participantStates = [
-                mainState,
-                secondState,
-                alwaysState,
-              ].filter(Boolean);
-
               const mainDone = mainState !== null;
               const secondDone = !prData.second_reviewer || secondState !== null;
               const alwaysDone = authorIsAlways || alwaysState !== null;
               const allDone = mainDone && secondDone && alwaysDone;
-              const anyChangesRequested = participantStates.includes('CHANGES_REQUESTED');
-              const approvalMet = participantStates.includes('APPROVED') && !anyChangesRequested;
+
+              // ── GitHub is the source of truth for "is this approved" ──
+              // reviewDecision folds in required_approving_review_count,
+              // code-owner rules, and dismissals — so this tracks branch
+              // protection even if it changes without a matching edit here.
+              let reviewDecision = null;
+              try {
+                const result = await github.graphql(
+                  `query($owner: String!, $repo: String!, $number: Int!) {
+                     repository(owner: $owner, name: $repo) {
+                       pullRequest(number: $number) { reviewDecision }
+                     }
+                   }`,
+                  { owner: prOwner, repo: prRepo, number: prData.pr_number }
+                );
+                reviewDecision = result.repository.pullRequest.reviewDecision;
+              } catch (err) {
+                console.log(`Could not fetch reviewDecision for PR #${prData.pr_number}: ${err.message}`);
+              }
+
+              const approvalMet = reviewDecision === 'APPROVED';
 
               if (approvalMet || allDone) {
                 console.log(`PR #${prData.pr_number}: completion criteria reached. Done.`);
