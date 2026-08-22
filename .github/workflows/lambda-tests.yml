@@ -56,11 +56,8 @@ jobs:
         run: npm ci --no-audit --no-fund && npm run migrate && npm run seed
         env:
           DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
-      # Order matters: lambda-http consumes lambda-auth's dist.
       - name: Build shared packages
-        run: |
-          npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
-          npm ci --prefix shared/lambda-http && npm run build --prefix shared/lambda-http
+        uses: ./.github/actions/build-shared-packages
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
@@ -266,11 +263,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      # Order matters: lambda-http consumes lambda-auth's dist.
       - name: Build shared packages
-        run: |
-          npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
-          npm ci --prefix shared/lambda-http && npm run build --prefix shared/lambda-http
+        uses: ./.github/actions/build-shared-packages
       - name: Run tests
         run: npm test --prefix shared/lambda-http
 

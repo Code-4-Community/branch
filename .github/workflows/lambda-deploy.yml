@@ -126,11 +126,8 @@ jobs:
         with:
           node-version: '20'
       
-      # Order matters: lambda-http consumes lambda-auth's dist.
       - name: Build shared packages
-        run: |
-          npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
-          npm ci --prefix shared/lambda-http && npm run build --prefix shared/lambda-http
+        uses: ./.github/actions/build-shared-packages
       - name: Install dependencies
         working-directory: ${{ matrix.lambda }}
         run: npm ci --legacy-peer-deps
