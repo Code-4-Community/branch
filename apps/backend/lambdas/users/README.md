@@ -8,7 +8,12 @@ Lambda for managing users.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
+| GET | /users/health | Health check |
+| GET | /users |  |
+| GET | /users/{userId} |  |
+| PATCH | /users/{userId} |  |
+| DELETE | /users/{userId} |  |
+| POST | /users |  |
 
 ## Setup
 
