@@ -9,6 +9,12 @@ COPY shared/lambda-auth/package.json shared/lambda-auth/tsconfig.json ./
 COPY shared/lambda-auth/src ./src/
 RUN npm install && npm run build
 
+# After lambda-auth: lambda-http resolves it as file:../lambda-auth and needs its dist.
+WORKDIR /shared/lambda-http
+COPY shared/lambda-http/package.json shared/lambda-http/tsconfig.json ./
+COPY shared/lambda-http/src ./src/
+RUN npm install && npm run build
+
 WORKDIR /app
 COPY apps/backend/lambdas/donors/package*.json ./
 RUN npm install --no-package-lock

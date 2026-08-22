@@ -1,0 +1,27 @@
+name: Build shared lambda packages
+description: >
+  Install and build the shared packages the lambdas consume as file:
+  dependencies. Both compile to a gitignored dist/, so anything that typechecks,
+  tests, or bundles a lambda has to run this first or the file: path resolves to
+  a package with no dist.
+
+  Single source of truth on purpose: this logic lived in lambda-tests,
+  lambda-deploy and preview-env separately, and adding @branch/lambda-http
+  updated only the first two -- so preview deploys failed at esbuild with
+  "Could not resolve @branch/lambda-http" while the other two were green.
+
+  Requires actions/checkout to have run.
+
+runs:
+  using: composite
+  steps:
+    # Order matters: lambda-http declares lambda-auth as file:../lambda-auth
+    # and compiles against its dist.
+    - name: Build shared packages
+      shell: bash
+      run: |
+        set -euo pipefail
+        npm ci --prefix shared/lambda-auth --no-audit --no-fund
+        npm run build --prefix shared/lambda-auth
+        npm ci --prefix shared/lambda-http --no-audit --no-fund
+        npm run build --prefix shared/lambda-http
