@@ -15,7 +15,6 @@ Lambda for tracking project expenditures.
 | GET | /expenditures/{id} |  |
 | DELETE | /expenditures/{id} |  |
 | PATCH | /expenditures/{id}/status |  |
-| POST | /expenditures |  |
 
 ## Setup
 
