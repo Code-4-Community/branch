@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { LuCircleDollarSign, LuDollarSign, LuUsers } from 'react-icons/lu';
+import { LuCircleDollarSign, LuDollarSign, LuTrash2, LuUsers } from 'react-icons/lu';
 import { FaRegEdit } from 'react-icons/fa';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
@@ -12,7 +12,10 @@ import FundingSummary from '../components/FundingSummary';
 import ExpensesTable from '../components/ExpensesTable';
 import StaffCard from '../components/StaffCard';
 import ProjectFormModal from '../components/ProjectFormModal';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { useApi } from '@/hooks/useApi';
+import { useAuth } from '@/context/AuthContext';
+import { DEFAULT_LANDING_PATH } from '@/lib/routes';
 import type { ProjectOverview } from '@/types';
 
 /** The detail page previews a slice of each list; "View All" reveals the rest. */
@@ -21,11 +24,13 @@ const PREVIEW_STAFF = 4;
 
 export default function ProjectDetailView({ id }: { id: string }) {
   const api = useApi();
+  const { isAdmin } = useAuth();
 
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditOpen, setEditOpen] = useState(false);
+  const [isDeleteOpen, setDeleteOpen] = useState(false);
   const [showAllStaff, setShowAllStaff] = useState(false);
   const [showAllExpenses, setShowAllExpenses] = useState(false);
 
@@ -46,6 +51,17 @@ export default function ProjectDetailView({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The row is gone once this resolves, so leave the detail page rather than
+  // refetching an id that now 404s.
+  //
+  // A full document navigation rather than `router.push`: the Navbar caches its
+  // project list behind a one-shot ref and the dashboard caches its counts, so
+  // a client-side transition would keep showing the project that just went away.
+  const handleDelete = useCallback(async () => {
+    await api.del(`/projects/${id}`);
+    window.location.assign(DEFAULT_LANDING_PATH);
+  }, [api, id]);
 
   const shell = (children: React.ReactNode) => (
     <div className="flex min-h-screen">
@@ -80,14 +96,27 @@ export default function ProjectDetailView({ id }: { id: string }) {
         <>
           <div className="flex flex-wrap items-start justify-between !gap-4">
             <h1 className="min-w-0 break-words">{project.name}</h1>
-            {canEdit && (
-              <Button
-                icon={<FaRegEdit aria-hidden />}
-                onClick={() => setEditOpen(true)}
-              >
-                Edit Project
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center !gap-3">
+              {canEdit && (
+                <Button
+                  icon={<FaRegEdit aria-hidden />}
+                  onClick={() => setEditOpen(true)}
+                >
+                  Edit Project
+                </Button>
+              )}
+              {/* Deleting a project is admin-only on the backend
+                  (`canDeleteProject`), which is narrower than `canEdit`. */}
+              {isAdmin && (
+                <Button
+                  variant="danger"
+                  icon={<LuTrash2 aria-hidden />}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete Project
+                </Button>
+              )}
+            </div>
           </div>
 
           {project.description && (
@@ -171,6 +200,34 @@ export default function ProjectDetailView({ id }: { id: string }) {
         project={project}
         members={members}
         onSaved={() => void load()}
+      />
+
+      <ConfirmDeleteDialog
+        open={isDeleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete Project"
+        itemName={project.name}
+        confirmLabel="Delete Project"
+        // Every FK into `projects` is ON DELETE CASCADE, so this takes the
+        // financial history with it. Worth retyping the name for.
+        requireTypedConfirmation
+        consequences={
+          <>
+            <p>This also permanently deletes everything attached to it:</p>
+            <ul className="!mt-2 !list-disc !pl-5">
+              <li>
+                {expenditures.length} expense
+                {expenditures.length === 1 ? '' : 's'}
+              </li>
+              <li>
+                {members.length} staff assignment
+                {members.length === 1 ? '' : 's'}
+              </li>
+              <li>its donations and generated reports</li>
+            </ul>
+          </>
+        }
       />
     </>
   );

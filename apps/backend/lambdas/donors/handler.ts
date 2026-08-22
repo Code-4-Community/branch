@@ -139,10 +139,24 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
     // POST /donations
     if (normalizedPath === '/donations' && method === 'POST') {
       const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
-      const { donor_id, project_id, amount } = body;
+      const { donor_id, project_id, amount, donated_at } = body;
 
       if (donor_id === undefined || project_id === undefined || amount === undefined) {
         return json(400, { message: 'donor_id, project_id, and amount are required' });
+      }
+
+      // Optional: the column defaults to now(), so an omitted date still works.
+      // Accepted so a donation can be backdated to when it was actually received.
+      let donatedAt: Date | undefined;
+      if (donated_at !== undefined && donated_at !== null && donated_at !== '') {
+        if (typeof donated_at !== 'string') {
+          return json(400, { message: 'donated_at must be a date string' });
+        }
+        const parsed = new Date(donated_at);
+        if (Number.isNaN(parsed.getTime())) {
+          return json(400, { message: 'donated_at must be a valid date' });
+        }
+        donatedAt = parsed;
       }
       // Numeric fields arrive as strings from form posts; amount is NUMERIC(12,2)
       const num = (value: unknown) =>
@@ -203,6 +217,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             donor_id: donorId,
             project_id: projectId,
             amount: donationAmount,
+            ...(donatedAt ? { donated_at: donatedAt } : {}),
           })
           .returningAll()
           .executeTakeFirstOrThrow();
