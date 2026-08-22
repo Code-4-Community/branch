@@ -8,14 +8,14 @@ Lambda for tracking project expenditures.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
+| GET | /expenditures/health | Health check |
 | GET | /expenditures |  |
+| POST | /expenditures |  |
 | GET | /expenditures/upload-url |  |
 | GET | /expenditures/{id}/receipt |  |
 | GET | /expenditures/{id} |  |
 | DELETE | /expenditures/{id} |  |
 | PATCH | /expenditures/{id}/status |  |
-| POST | /expenditures |  |
 
 ## Setup
 
