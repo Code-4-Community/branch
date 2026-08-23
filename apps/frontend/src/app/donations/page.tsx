@@ -1,5 +1,5 @@
 'use client';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
 import { HStack, Input, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
@@ -14,6 +14,8 @@ import RowDeleteButton from '../components/RowDeleteButton';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import Pagination from '../components/Pagination';
 import { useApi } from '@/hooks/useApi';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { donationsQuery, donorsQuery, projectsQuery } from '@/lib/queries';
 import { usePermissions } from '@/hooks/usePermissions';
 import { GatedButton } from '../components/Permission';
 import { formatCurrencyPrecise, formatDateNumeric } from '@/lib/format';
@@ -21,6 +23,12 @@ import type { Donation, Donor, Project } from '@/types';
 
 const ROWS_PER_PAGE = 10;
 const SORT_OPTIONS = ['Date', 'Amount'];
+
+// Stable empty defaults. `?? []` hands the useMemo below a fresh array on every
+// render, which recomputes the joined rows for nothing.
+const NO_DONATIONS: Donation[] = [];
+const NO_DONORS: Donor[] = [];
+const NO_PROJECTS: Pick<Project, 'project_id' | 'name'>[] = [];
 
 /** `GET /donors/donations` returns bare rows; names are joined in on the client. */
 interface DonationRow extends Donation {
@@ -31,12 +39,30 @@ interface DonationRow extends Donation {
 export default function DonationsPage() {
   const api = useApi();
   const { can } = usePermissions();
+  const queryClient = useQueryClient();
 
-  const [donations, setDonations] = useState<Donation[]>([]);
-  const [donors, setDonors] = useState<Donor[]>([]);
-  const [projects, setProjects] = useState<Pick<Project, 'project_id' | 'name'>[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Client-side pagination and filtering below are unchanged — this page needs
+  // server-side aggregates it does not have yet. What changed is only that the
+  // three reads are cached, so returning here is free, and that `/projects` is
+  // the same cache entry the navbar and every other page reads.
+  const donationsList = useQuery(donationsQuery());
+  const donorsList = useQuery(donorsQuery());
+  const projectsList = useQuery(projectsQuery());
+
+  const donations = donationsList.data ?? NO_DONATIONS;
+  const donors = donorsList.data ?? NO_DONORS;
+  const projects = projectsList.data ?? NO_PROJECTS;
+
+  const loading =
+    donationsList.isPending || donorsList.isPending || projectsList.isPending;
+
+  const loadError =
+    donationsList.error ?? donorsList.error ?? projectsList.error;
+  const error = loadError
+    ? loadError instanceof Error
+      ? loadError.message
+      : 'Failed to load donations'
+    : null;
 
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -59,27 +85,12 @@ export default function DonationsPage() {
 
   const [donationToDelete, setDonationToDelete] = useState<DonationRow | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [donationRes, donorRes, projectRes] = await Promise.all([
-        api.get<{ data: Donation[] }>('/donors/donations'),
-        api.get<{ data: Donor[] }>('/donors'),
-        api.get<Project[]>('/projects'),
-      ]);
-      setDonations(donationRes.data ?? []);
-      setDonors(donorRes.data ?? []);
-      setProjects(Array.isArray(projectRes) ? projectRes : []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load donations');
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Recording or deleting a donation changes the list and nothing else, so only
+  // that key is dropped — donors and projects stay warm.
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: donationsQuery().queryKey }),
+    [queryClient],
+  );
 
   const rows: DonationRow[] = useMemo(() => {
     const donorNames = new Map(donors.map((d) => [d.donor_id, d.organization]));

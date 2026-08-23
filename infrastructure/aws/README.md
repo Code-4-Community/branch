@@ -83,6 +83,7 @@
 | [aws_iam_policy_document.frontend_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
 | [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
+| [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
