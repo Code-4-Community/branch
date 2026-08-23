@@ -42,13 +42,17 @@ INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, h
 (1, 2, 'Director', '2025-02-01', 80.00),
 (2, 3, 'Student', '2025-03-15', 60.00);
 
-INSERT INTO branch.expenditures (project_id, entered_by, amount, category, description, spent_on) VALUES
-(1, 1, 5000, 'Travel', 'Domestic conference attendance', '2025-02-10'),
-(1, 1, 4200, 'Travel Foreign', 'International collaborator meeting in London', '2025-03-22'),
-(2, 2, 3000, 'General', 'Recording device supplies', '2025-04-05'),
-(2, 2, 1500, 'Visitor / Honorarium', 'Guest lecturer honorarium', '2025-05-18'),
-(3, 3, 2500, 'General', 'Educational materials', '2025-07-12'),
-(3, 3, 1800, 'Travel', 'Local outreach travel', '2025-08-03');
+-- Statuses are load-bearing too. Totals, charts and reports count 'approved'
+-- rows only, so the seed keeps one denied and one pending row: they give the
+-- admin review queue something to show, and they keep the dashboard honest
+-- about what it excludes. 14000 of the 18000 below is approved spend.
+INSERT INTO branch.expenditures (project_id, entered_by, amount, category, description, status, spent_on) VALUES
+(1, 1, 5000, 'Travel', 'Domestic conference attendance', 'approved', '2025-02-10'),
+(1, 1, 4200, 'Travel Foreign', 'International collaborator meeting in London', 'approved', '2025-03-22'),
+(2, 2, 3000, 'General', 'Recording device supplies', 'approved', '2025-04-05'),
+(2, 2, 1500, 'Visitor / Honorarium', 'Guest lecturer honorarium', 'denied', '2025-05-18'),
+(3, 3, 2500, 'General', 'Educational materials', 'pending', '2025-07-12'),
+(3, 3, 1800, 'Travel', 'Local outreach travel', 'approved', '2025-08-03');
 
 INSERT INTO branch.reports (project_id, title, object_url) VALUES
 (1, 'Clinician Communication Study Report', 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),

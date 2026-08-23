@@ -8,17 +8,21 @@ Lambda for auth handler.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
-| POST | /register |  |
-| POST | /login |  |
-| POST | /respond-challenge |  |
-| POST | /refresh |  |
-| GET | /me |  |
-| POST | /verify-email |  |
-| POST | /resend-code |  |
-| POST | /logout |  |
-| POST | /forgot-password |  |
-| POST | /reset-password |  |
+| GET | /auth/health | Health check |
+| POST | /auth/register |  |
+| POST | /auth/login |  |
+| POST | /auth/respond-challenge |  |
+| POST | /auth/refresh |  |
+| GET | /auth/me |  |
+| POST | /auth/verify-email |  |
+| POST | /auth/resend-code |  |
+| POST | /auth/logout |  |
+| POST | /auth/forgot-password |  |
+| POST | /auth/reset-password |  |
+| POST | /auth/mfa-setup |  |
+| POST | /auth/mfa-verify |  |
+| POST | /auth/mfa-disable |  |
+| GET | /auth/mfa-status |  |
 
 ## Setup
 

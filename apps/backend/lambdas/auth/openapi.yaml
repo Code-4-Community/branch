@@ -512,6 +512,110 @@ paths:
                     type: string
                     example: Too many attempts, please try again later
 
+  /mfa-setup:
+    post:
+      summary: Start TOTP MFA enrollment
+      description: >
+        Cognito AssociateSoftwareToken on the caller's Bearer access token.
+        Returns a fresh secret every call -- follow up with POST /mfa-verify
+        using the current code for *this* secret, not a stale one from an
+        earlier call. Does not enable MFA by itself; that happens in
+        /mfa-verify.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: TOTP secret to scan or enter manually
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secretCode:
+                    type: string
+                  otpauthUrl:
+                    type: string
+                    example: otpauth://totp/BRANCH:user%40example.com?secret=ABC123&issuer=BRANCH
+        '401':
+          description: Missing Authorization header, or invalid/expired token
+
+  /mfa-verify:
+    post:
+      summary: Confirm a TOTP code and enable MFA
+      description: >
+        Cognito VerifySoftwareToken on the code from an authenticator app.
+        Only on Status=SUCCESS does this also call SetUserMFAPreference to turn
+        SOFTWARE_TOKEN_MFA on as the caller's preferred factor.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  description: Current 6-digit code from the authenticator app
+      responses:
+        '200':
+          description: MFA enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: MFA enabled
+        '400':
+          description: Missing/invalid code, or no enrollment in progress
+        '401':
+          description: Missing Authorization header, or invalid/expired token
+
+  /mfa-disable:
+    post:
+      summary: Turn TOTP MFA off
+      description: >
+        Cognito SetUserMFAPreference with SOFTWARE_TOKEN_MFA disabled. Does not
+        revoke the TOTP secret in the authenticator app -- re-enrolling via
+        /mfa-setup issues a new one.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: MFA disabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: MFA disabled
+        '401':
+          description: Missing Authorization header, or invalid/expired token
+
+  /mfa-status:
+    get:
+      summary: Whether the caller currently has TOTP MFA enabled
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current MFA state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+        '401':
+          description: Missing Authorization header, or invalid/expired token
+
 components:
   securitySchemes:
     bearerAuth:

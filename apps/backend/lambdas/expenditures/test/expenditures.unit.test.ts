@@ -9,6 +9,18 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn(async () => 'https://signed.example/url'),
 }));
 
+// Nor must the receipt delete on DELETE /expenditures/{id}. Shared across
+// instances so the assertions below can see the call.
+const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
+jest.mock('@aws-sdk/client-s3', () => ({
+  S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
+  PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+  GetObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+  DeleteObjectCommand: jest
+    .fn()
+    .mockImplementation((params: unknown) => ({ __type: 'DeleteObject', ...(params as object) })),
+}));
+
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest, checkAuthorization } from '../auth';
@@ -861,6 +873,56 @@ describe('DELETE /expenditures/{id} unit tests', () => {
     });
   });
 
+  describe('the receipt goes with the row', () => {
+    const withReceipt = {
+      ...fakeExpenditure,
+      receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/1/flight.pdf',
+    };
+
+    beforeEach(() => {
+      process.env.REPORTS_BUCKET_NAME = 'bucket';
+      mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(withReceipt));
+      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+      mockS3Send.mockResolvedValue({});
+    });
+
+    test('deletes the receipt object', async () => {
+      const res = await handler(idEvent('DELETE', '5'));
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).receiptDeleted).toBe(true);
+      expect(mockS3Send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          __type: 'DeleteObject',
+          Bucket: 'bucket',
+          Key: 'receipts/1/flight.pdf',
+        }),
+      );
+    });
+
+    test('a failing S3 delete still deletes the row', async () => {
+      // An orphaned object is recoverable; a row that cannot be deleted is not.
+      mockS3Send.mockRejectedValue(new Error('AccessDenied'));
+
+      const res = await handler(idEvent('DELETE', '5'));
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).receiptDeleted).toBe(false);
+    });
+  });
+
+  test('an expenditure with no receipt makes no S3 call', async () => {
+    process.env.REPORTS_BUCKET_NAME = 'bucket';
+    mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
+    mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+
+    const res = await handler(idEvent('DELETE', '5'));
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).receiptDeleted).toBe(true);
+    expect(mockS3Send).not.toHaveBeenCalled();
+  });
+
   describe('Success cases', () => {
     test('200: admin can delete without a membership lookup', async () => {
       mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
@@ -1076,6 +1138,19 @@ describe('GET /expenditures/upload-url unit tests', () => {
     expect(json.uploadUrl).toBe('https://signed.example/url');
     expect(json.objectUrl).toContain('/receipts/1/');
     expect(json.objectUrl).toContain('receipt.pdf');
+  });
+
+  test('route precedence: /expenditures/upload-url reaches the upload-url controller, not /expenditures/:id', async () => {
+    // If route order regressed, this would hit the :id controller with id="upload-url"
+    // and 400 on the digit check instead of presigning.
+    const res = await handler(uploadUrlEvent({ fileName: 'receipt.pdf', projectId: '1' }));
+
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json).toHaveProperty('uploadUrl');
+    expect(json).toHaveProperty('objectUrl');
+    expect(json).not.toHaveProperty('route');
+    expect(mockDb.selectFrom).not.toHaveBeenCalledWith('branch.expenditures');
   });
 
   test('400: non-PDF is rejected', async () => {

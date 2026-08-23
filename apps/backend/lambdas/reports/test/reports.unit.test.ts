@@ -2,11 +2,14 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 jest.mock('../db');
 jest.mock('../auth');
+// Shared across instances so the delete assertions below can see the call.
+const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.mock('@aws-sdk/client-s3', () => ({
-  S3Client: jest.fn().mockImplementation(() => ({
-    send: jest.fn().mockReturnValue({} as any),
-  })),
+  S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
   PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+  DeleteObjectCommand: jest
+    .fn()
+    .mockImplementation((params: unknown) => ({ __type: 'DeleteObject', ...(params as object) })),
 }));
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
@@ -414,6 +417,39 @@ describe('GET /reports/upload-url unit tests', () => {
   });
 });
 
+describe('Route precedence', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+  });
+
+  // /reports/upload-url and /reports/:id both have two path segments, so
+  // upload-url must be registered before :id or it gets swallowed as an id lookup.
+  test('GET /reports/upload-url reaches getUploadUrl, not the /reports/:id controller', async () => {
+    const res = await handler({
+      rawPath: '/reports/upload-url',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters: {},
+    });
+    // getUploadUrl-specific validation, not the 404 a numeric-id check on "upload-url" would give.
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toBe('fileName is required');
+  });
+
+  test('POST /reports/generate reaches generateReport, not the generic POST /reports controller', async () => {
+    const res = await handler({
+      rawPath: '/reports/generate',
+      requestContext: { http: { method: 'POST' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      body: JSON.stringify({}),
+    });
+    // generateReport-specific validation, not createReport's 'title is required'.
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toBe('project_id is required');
+  });
+});
+
 describe('POST /reports unit tests', () => {
   const fakeObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/123-report.pdf';
 
@@ -764,6 +800,66 @@ describe('DELETE /reports/{id} unit tests', () => {
     test('checkProjectAccess is called with the report\'s own project_id', async () => {
       await handler(idEvent('DELETE', '5'));
       expect(mockCheckProjectAccess).toHaveBeenCalledWith(1, 2, true);
+    });
+
+    describe('the generated file goes with the row', () => {
+      const storedReport = {
+        ...fakeReport,
+        object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/2/gen.pdf',
+      };
+
+      beforeEach(() => {
+        process.env.REPORTS_BUCKET_NAME = 'bucket';
+        setupReportMock(storedReport);
+        mockS3Send.mockResolvedValue({});
+      });
+
+      test('deletes the object behind the report', async () => {
+        const res = await handler(idEvent('DELETE', '5'));
+
+        expect(res.statusCode).toBe(200);
+        expect(JSON.parse(res.body).fileDeleted).toBe(true);
+        expect(mockS3Send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            __type: 'DeleteObject',
+            Bucket: 'bucket',
+            Key: 'reports/2/gen.pdf',
+          }),
+        );
+      });
+
+      test('a failing S3 delete still deletes the row', async () => {
+        // An orphaned object is recoverable; a row that cannot be deleted is
+        // not, so S3 trouble must not turn a successful delete into a 500.
+        mockS3Send.mockRejectedValue(new Error('AccessDenied'));
+
+        const res = await handler(idEvent('DELETE', '5'));
+
+        expect(res.statusCode).toBe(200);
+        expect(JSON.parse(res.body).fileDeleted).toBe(false);
+      });
+
+      test('the row is deleted before the object', async () => {
+        const order: string[] = [];
+        mockDb.deleteFrom = jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            execute: jest.fn(() => {
+              order.push('row');
+              return [{ numDeletedRows: 1n }];
+            }),
+          }),
+        });
+        mockS3Send.mockImplementation(async () => {
+          order.push('object');
+          return {};
+        });
+
+        await handler(idEvent('DELETE', '5'));
+
+        // Reversed, a failed row delete would leave a row pointing at a file
+        // that no longer exists.
+        expect(order).toEqual(['row', 'object']);
+      });
     });
   });
 });

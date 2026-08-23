@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import { dispatch, json, type Route } from '@branch/lambda-http';
 
 // Mock the database module BEFORE importing handler
 jest.mock('../db');
@@ -549,5 +550,32 @@ describe('PATCH /users/{userId} unit tests', () => {
       const setCall = (mockDb.updateTable.mock.results[0].value.set as jest.Mock).mock.calls[0][0];
       expect(setCall).toStrictEqual({ name: 'New Name' });
     });
+  });
+});
+
+describe('route precedence', () => {
+  test('a literal segment route wins over a same-shaped :param route placed after it', async () => {
+    const literalHandler = jest.fn(async () => json(200, { matched: 'literal' }));
+    const paramHandler = jest.fn(async () => json(200, { matched: 'param' }));
+
+    const routes: Route[] = [
+      { method: 'GET', pattern: '/users/me', handler: literalHandler },
+      { method: 'GET', pattern: '/users/:userId', handler: paramHandler },
+    ];
+
+    const literalRes = await dispatch(
+      { rawPath: '/users/me', requestContext: { http: { method: 'GET' } } },
+      { prefix: 'users', routes },
+    );
+    expect(JSON.parse(literalRes.body)).toEqual({ matched: 'literal' });
+    expect(literalHandler).toHaveBeenCalledTimes(1);
+    expect(paramHandler).not.toHaveBeenCalled();
+
+    const paramRes = await dispatch(
+      { rawPath: '/users/42', requestContext: { http: { method: 'GET' } } },
+      { prefix: 'users', routes },
+    );
+    expect(JSON.parse(paramRes.body)).toEqual({ matched: 'param' });
+    expect(paramHandler).toHaveBeenCalledTimes(1);
   });
 });

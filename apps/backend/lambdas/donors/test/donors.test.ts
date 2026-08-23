@@ -204,6 +204,17 @@ describe("Donor API with data", () => {
     expect(body.data.length).toBe(3);
   });
 
+  test("GET /donors/donations reaches the donations controller, not the /donors/:id route", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('GET', '/donors/donations'));
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data.length).toBe(3);
+    expect(body.data[0]).toHaveProperty('donation_id');
+  });
+
   test("GET /donations with page and limit returns paginated response", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { page: '1', limit: '1' }));
@@ -265,6 +276,24 @@ describe("Donor API with data", () => {
     expect(body.data.donor_id).toBe(2);
     expect(body.data.project_id).toBe(1);
     expect(Number(body.data.amount)).toBe(500);
+  });
+
+  test("POST /donations honours an explicit donated_at", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 2, project_id: 1, amount: 500, donated_at: '2024-03-12',
+    }));
+    const body = JSON.parse(res.body);
+    expect(res.statusCode).toBe(201);
+    expect(new Date(body.data.donated_at).toISOString()).toContain('2024-03-12');
+  });
+
+  test("POST /donations returns 400 when donated_at is not a date", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 2, project_id: 1, amount: 500, donated_at: 'not-a-date',
+    }));
+    expect(res.statusCode).toBe(400);
   });
 
   test("POST /donations returns 400 when donor_id is missing", async () => {

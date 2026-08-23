@@ -1,283 +1,447 @@
-'use client'
-import React, { useState } from 'react';
-import NavBar from "../components/Navbar";
-import { HStack, Input, Button, Dialog, Portal, CloseButton, Stack } from "@chakra-ui/react";
+'use client';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import NavBar from '../components/Navbar';
+import Header from '../components/Header';
+import { HStack, Input, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
 import TextInputField from '../components/TextInputField';
-import { LuArrowDownUp } from "react-icons/lu";
-import { FaPlus } from "react-icons/fa";
+import Button from '../components/Button';
+import { CiFilter } from 'react-icons/ci';
+import { LuArrowDownUp } from 'react-icons/lu';
+import { FaPlus } from 'react-icons/fa';
+import { MdOutlineMail } from 'react-icons/md';
+import DropdownSelector from '../components/DropdownSelector';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
+import RowDeleteButton from '../components/RowDeleteButton';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import Pagination from '../components/Pagination';
-import { MdOutlineMail } from "react-icons/md";
 import { useApi } from '@/hooks/useApi';
+import { useAuth } from '@/context/AuthContext';
+import { formatDateNumeric } from '@/lib/format';
+import type { Donation, Donor } from '@/types';
 
-type Donor = {
-    donor_id: number;
-    organization: string;
-    contact_name: string | null;
-    contact_email: string | null;
-    num_projects: number;
-    last_donation: string | null;
-};
+const ROWS_PER_PAGE = 10;
+const SORT_OPTIONS = ['# of Projects', 'Last Donated'];
 
-/** Raw shape of a row from GET /donors — no computed fields yet. */
-interface RawDonor {
-    donor_id: number;
-    organization: string;
-    contact_name: string | null;
-    contact_email: string | null;
+/**
+ * `GET /donors` returns the bare donor row, so the two aggregate columns the
+ * design calls for are derived here from the donations list rather than added
+ * to the endpoint.
+ */
+interface DonorRow extends Donor {
+  num_projects: number;
+  last_donation: string | null;
 }
-
-/** Raw shape of a row from GET /donations. */
-interface RawDonation {
-    donation_id: number;
-    donor_id: number;
-    project_id: number;
-    amount: string;
-    donated_at: string;
-}
-
-const mockDonors: Donor[] = [
-    { donor_id: 1, organization: 'Green Future Foundation', contact_name: 'Alice Chen', contact_email: 'alice@greenfuture.org', num_projects: 4, last_donation: '03/12/2024' },
-    { donor_id: 2, organization: 'Horizon Trust', contact_name: 'James Patel', contact_email: 'james@horizontrust.org', num_projects: 2, last_donation: '01/05/2024' },
-    { donor_id: 3, organization: 'Bright Path Nonprofit', contact_name: null, contact_email: null, num_projects: 7, last_donation: '02/28/2024' },
-    { donor_id: 4, organization: 'Unity Giving Circle', contact_name: 'Maria Lopez', contact_email: 'maria@unitygiving.org', num_projects: 1, last_donation: '03/30/2024' },
-    { donor_id: 5, organization: 'Sunrise Community Fund', contact_name: 'David Kim', contact_email: 'david@sunrisefund.org', num_projects: 3, last_donation: '04/01/2024' },
-    { donor_id: 6, organization: 'Blue Ridge Giving', contact_name: 'Sarah Thompson', contact_email: 'sarah@blueridge.org', num_projects: 5, last_donation: '02/14/2024' },
-    { donor_id: 7, organization: 'Maple Leaf Charitable Trust', contact_name: null, contact_email: null, num_projects: 2, last_donation: '01/20/2024' },
-    { donor_id: 8, organization: 'Evergreen Partners', contact_name: 'Rachel Singh', contact_email: 'rachel@evergreenpartners.org', num_projects: 6, last_donation: '03/05/2024' },
-    { donor_id: 9, organization: 'New Horizons Society', contact_name: 'Tom Bradley', contact_email: 'tom@newhorizons.org', num_projects: 9, last_donation: '04/10/2024' },
-    { donor_id: 10, organization: 'Coastal Care Foundation', contact_name: 'Nina Rossi', contact_email: 'nina@coastalcare.org', num_projects: 3, last_donation: '03/22/2024' },
-];
-
-const donorColumns: DataTableColumn<Donor>[] = [
-    {
-        key: 'id',
-        header: 'Donor ID',
-        width: '15%',
-        cell: (donor) => `#${String(donor.donor_id).padStart(6, '0')}`,
-        skeleton: { width: '80%' },
-    },
-    { key: 'organization', header: 'Donor Name', width: '55%', cell: (donor) => donor.organization },
-    {
-        key: 'contact_name',
-        header: 'Contact Name',
-        width: '15%',
-        cell: (donor) => donor.contact_name,
-        skeleton: { width: '35%' },
-    },
-    {
-        key: 'last_donation',
-        header: 'Last Donation',
-        width: '15%',
-        cell: (donor) => donor.last_donation ?? '—',
-        skeleton: { width: '70%' },
-    },
-];
 
 export default function DonorsPage() {
-    const api = useApi();
+  const api = useApi();
+  const { isAdmin } = useAuth();
 
-    const [currentPage, setCurrentPage] = useState(1);
-    const rowsPerPage = 10;
+  const [donors, setDonors] = useState<Donor[]>([]);
+  const [donations, setDonations] = useState<Donation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    
-    // Sort by last donated.
-    const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [showFilter, setShowFilter] = useState(false);
+  const [selectedDonors, setSelectedDonors] = useState<string[]>([]);
+  const [showSort, setShowSort] = useState(false);
+  const [selectedSort, setSelectedSort] = useState<string>('');
 
-    // Sorted view — does not mutate donors list, so re-sorting or clearing the
-    // sort never loses the original order.
-    const sortedDonors = React.useMemo(() => {
-        if (!sortDirection) return mockDonors;
-        const withDates = [...mockDonors];
-        withDates.sort((a, b) => {
-            const aTime = a.last_donation ? new Date(a.last_donation).getTime() : 0;
-            const bTime = b.last_donation ? new Date(b.last_donation).getTime() : 0;
-            return sortDirection === 'desc' ? bTime - aTime : aTime - bTime;
-        });
-        return withDates;
-    }, [sortDirection]);
+  const [showNewDonor, setShowNewDonor] = useState(false);
+  const [newOrganization, setNewOrganization] = useState('');
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const [orgError, setOrgError] = useState(false);
+  const [nameError, setNameError] = useState(false);
+  const [emailError, setEmailError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [donorToDelete, setDonorToDelete] = useState<DonorRow | null>(null);
 
-    const totalPages = Math.max(1, Math.ceil(sortedDonors.length / rowsPerPage));
-    const currentDonors = sortedDonors.slice(
-        (currentPage - 1) * rowsPerPage,
-        currentPage * rowsPerPage
-    );
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [donorRes, donationRes] = await Promise.all([
+        api.get<{ data: Donor[] }>('/donors'),
+        api.get<{ data: Donation[] }>('/donors/donations'),
+      ]);
+      setDonors(donorRes.data ?? []);
+      setDonations(donationRes.data ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load donors');
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
 
-    // Toggling re-sorts on every click: most recent first, then oldest first,
-    // then back to the original mock order.
-    function handleSortByLastDonated() {
-        setSortDirection((prev) => (prev === 'desc' ? 'asc' : prev === 'asc' ? null : 'desc'));
-        setCurrentPage(1);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const rows: DonorRow[] = useMemo(() => {
+    const byDonor = new Map<number, Donation[]>();
+    for (const donation of donations) {
+      const list = byDonor.get(donation.donor_id);
+      if (list) list.push(donation);
+      else byDonor.set(donation.donor_id, [donation]);
     }
 
-    const [showNewDonor, setShowNewDonor] = useState(false);
-    const [newOrganization, setNewOrganization] = useState('');
-    const [newContactName, setNewContactName] = useState('');
-    const [newContactEmail, setNewContactEmail] = useState('');
-    const [orgError, setOrgError] = useState(false);
-    const [nameError, setNameError] = useState(false);
-    const [emailError, setEmailError] = useState(false);
-    const [submitError, setSubmitError] = useState<string | null>(null);
-    const [submitting, setSubmitting] = useState(false);
+    return donors.map((donor) => {
+      const own = byDonor.get(donor.donor_id) ?? [];
+      // One donation row per (donor, project) pair is enforced by a unique
+      // constraint, so the donation count is also the project count.
+      const latest = own.reduce<string | null>((newest, donation) => {
+        if (!donation.donated_at) return newest;
+        if (!newest || donation.donated_at > newest) return donation.donated_at;
+        return newest;
+      }, null);
 
-    const isFormValid =
-        newOrganization.trim().length > 0 &&
-        newContactName.trim().length > 0 &&
-        newContactEmail.trim().length > 0;
+      return {
+        ...donor,
+        num_projects: own.length,
+        last_donation: latest,
+      };
+    });
+  }, [donors, donations]);
 
-    function resetForm() {
-        setNewOrganization('');
-        setNewContactName('');
-        setNewContactEmail('');
-        setOrgError(false);
-        setNameError(false);
-        setEmailError(false);
-        setSubmitError(null);
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    let matching = query
+      ? rows.filter(
+          (row) =>
+            row.organization.toLowerCase().includes(query) ||
+            (row.contact_name ?? '').toLowerCase().includes(query) ||
+            (row.contact_email ?? '').toLowerCase().includes(query),
+        )
+      : rows;
+
+    if (selectedDonors.length > 0) {
+      matching = matching.filter((row) => selectedDonors.includes(String(row.donor_id)));
     }
 
-    const handleSave = async () => {
-        const hasOrgError = !newOrganization.trim();
-        const hasNameError = !newContactName.trim();
-        const hasEmailError = !newContactEmail.trim();
- 
-        setOrgError(hasOrgError);
-        setNameError(hasNameError);
-        setEmailError(hasEmailError);
- 
-        if (hasOrgError || hasNameError || hasEmailError) return;
- 
-        try {
-            setSubmitting(true);
-            setSubmitError(null);
- 
-            // NOTE: backend expects snake_case for these two fields.
-            await api.post('/donors', {
-                organization: newOrganization.trim(),
-                contact_name: newContactName.trim(),
-                contact_email: newContactEmail.trim(),
-            });
- 
-            resetForm();
-            setShowNewDonor(false);
-            // Table still reads from mockDonors — another dev is wiring up
-            // the real GET /donors refresh here.
-        } catch (err) {
-            setSubmitError(err instanceof Error ? err.message : 'Failed to create donor');
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    function handleCloseModal() {
-        resetForm();
-        setShowNewDonor(false);
+    if (selectedSort === '# of Projects') {
+      return [...matching].sort((a, b) => b.num_projects - a.num_projects);
     }
+    if (selectedSort === 'Last Donated') {
+      return [...matching].sort((a, b) =>
+        (b.last_donation ?? '').localeCompare(a.last_donation ?? ''),
+      );
+    }
+    return matching;
+  }, [rows, search, selectedDonors, selectedSort]);
 
-    return (
-        <div style={{ display: 'flex', minHeight: '100vh' }}>
-            <NavBar />
-            <main style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-                <div style={{ margin: '2%', display: 'flex', flexDirection: 'column', minHeight: '90vh' }}>
-                    <h1 style={{ fontWeight: 600, fontFamily: 'var(--font-heading)', fontSize: 'var(--font-size-heading-1)' }}>Donors</h1>
-                    <HStack width="100%" justify="space-between" paddingTop="3%" paddingBottom="3%">
-                        <HStack width='30%'>
-                            <Input placeholder="🔍︎ Search..." variant="outline" />
-                        </HStack>
-                        <HStack>
-                            <Button
-                                backgroundColor={'var(--color-core-white)'}
-                                color={'var(--color-core-black)'}
-                                border={'1px solid'}
-                                borderColor={'var(--color-black-500)'}
-                                onClick={handleSortByLastDonated}
-                            >
-                                <LuArrowDownUp />
-                                Last Donated
-                                {sortDirection === 'desc' && ' ↓'}
-                                {sortDirection === 'asc' && ' ↑'}
-                            </Button>
-                            <Button backgroundColor={'var(--color-core-green)'} color={'var(--color-core-white)'} onClick={() => setShowNewDonor(true)}>
-                                <FaPlus />
-                                New Donor
-                            </Button>
-                        </HStack>
-                    </HStack>
- 
-                    <Dialog.Root open={showNewDonor} onOpenChange={(e) => { if (!e.open) handleCloseModal(); }}>
-                        <Portal>
-                            <Dialog.Backdrop />
-                            <Dialog.Positioner>
-                                <Dialog.Content>
-                                    <Dialog.Header display="flex" justifyContent="space-between" alignItems="center">
-                                        <Dialog.Title fontFamily={'var(--font-heading)'} fontSize={'var(--font-size-heading-3)'} fontWeight={600}>Add New Donor</Dialog.Title>
-                                        <CloseButton onClick={handleCloseModal} />
-                                    </Dialog.Header>
-                                    <Dialog.Body>
-                                        <Stack gap={4}>
-                                            <TextInputField
-                                                label="Organization Name*"
-                                                placeholder="Organization name"
-                                                value={newOrganization}
-                                                onChange={(val) => { setNewOrganization(val); setOrgError(false); }}
-                                                isError={orgError}
-                                                errorMessage="Enter valid name"
-                                            />
-                                            <TextInputField
-                                                label="Contact Name*"
-                                                placeholder="Contact name"
-                                                value={newContactName}
-                                                onChange={(val) => { setNewContactName(val); setNameError(false); }}
-                                                isError={nameError}
-                                                errorMessage="Enter valid name"
-                                            />
-                                            <TextInputField
-                                                label="Contact Email*"
-                                                placeholder="Contact email"
-                                                icon={<MdOutlineMail />}
-                                                value={newContactEmail}
-                                                onChange={(val) => { setNewContactEmail(val); setEmailError(false); }}
-                                                isError={emailError}
-                                                errorMessage="Enter valid email"
-                                            />
-                                            {submitError && (
-                                                <p style={{ color: 'var(--color-error-red)', fontSize: '14px' }}>
-                                                    {submitError}
-                                                </p>
-                                            )}
-                                        </Stack>
-                                    </Dialog.Body>
-                                    <Dialog.Footer>
-                                        <Button variant="outline" borderColor={'var(--color-core-green)'} onClick={handleCloseModal}>Cancel</Button>
-                                        <Button
-                                            backgroundColor={isFormValid ? 'var(--color-core-green)' : 'var(--color-primary-500)'}
-                                            color={'var(--color-core-white)'}
-                                            onClick={handleSave}
-                                            disabled={!isFormValid || submitting}
-                                            cursor={isFormValid ? 'pointer' : 'not-allowed'}
-                                        >
-                                            {submitting ? 'Adding…' : 'Add Donor'}
-                                        </Button>
-                                    </Dialog.Footer>
-                                </Dialog.Content>
-                            </Dialog.Positioner>
-                        </Portal>
-                    </Dialog.Root>
- 
-                    <DataTable
-                        columns={donorColumns}
-                        rows={currentDonors}
-                        rowKey={(donor) => donor.donor_id}
-                        emptyMessage="No donors found."
+  const donorOptions = donors.map((d) => ({
+    label: d.organization,
+    value: String(d.donor_id),
+  }));
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  const page = Math.min(currentPage, totalPages);
+  const currentDonors = filtered.slice(
+    (page - 1) * ROWS_PER_PAGE,
+    page * ROWS_PER_PAGE,
+  );
+
+  const columns: DataTableColumn<DonorRow>[] = [
+    {
+      key: 'id',
+      header: 'Donor ID',
+      width: '15%',
+      cell: (donor) => `#${String(donor.donor_id).padStart(6, '0')}`,
+      skeleton: { width: '80%' },
+    },
+    {
+      key: 'organization',
+      header: 'Donor Name',
+      width: isAdmin ? '47%' : '55%',
+      cell: (donor) => donor.organization,
+    },
+    {
+      key: 'projects',
+      header: '# of Projects',
+      width: '15%',
+      cell: (donor) => donor.num_projects,
+      skeleton: { width: '35%' },
+    },
+    {
+      key: 'last_donation',
+      header: 'Last Donation',
+      width: '15%',
+      cell: (donor) => formatDateNumeric(donor.last_donation) || '—',
+      skeleton: { width: '70%' },
+    },
+    // Deleting a donor is admin-only on the backend (`donors/handler.ts`).
+    ...(isAdmin
+      ? [
+          {
+            key: 'actions',
+            header: '',
+            width: '56px',
+            align: 'center' as const,
+            cell: (donor: DonorRow) => (
+              <RowDeleteButton
+                label={`Delete ${donor.organization}`}
+                onClick={() => setDonorToDelete(donor)}
+              />
+            ),
+            skeleton: { width: '32px' },
+          },
+        ]
+      : []),
+  ];
+
+  const resetNewDonor = () => {
+    setNewOrganization('');
+    setNewContactName('');
+    setNewContactEmail('');
+    setOrgError(false);
+    setNameError(false);
+    setEmailError(false);
+    setSaveError(null);
+  };
+
+  const handleSave = async () => {
+    const hasOrgError = !newOrganization.trim();
+    const hasNameError = !newContactName.trim();
+    const hasEmailError = !newContactEmail.trim();
+
+    setOrgError(hasOrgError);
+    setNameError(hasNameError);
+    setEmailError(hasEmailError);
+
+    if (hasOrgError || hasNameError || hasEmailError) return;
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api.post('/donors', {
+        organization: newOrganization.trim(),
+        contact_name: newContactName.trim(),
+        contact_email: newContactEmail.trim(),
+      });
+      setShowNewDonor(false);
+      resetNewDonor();
+      await load();
+    } catch (err) {
+      setSaveError(
+        err instanceof Error ? err.message : 'Could not add donor. Try again.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen">
+      <NavBar />
+      <main className="min-w-0 flex-1 bg-core-white">
+        <Header />
+        <div className="!m-[2%] flex min-h-[90vh] flex-col">
+          <h1 className="![font-family:var(--font-heading)] !text-[length:var(--font-size-heading-1)] !font-semibold">
+            Donors
+          </h1>
+          <HStack width="100%" justify="space-between" paddingTop="3%" paddingBottom="3%">
+            <HStack width="30%">
+              <Input
+                placeholder="🔍︎ Search..."
+                variant="outline"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+            </HStack>
+            <HStack>
+              <div style={{ position: 'relative' }}>
+                <Button
+                  variant="secondary"
+                  icon={<CiFilter aria-hidden />}
+                  onClick={() => setShowFilter((prev) => !prev)}
+                >
+                  Filter By
+                  {selectedDonors.length > 0 && ` (${selectedDonors.length})`}
+                </Button>
+                {showFilter && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
+                    <DropdownSelector
+                      options={donorOptions}
+                      placeholder="Filter by donor..."
+                      multiSelect={true}
+                      value={selectedDonors}
+                      onChange={(val: string | string[]) => {
+                        setSelectedDonors(val as string[]);
+                        setCurrentPage(1);
+                      }}
                     />
- 
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        onPageChange={setCurrentPage}
+                  </div>
+                )}
+              </div>
+              <div style={{ position: 'relative' }}>
+                <Button
+                  variant="secondary"
+                  icon={<LuArrowDownUp aria-hidden />}
+                  onClick={() => setShowSort((prev) => !prev)}
+                >
+                  Sort By
+                </Button>
+                {showSort && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
+                    <DropdownSelector
+                      options={SORT_OPTIONS}
+                      placeholder="Sort by..."
+                      value={selectedSort}
+                      onChange={(val: string | string[]) => setSelectedSort(val as string)}
                     />
-                </div>
-            </main>
+                  </div>
+                )}
+              </div>
+              <Button icon={<FaPlus aria-hidden />} onClick={() => setShowNewDonor(true)}>
+                New Donor
+              </Button>
+            </HStack>
+          </HStack>
+
+          <Dialog.Root
+            open={showNewDonor}
+            onOpenChange={(e) => {
+              if (!e.open && !saving) {
+                setShowNewDonor(false);
+                resetNewDonor();
+              }
+            }}
+          >
+            <Portal>
+              <Dialog.Backdrop />
+              <Dialog.Positioner>
+                <Dialog.Content>
+                  <Dialog.Header display="flex" justifyContent="space-between" alignItems="center">
+                    <Dialog.Title
+                      fontFamily={'var(--font-heading)'}
+                      fontSize={'var(--font-size-heading-3)'}
+                      fontWeight={600}
+                    >
+                      Add New Donor
+                    </Dialog.Title>
+                    <CloseButton onClick={() => setShowNewDonor(false)} disabled={saving} />
+                  </Dialog.Header>
+                  <Dialog.Body>
+                    <Stack gap={4}>
+                      <TextInputField
+                        label="Organization Name*"
+                        placeholder="Organization name"
+                        value={newOrganization}
+                        onChange={(val) => {
+                          setNewOrganization(val);
+                          setOrgError(false);
+                        }}
+                        isError={orgError}
+                        errorMessage="Enter valid name"
+                        disabled={saving}
+                      />
+                      <TextInputField
+                        label="Contact Name*"
+                        placeholder="Contact name"
+                        value={newContactName}
+                        onChange={(val) => {
+                          setNewContactName(val);
+                          setNameError(false);
+                        }}
+                        isError={nameError}
+                        errorMessage="Enter valid name"
+                        disabled={saving}
+                      />
+                      <TextInputField
+                        label="Contact Email*"
+                        placeholder="Contact email"
+                        icon={<MdOutlineMail />}
+                        value={newContactEmail}
+                        onChange={(val) => {
+                          setNewContactEmail(val);
+                          setEmailError(false);
+                        }}
+                        isError={emailError}
+                        errorMessage="Enter valid email"
+                        disabled={saving}
+                      />
+                      {saveError && (
+                        <p role="alert" className="!text-sm !font-bold !text-error-red">
+                          {saveError}
+                        </p>
+                      )}
+                    </Stack>
+                  </Dialog.Body>
+                  <Dialog.Footer>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowNewDonor(false);
+                        resetNewDonor();
+                      }}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handleSave} isLoading={saving} loadingText="Saving…">
+                      Add Donor
+                    </Button>
+                  </Dialog.Footer>
+                </Dialog.Content>
+              </Dialog.Positioner>
+            </Portal>
+          </Dialog.Root>
+
+          {error && (
+            <p role="alert" className="!font-bold !text-error-red">
+              {error}
+            </p>
+          )}
+
+          {!error && (
+            <DataTable
+              columns={columns}
+              rows={currentDonors}
+              rowKey={(donor) => donor.donor_id}
+              isLoading={loading}
+              loadingLabel="Loading donors…"
+              skeletonRows={ROWS_PER_PAGE}
+              emptyMessage="No donors found."
+            />
+          )}
+
+          {!loading && !error && (
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          )}
         </div>
-    );
+
+        <ConfirmDeleteDialog
+          open={donorToDelete !== null}
+          onClose={() => setDonorToDelete(null)}
+          onConfirm={async () => {
+            if (!donorToDelete) return;
+            await api.del(`/donors/${donorToDelete.donor_id}`);
+            await load();
+          }}
+          title="Delete Donor"
+          itemName={donorToDelete?.organization}
+          confirmLabel="Delete Donor"
+          consequences={
+            donorToDelete && donorToDelete.num_projects > 0 ? (
+              <p>
+                This also deletes their {donorToDelete.num_projects} recorded
+                donation{donorToDelete.num_projects === 1 ? '' : 's'}, which will
+                no longer count toward those projects&apos; funding.
+              </p>
+            ) : undefined
+          }
+        />
+      </main>
+    </div>
+  );
 }
