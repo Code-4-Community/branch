@@ -786,10 +786,36 @@ function normalizePathForComparison(path) {
 }
 
 // Extract routes from handler.ts
+// Reads the route table a converted lambda declares in routes.ts. Returns null
+// when there is no table, so callers fall back to parsing handler.ts.
+function extractRoutesFromRoutesTable(handlerPath) {
+  const routesPath = path.join(path.dirname(handlerPath), 'routes.ts');
+  if (!fs.existsSync(routesPath)) return null;
+
+  const source = fs.readFileSync(routesPath, 'utf8');
+  const routes = [];
+  const entryRegex = /method:\s*['"]([A-Za-z]+)['"]\s*,\s*pattern:\s*['"]([^'"]+)['"]/g;
+
+  let match;
+  while ((match = entryRegex.exec(source)) !== null) {
+    // `:param` is the router's spelling; READMEs and the OpenAPI specs use {param}.
+    const routePath = match[2].replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+    routes.push({ method: match[1].toUpperCase(), path: routePath });
+  }
+
+  return routes;
+}
+
 function extractRoutesFromHandler(handlerPath) {
+  // Converted lambdas keep their routes in routes.ts; the if-chain parsing below
+  // finds nothing in their four-line handler.ts and would silently report zero
+  // routes, which is how the README workflow came to delete them.
+  const tableRoutes = extractRoutesFromRoutesTable(handlerPath);
+  if (tableRoutes) return tableRoutes;
+
   const source = fs.readFileSync(handlerPath, 'utf8');
   const routes = [];
-  
+
   // Find the routes section between ROUTES-START and ROUTES-END
   const startMarker = '// >>> ROUTES-START';
   const endMarker = '// <<< ROUTES-END';
@@ -1160,9 +1186,15 @@ function collectRoutes(handlerPath, openapiPath) {
     }
   }
 
-  const routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
+  // A converted lambda serves health centrally under its prefix, and its spec
+  // says so; an unconverted one still declares a bare /health. Follow whichever
+  // applies, and skip both spellings below so only one row is emitted.
+  const service = path.basename(path.dirname(handlerPath));
+  const converted = fs.existsSync(path.join(path.dirname(handlerPath), 'routes.ts'));
+  const healthPath = converted ? `/${service}/health` : '/health';
+  const routes = [{ method: 'GET', path: healthPath, description: 'Health check' }];
   for (const route of routeMap.values()) {
-    if (route.method === 'GET' && route.path === '/health') continue;
+    if (route.method === 'GET' && (route.path === '/health' || route.path === healthPath)) continue;
     routes.push({ method: route.method, path: route.path, description: '' });
   }
   return routes;
