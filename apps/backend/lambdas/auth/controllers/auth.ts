@@ -11,6 +11,7 @@ import { json, parseBody } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import { authenticateRequest } from '../auth';
 import db from '../db';
+import { resolveProfileImage } from '../photos';
 import {
   cognitoClient,
   USER_POOL_CLIENT_ID,
@@ -222,7 +223,7 @@ export const handleMe: RouteHandler = async ({ auth }) => {
     email: me.email,
     name: me.name,
     isAdmin: me.is_admin === true,
-    profileImage: me.profile_image,
+    profileImage: await resolveProfileImage(me.profile_image),
     // The RBAC subject travels with identity so the browser evaluates the same
     // policy against the same facts the lambdas used. Without it the frontend
     // would have to re-derive "is a director" and "which projects am I on"

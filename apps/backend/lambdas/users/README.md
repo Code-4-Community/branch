@@ -11,6 +11,7 @@ Lambda for managing users.
 | GET | /users/health | Health check |
 | GET | /users |  |
 | GET | /users/{userId} |  |
+| GET | /users/{userId}/photo-upload-url |  |
 | PATCH | /users/{userId} |  |
 | DELETE | /users/{userId} |  |
 | POST | /users |  |
