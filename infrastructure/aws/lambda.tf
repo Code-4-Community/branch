@@ -213,6 +213,11 @@ resource "aws_lambda_function" "functions" {
       # Preview stacks copy this map from prod, then override the environment,
       # so PR errors do not land in the production issue stream.
       SENTRY_ENVIRONMENT = "production"
+
+      # Grafana Cloud OTLP. The headers carry the instance ID and API token, so
+      # they come from Infisical `/grafana`, not the tree.
+      OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp-gateway-prod-us-west-0.grafana.net/otlp"
+      OTEL_EXPORTER_OTLP_HEADERS  = data.infisical_secrets.grafana_folder.secrets["OTEL_EXPORTER_OTLP_HEADERS"].value
     }
   }
 }
