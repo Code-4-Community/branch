@@ -1,12 +1,13 @@
 "use client";
 import Image from "next/image";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PT_Sans } from "next/font/google";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useAuth } from "@/context/AuthContext";
-import { useApi } from "@/hooks/useApi";
+import { useQuery } from "@tanstack/react-query";
+import { projectsQuery } from "@/lib/queries";
 import { usePermissions } from "@/hooks/usePermissions";
 import { authorizeAny, type RbacSubject } from "@branch/rbac";
 import { assetPath } from "@/lib/asset";
@@ -172,7 +173,6 @@ export const NavBar: React.FC<{
   const { logout } = useAuth();
   const { subject } = usePermissions();
   const effectiveSubject = subjectOverride ?? subject;
-  const api = useApi();
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -181,16 +181,14 @@ export const NavBar: React.FC<{
   // content beside the rail, so opening it automatically would cover the very
   // page the user just navigated to.
   const [projectsOpen, setProjectsOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  // Starts as loading: the menu only renders once expanded, and expanding
-  // always triggers a load — defaulting to false made "No projects yet" flash
-  // before the first response arrived.
-  const [projectsState, setProjectsState] = useState<{ loading: boolean; error: string | null }>({
-    loading: true,
-    error: null,
-  });
-  const hasLoadedProjects = useRef(false);
   const submenuRef = useRef<HTMLLIElement | null>(null);
+
+  // Still lazy — `enabled` keeps the request off every page load, exactly as the
+  // old first-expand latch did. What changed is that it now shares `['projects']`
+  // with the page behind the rail, so on /projects, /donations, /expenses and
+  // /reports expanding the flyout costs no request at all.
+  const projectsList = useQuery({ ...projectsQuery(), enabled: projectsOpen });
+  const projects = projectsList.data ?? [];
 
   // Same table AuthGate guards with, so a link cannot appear for a page that
   // would then refuse to render.
@@ -208,27 +206,6 @@ export const NavBar: React.FC<{
     if (currentPath === target) return true;
     return target !== "/" && currentPath.startsWith(`${target}/`);
   };
-
-  // Fetched on first expand rather than on mount: the list is only ever read by
-  // this menu, and eagerly loading it would add a request to every page.
-  const loadProjects = useCallback(async () => {
-    if (hasLoadedProjects.current) return;
-    hasLoadedProjects.current = true;
-    setProjectsState({ loading: true, error: null });
-    try {
-      const rows = await api.get<ProjectSummary[]>("/projects");
-      setProjects(Array.isArray(rows) ? rows : []);
-      setProjectsState({ loading: false, error: null });
-    } catch {
-      // Retryable: clearing the latch lets the next expand try again.
-      hasLoadedProjects.current = false;
-      setProjectsState({ loading: false, error: "Could not load projects" });
-    }
-  }, [api]);
-
-  useEffect(() => {
-    if (projectsOpen) void loadProjects();
-  }, [projectsOpen, loadProjects]);
 
   // Dismiss on outside click and Escape, the two things a flyout must honour.
   useEffect(() => {
@@ -385,8 +362,8 @@ export const NavBar: React.FC<{
                   {projectsOpen && (
                     <ProjectsSubmenu
                       projects={projects}
-                      isLoading={projectsState.loading}
-                      error={projectsState.error}
+                      isLoading={projectsList.isPending}
+                      error={projectsList.isError ? "Could not load projects" : null}
                       activeProjectId={activeProjectId}
                       onNavigate={() => setProjectsOpen(false)}
                     />

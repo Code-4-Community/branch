@@ -7,8 +7,10 @@ import {
   useEffect,
   useState,
 } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ANONYMOUS, type RbacSubject } from '@branch/rbac';
 import { ApiError, apiFetch } from '@/lib/api';
+import { AUTH_ME_KEY } from '@/lib/queries';
 import {
   authedFetch,
   endSession,
@@ -173,39 +175,86 @@ function isValidUser(candidate: unknown): candidate is AuthUser {
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  /**
+   * Whether storage holds anything worth asking the server about.
+   *
+   * `null` is "not looked yet", and it is load-bearing twice over. It is read in
+   * an effect rather than during render because `output: 'export'` prerenders
+   * this tree at build time: deciding from storage during render would make the
+   * prerendered HTML that of a signed-out visitor, so the static document on S3
+   * would contain protected page content instead of the spinner. It also keeps
+   * `isLoading` true across the first flush, so AuthGate cannot mistake
+   * "haven't checked" for "signed out" and bounce a returning user to /login.
+   */
+  const [hasStoredSession, setHasStoredSession] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setHasStoredSession(Boolean(getAccessToken() || getRefreshToken()));
+  }, []);
 
   const fetchMe = useCallback(() => authedFetch<AuthUser>('/auth/me'), []);
 
-  // Session bootstrap. Server-verified rather than "trust the local ID token",
-  // so a revoked or expired session no longer looks signed in.
-  useEffect(() => {
-    let cancelled = false;
+  /** Writes the session straight into the cache, the one source of `user`. */
+  const setUser = useCallback(
+    (next: AuthUser | null) => {
+      queryClient.setQueryData(AUTH_ME_KEY, next);
+    },
+    [queryClient],
+  );
 
-    (async () => {
+  /**
+   * Session bootstrap. Server-verified rather than "trust the local ID token",
+   * so a revoked or expired session no longer looks signed in.
+   *
+   * A query rather than an effect so that the rest of the app can read the same
+   * cache entry, and so `reloadUser` and the login path can seed it without a
+   * second copy of the state living here.
+   */
+  const meQuery = useQuery({
+    queryKey: AUTH_ME_KEY,
+    // Anonymous visitors make zero network calls: `enabled` false leaves the
+    // query idle rather than merely discarding its result.
+    enabled: hasStoredSession === true,
+    // The session is re-read explicitly (`reloadUser`) and rewritten by every
+    // path that changes it, so a background refetch could only add requests.
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async () => {
       try {
-        // Anonymous visitors make zero network calls, so isLoading settles on the
-        // first effect flush and no protected UI is ever painted.
-        if (!getAccessToken() && !getRefreshToken()) return;
         const me = await fetchMe();
-        if (!cancelled) setUser(isValidUser(me) ? me : null);
+        return isValidUser(me) ? me : null;
       } catch {
+        // Resolving null rather than rejecting preserves the original contract:
+        // a failed bootstrap is a signed-out session, not an error to render.
         clearTokens();
-        if (!cancelled) setUser(null);
-      } finally {
-        if (!cancelled) setIsLoading(false);
+        return null;
       }
-    })();
+    },
+  });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchMe]);
+  const user = meQuery.data ?? null;
+
+  /**
+   * `isPending`, not `isLoading`: for one render after `enabled` flips true the
+   * fetch has not started yet, and `isLoading` is false in that window. AuthGate
+   * would read that single frame as "resolved, signed out" and redirect a
+   * perfectly good session to /login.
+   */
+  const isLoading =
+    hasStoredSession === null || (hasStoredSession && meQuery.isPending);
 
   // Any endSession() anywhere — including from a background request — collapses
   // into user === null, which AuthGate turns into a redirect.
-  useEffect(() => onSessionExpired(() => setUser(null)), []);
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        setHasStoredSession(false);
+        setUser(null);
+      }),
+    [setUser],
+  );
 
   // Proactive refresh, rescheduled from each new token's exp. Without this the
   // session silently breaks after the access token's 1-hour lifetime.
@@ -275,6 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const me = await fetchMe();
         if (!isValidUser(me)) throw new Error('Malformed /auth/me response');
         setUser(me);
+        setHasStoredSession(true);
       } catch {
         // Never leave a half-session behind: tokens present but no known user.
         clearTokens();
@@ -286,7 +336,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { status: 'authenticated' };
     },
-    [fetchMe],
+    [fetchMe, setUser],
   );
 
   const login = useCallback(
@@ -321,7 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     endSession();
     setUser(null);
-  }, []);
+  }, [setUser]);
 
   const reloadUser = useCallback(async () => {
     try {
@@ -335,7 +385,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       throw error;
     }
-  }, [fetchMe]);
+  }, [fetchMe, setUser]);
 
   const forgotPassword = useCallback(async (email: string) => {
     await apiFetch('/auth/forgot-password', {

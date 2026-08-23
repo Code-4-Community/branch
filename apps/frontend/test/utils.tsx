@@ -1,9 +1,41 @@
 import { render, type RenderOptions } from '@testing-library/react';
 import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
-import type { ReactElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState, type ReactElement } from 'react';
 import type { RbacSubject } from '@branch/rbac';
 import { AuthContext, AuthProvider } from '@/context/AuthContext';
 import { adminSubject, session } from './rbac';
+
+/**
+ * A cache per render, so one test's rows never satisfy the next test's query.
+ *
+ * `retry: false` because the app retries once by default, which would turn every
+ * assertion about a failed request into two stubbed calls and a wait. `gcTime: 0`
+ * keeps nothing alive past the render.
+ */
+export function makeTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0, refetchOnWindowFocus: false },
+    },
+  });
+}
+
+/**
+ * Wraps children in a fresh QueryClientProvider. Exported for the suites that
+ * build their own wrapper (AuthContext's, which needs the real provider without
+ * Chakra) rather than going through `render` below.
+ */
+export function TestQueryProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // useState, not a bare call: a new client on every render would reset the
+  // cache mid-test and re-trigger every query forever.
+  const [client] = useState(makeTestQueryClient);
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
 
 /**
  * Renders with a signed-in admin by default.
@@ -21,6 +53,7 @@ function makeWrapper(subject: RbacSubject | null) {
 
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
+      <TestQueryProvider>
       <ChakraProvider value={defaultSystem}>
         <AuthContext.Provider
           value={
@@ -39,6 +72,7 @@ function makeWrapper(subject: RbacSubject | null) {
           {children}
         </AuthContext.Provider>
       </ChakraProvider>
+      </TestQueryProvider>
     );
   };
 }
@@ -62,9 +96,11 @@ export const renderWithLiveAuth = (
 ) =>
   render(ui, {
     wrapper: ({ children }) => (
-      <ChakraProvider value={defaultSystem}>
-        <AuthProvider>{children}</AuthProvider>
-      </ChakraProvider>
+      <TestQueryProvider>
+        <ChakraProvider value={defaultSystem}>
+          <AuthProvider>{children}</AuthProvider>
+        </ChakraProvider>
+      </TestQueryProvider>
     ),
     ...options,
   });
