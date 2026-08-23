@@ -7,17 +7,66 @@ jest.mock('aws-jwt-verify', () => ({
   },
 }));
 
-/** Minimal Kysely-shaped stub: selectFrom().where().selectAll().executeTakeFirst() */
-function makeDb(row: unknown) {
-  const executeTakeFirst = jest.fn().mockResolvedValue(row);
+/** A `branch.users` row as the identity query selects it, membership columns included. */
+function userRow(over: Record<string, unknown> = {}) {
   return {
-    db: {
-      selectFrom: () => ({
-        where: () => ({ selectAll: () => ({ executeTakeFirst }) }),
-      }),
-    },
-    executeTakeFirst,
+    user_id: 7,
+    cognito_sub: 'sub-1',
+    email: 'row@b.com',
+    name: 'Ada',
+    is_admin: false,
+    profile_image: null,
+    project_id: null,
+    role: null,
+    ...over,
   };
+}
+
+/**
+ * Minimal Kysely-shaped stub for the one identity query:
+ * selectFrom().leftJoin().where().select().execute()
+ *
+ * Every call is recorded so a test can assert the join is a LEFT join keyed on
+ * cognito_sub -- an inner join here would sign out a user with no memberships.
+ * `innerJoin` throws rather than returning a chain, so a regression cannot pass
+ * quietly.
+ */
+function makeDb(rows: unknown[]) {
+  const execute = jest.fn().mockResolvedValue(rows);
+  const calls: {
+    from?: unknown;
+    leftJoin?: unknown[];
+    where?: unknown[];
+    select?: unknown;
+  } = {};
+
+  const tail = {
+    where: (...args: unknown[]) => {
+      calls.where = args;
+      return tail;
+    },
+    select: (columns: unknown) => {
+      calls.select = columns;
+      return { execute };
+    },
+  };
+
+  const db = {
+    selectFrom: (table: unknown) => {
+      calls.from = table;
+      return {
+        leftJoin: (...args: unknown[]) => {
+          calls.leftJoin = args;
+          return tail;
+        },
+        innerJoin: () => {
+          throw new Error('inner join would sign out a user with no memberships');
+        },
+      };
+    },
+  };
+
+  return { db, execute, calls };
 }
 
 function bearerEvent(token: string) {
@@ -88,50 +137,129 @@ describe('extractToken', () => {
 describe('authenticateRequest', () => {
   it('returns unauthenticated without verifying when no token is present', async () => {
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb(undefined);
+    const { db, execute } = makeDb([]);
 
     await expect(authenticateRequest(db, { headers: {} })).resolves.toEqual({
       isAuthenticated: false,
     });
     expect(mockVerify).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('returns unauthenticated when verification rejects', async () => {
     mockVerify.mockRejectedValue(new Error('expired'));
     const { authenticateRequest } = await loadModule();
-    const { db, executeTakeFirst } = makeDb(undefined);
+    const { db, execute } = makeDb([]);
 
     await expect(authenticateRequest(db, bearerEvent('bad'))).resolves.toEqual({
       isAuthenticated: false,
     });
-    expect(executeTakeFirst).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('returns unauthenticated when the token is valid but no branch.users row matches', async () => {
     mockVerify.mockResolvedValue({ sub: 'orphan-sub' });
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb(undefined);
+    const { db } = makeDb([]);
 
     await expect(authenticateRequest(db, bearerEvent('good'))).resolves.toEqual({
       isAuthenticated: false,
     });
+    expect(console.warn).toHaveBeenCalledWith(
+      'User authenticated with Cognito but not found in database:',
+      'orphan-sub',
+    );
   });
 
   it('builds the auth context from the DB row', async () => {
-    mockVerify.mockResolvedValue({ sub: 'sub-1', email: 'a@b.com' });
+    mockVerify.mockResolvedValue({ sub: 'sub-1', email: 'claim@b.com' });
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb({ user_id: 7, is_admin: true });
+    const { db } = makeDb([userRow({ is_admin: true })]);
 
     await expect(authenticateRequest(db, bearerEvent('good'))).resolves.toEqual({
       isAuthenticated: true,
       user: {
         cognitoSub: 'sub-1',
         userId: 7,
-        email: 'a@b.com',
+        // The JWT claim, deliberately not the column -- see dbUser.email.
+        email: 'claim@b.com',
         isAdmin: true,
         cognitoGroups: undefined,
+        dbUser: {
+          userId: 7,
+          cognitoSub: 'sub-1',
+          email: 'row@b.com',
+          name: 'Ada',
+          isAdmin: true,
+          profileImage: null,
+        },
+        memberships: [],
       },
     });
+  });
+
+  it('resolves identity and memberships in ONE left-joined query', async () => {
+    // The two used to be strictly serial: identity, then memberships keyed on
+    // the user_id it returned. That was 2 RTTs on every guarded request.
+    mockVerify.mockResolvedValue({ sub: 'sub-1' });
+    const { authenticateRequest } = await loadModule();
+    const { db, execute, calls } = makeDb([userRow()]);
+
+    await authenticateRequest(db, bearerEvent('good'));
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(calls.from).toBe('branch.users as u');
+    expect(calls.leftJoin).toEqual([
+      'branch.project_memberships as pm',
+      'pm.user_id',
+      'u.user_id',
+    ]);
+    expect(calls.where).toEqual(['u.cognito_sub', '=', 'sub-1']);
+    // The union of what authentication and GET /auth/me need, so /auth/me does
+    // not re-read the same row for a different column list.
+    expect(calls.select).toEqual([
+      'u.user_id',
+      'u.cognito_sub',
+      'u.email',
+      'u.name',
+      'u.is_admin',
+      'u.profile_image',
+      'pm.project_id',
+      'pm.role',
+    ]);
+  });
+
+  it('authenticates a user with no memberships and invents none', async () => {
+    // The LEFT JOIN hands back one row with NULL membership columns. An inner
+    // join would return nothing and sign this user out; a missing NULL check
+    // would hand the policy a membership on project `null`.
+    mockVerify.mockResolvedValue({ sub: 'sub-1' });
+    const { authenticateRequest } = await loadModule();
+    const { db } = makeDb([userRow({ project_id: null, role: null })]);
+
+    const ctx = await authenticateRequest(db, bearerEvent('good'));
+
+    expect(ctx.isAuthenticated).toBe(true);
+    expect(ctx.user?.memberships).toEqual([]);
+  });
+
+  it('collects one membership per joined row and dedupes the identity', async () => {
+    mockVerify.mockResolvedValue({ sub: 'sub-1' });
+    const { authenticateRequest } = await loadModule();
+    const { db } = makeDb([
+      userRow({ project_id: 1, role: 'Director' }),
+      userRow({ project_id: 2, role: 'Student' }),
+      userRow({ project_id: 3, role: 'Admin' }),
+    ]);
+
+    const ctx = await authenticateRequest(db, bearerEvent('good'));
+
+    expect(ctx.user?.userId).toBe(7);
+    expect(ctx.user?.memberships).toEqual([
+      { project_id: 1, role: 'Director' },
+      { project_id: 2, role: 'Student' },
+      { project_id: 3, role: 'Admin' },
+    ]);
   });
 
   it.each([[false], [null], [undefined], ['true']])(
@@ -139,10 +267,11 @@ describe('authenticateRequest', () => {
     async (isAdminValue) => {
       mockVerify.mockResolvedValue({ sub: 'sub-1' });
       const { authenticateRequest } = await loadModule();
-      const { db } = makeDb({ user_id: 7, is_admin: isAdminValue });
+      const { db } = makeDb([userRow({ is_admin: isAdminValue })]);
 
       const ctx = await authenticateRequest(db, bearerEvent('good'));
       expect(ctx.user?.isAdmin).toBe(false);
+      expect(ctx.user?.dbUser?.isAdmin).toBe(false);
     },
   );
 
@@ -152,7 +281,7 @@ describe('authenticateRequest', () => {
     // silently ineffective. cognitoGroups stays populated but informational.
     mockVerify.mockResolvedValue({ sub: 'sub-1', 'cognito:groups': ['Admins'] });
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb({ user_id: 7, is_admin: false });
+    const { db } = makeDb([userRow({ is_admin: false })]);
 
     const ctx = await authenticateRequest(db, bearerEvent('good'));
     expect(ctx.isAuthenticated).toBe(true);
@@ -163,7 +292,7 @@ describe('authenticateRequest', () => {
   it('verifies with tokenUse "access" and the configured client id', async () => {
     mockVerify.mockResolvedValue({ sub: 'sub-1' });
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb({ user_id: 7, is_admin: false });
+    const { db } = makeDb([userRow()]);
 
     await authenticateRequest(db, bearerEvent('good'));
     expect(mockCreate).toHaveBeenCalledWith({
@@ -178,7 +307,7 @@ describe('authenticateRequest', () => {
     process.env.COGNITO_APP_CLIENT_ID = 'legacy-client';
     mockVerify.mockResolvedValue({ sub: 'sub-1' });
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb({ user_id: 7, is_admin: false });
+    const { db } = makeDb([userRow()]);
 
     await authenticateRequest(db, bearerEvent('good'));
     expect(mockCreate).toHaveBeenCalledWith(
@@ -191,7 +320,7 @@ describe('authenticateRequest', () => {
     delete process.env.COGNITO_APP_CLIENT_ID;
     mockVerify.mockResolvedValue({ sub: 'sub-1' });
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb({ user_id: 7, is_admin: false });
+    const { db } = makeDb([userRow()]);
 
     await authenticateRequest(db, bearerEvent('good'));
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ clientId: null }));
@@ -201,7 +330,7 @@ describe('authenticateRequest', () => {
     // Swallowing this gave blanket silent 401s across all six lambdas.
     delete process.env.COGNITO_USER_POOL_ID;
     const { authenticateRequest } = await loadModule();
-    const { db } = makeDb({ user_id: 7, is_admin: true });
+    const { db } = makeDb([userRow({ is_admin: true })]);
 
     await expect(authenticateRequest(db, bearerEvent('good'))).rejects.toThrow(
       'COGNITO_USER_POOL_ID',
@@ -210,20 +339,13 @@ describe('authenticateRequest', () => {
   });
 
   it('propagates a database failure instead of reporting it as unauthenticated', async () => {
-    // Regression guard for the preview-env outage (PR #316).
+    // Regression guard for the preview-env outage (PR #316). The query stays
+    // outside the try/catch that handles a bad token, so an unreachable RDS
+    // surfaces as a 500 rather than logging everyone out.
     mockVerify.mockResolvedValue({ sub: 'sub-1' });
     const { authenticateRequest } = await loadModule();
-    const db = {
-      selectFrom: () => ({
-        where: () => ({
-          selectAll: () => ({
-            executeTakeFirst: jest
-              .fn()
-              .mockRejectedValue(new Error('timeout exceeded when trying to connect')),
-          }),
-        }),
-      }),
-    };
+    const { db, execute } = makeDb([]);
+    execute.mockRejectedValue(new Error('timeout exceeded when trying to connect'));
 
     await expect(authenticateRequest(db, bearerEvent('good'))).rejects.toThrow(
       'timeout exceeded when trying to connect',

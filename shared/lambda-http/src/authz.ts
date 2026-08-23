@@ -31,6 +31,12 @@ export function requirePermission<A extends Action>(
 /**
  * Bind a service's db-scoped authenticate + subject loader into the
  * `resolveAuth` shape `dispatch` expects.
+ *
+ * Two halves, one round trip: `authenticate` joins the caller's memberships into
+ * the identity query, so `loadSubject` (`loadRbacSubject`) assembles them from
+ * the context it is handed rather than querying again. It stays a separate
+ * argument because a caller that builds a context by hand -- every lambda's
+ * tests do -- still needs something that can go and read them.
  */
 export function createAuthResolver(
   authenticate: (event: any) => Promise<AuthContext>,
