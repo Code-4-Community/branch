@@ -55,15 +55,16 @@ resource "aws_lambda_function" "functions" {
     ignore_changes = [filename, source_code_hash]
   }
 
-  # var.lambda_env is copied from prod, which carries SENTRY_ENVIRONMENT =
-  # "production" -- it must lose to the per-PR value, hence the trailing merge.
+  # SENTRY_DSN rides in on var.lambda_env (copied from prod), which is why this
+  # module needs no Infisical provider. That same copy carries SENTRY_ENVIRONMENT
+  # = "production", so the per-PR override has to merge last or every preview's
+  # errors land in the production issue stream.
   environment {
     variables = merge(
       { NODE_ENV = "production" },
       var.lambda_env,
       {
         NODE_OPTIONS       = module.sentry.node_options
-        SENTRY_DSN         = module.sentry.dsn
         SENTRY_ENVIRONMENT = "pr-${var.pr_number}"
       },
     )

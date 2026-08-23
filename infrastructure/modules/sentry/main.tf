@@ -1,14 +1,10 @@
-# Single source of truth for the Sentry wiring shared by the prod (`aws/`) and
-# per-PR (`preview/`) lambda modules.
+# Non-secret half of the Sentry wiring, shared by the prod (`aws/`) and per-PR
+# (`preview/`) lambda modules. The DSN is NOT here -- it comes from Infisical
+# `/sentry`, because this repo is public and a leaked DSN invites event spam.
 
 # Region-pinned: this ARN only resolves from us-east-2.
 output "layer_arn" {
   value = "arn:aws:lambda:us-east-2:943013980633:layer:SentryNodeServerlessSDKv10:85"
-}
-
-# Not a secret -- a DSN only grants write access to one project's event ingest.
-output "dsn" {
-  value = "https://f06ffee94823a8c11e10edbd59283b4d@o4511657075408896.ingest.us.sentry.io/4511657088450560"
 }
 
 # The layer ships @sentry/aws-serverless; this makes the runtime load its

@@ -208,7 +208,7 @@ resource "aws_lambda_function" "functions" {
       # Dropping NODE_OPTIONS silently disables error reporting -- the layer
       # alone does nothing.
       NODE_OPTIONS = module.sentry.node_options
-      SENTRY_DSN   = module.sentry.dsn
+      SENTRY_DSN   = data.infisical_secrets.sentry_folder.secrets["sentry-dsn"].value
 
       # Preview stacks copy this map from prod, then override the environment,
       # so PR errors do not land in the production issue stream.
