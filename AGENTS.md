@@ -16,6 +16,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 | `apps/backend/lambdas/` | The lambda services + `lambda-cli.js` tooling | `apps/backend/lambdas/AGENTS.md` |
 | `shared/types/` | `@branch/types` — types-only pkg (DB rows + auth DTOs) | see backend doc |
 | `shared/lambda-auth/` | `@branch/lambda-auth` — runtime Cognito auth/authz pkg | see backend doc |
+| `shared/lambda-http/` | `@branch/lambda-http` — runtime dispatch/route-table pkg | see backend doc |
 | `infrastructure/` | Terraform: `aws/`, `github/`, `test/` | `infrastructure/AGENTS.md` |
 | `.github/workflows/` | CI/CD + PR review bot | `.github/AGENTS.md` |
 
@@ -28,10 +29,11 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 ## Shared packages (critical)
 
-Two `file:`-linked packages dedupe code across lambdas:
+Three `file:`-linked packages dedupe code across lambdas:
 
 - **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). It is the **single declaration** of those DTOs: `@branch/lambda-auth` depends on this package and re-exports them, so never add a second copy anywhere. `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
 - **`@branch/lambda-auth`** (`shared/lambda-auth/`) — runtime auth: `authenticateRequest(db, event)`, `extractToken(event)`, `checkAuthorization(ctx, level, resourceUserId?)`. Lambdas wrap it in their local `auth.ts`.
+- **`@branch/lambda-http`** (`shared/lambda-http/`) — runtime routing: `dispatch(event, { prefix, routes })` replaces the old per-lambda if-chain handler with a declarative `Route[]` table (`routes.ts`). Also exports `json`, `parseBody`, `requireAuth`, `createAuthGuard`. Depends on `@branch/lambda-auth`'s `dist/`, so build that one first. See `apps/backend/lambdas/AGENTS.md`.
 
 ## Root commands
 

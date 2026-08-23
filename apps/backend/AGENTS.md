@@ -49,9 +49,10 @@ http://localhost:3000/<service>/health
 
 ## Shared packages
 
-Both linked via `file:` deps in each lambda's `package.json`:
+All three linked via `file:` deps in each lambda's `package.json`:
 - `@branch/types` (`../../../../shared/types`) — devDependency, types only. Must stay a dependency-free leaf: `@branch/lambda-auth` depends on it.
 - `@branch/lambda-auth` (`../../../../shared/lambda-auth`) — dependency, runtime auth. Build it (`npm run build` in `shared/lambda-auth`) when its source changes; lambdas consume `dist/`. It depends on `@branch/types` and re-exports the auth DTOs from there, so those types have exactly one declaration; changing `shared/lambda-auth/package.json` deps invalidates every lambda's `package-lock.json`, so regenerate all six.
+- `@branch/lambda-http` (`../../../../shared/lambda-http`) — dependency, runtime routing: `dispatch(event, { prefix, routes })` plus `json`/`parseBody`/`requireAuth`/`createAuthGuard`. Every lambda's `handler.ts` is now a 4-line call into it; each lambda's own `routes.ts` supplies the `Route[]` table. Depends on `@branch/lambda-auth`'s `dist/`, so build lambda-auth first. See `lambdas/AGENTS.md`.
 
 ## Deploy
 
