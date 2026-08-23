@@ -64,7 +64,7 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 
 ## Env vars (lambdas)
 
-`DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` (or `COGNITO_APP_CLIENT_ID`), `REPORTS_BUCKET_NAME` (reports only), `AWS_REGION` (default `us-east-2`, Lambda-reserved — never set it in Terraform).
+`DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` (or `COGNITO_APP_CLIENT_ID`), `REPORTS_BUCKET_NAME` (reports, expenditures and projects — one bucket holds both the `reports/` and `receipts/` prefixes, and all three delete out of it), `AWS_REGION` (default `us-east-2`, Lambda-reserved — never set it in Terraform).
 
 **Anything a lambda reads from `process.env` must be declared in the `environment` block of `infrastructure/aws/lambda.tf`.** That block is authoritative and is deliberately not in `lifecycle.ignore_changes`, so a value set by hand in the console is deleted on the next apply. Locally the Cognito values must be the real shared dev-pool IDs (`apps/backend/.env`) — auth talks to the real pool for JWKS and `InitiateAuth` — but no AWS credentials are needed, because every Cognito API on the sign-in path is unsigned.
 

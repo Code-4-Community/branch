@@ -10,8 +10,9 @@ import Spinner from './Spinner';
  * - `primary`   filled green — the one affirmative action on a screen
  * - `secondary` outlined — cancel/dismiss beside a primary
  * - `ghost`     text only — inline navigation such as "View All"
+ * - `danger`    filled red — the confirm step of a destructive action
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 // Every colour utility here is `!`-prefixed: Chakra's reset styles `button`
 // with `background: transparent` and its own border colour, and it outranks
@@ -23,6 +24,8 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   secondary:
     '!border-[1px] !border-solid !border-black-500 !bg-transparent !text-core-black hover:!bg-black-100 disabled:!text-black-500',
   ghost: '!bg-transparent !text-core-black hover:!bg-black-100 disabled:!text-black-500',
+  danger:
+    '!bg-error-red !text-core-white hover:!bg-error-light-red disabled:!bg-error-light-red',
 };
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
