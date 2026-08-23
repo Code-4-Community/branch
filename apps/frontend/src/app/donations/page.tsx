@@ -38,7 +38,7 @@ export default function DonationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showFilter, setShowFilter] = useState(false);
-  const [selectedDonor, setSelectedDonor] = useState<string>('');
+  const [selectedDonors, setSelectedDonors] = useState<string[]>([]);
   const [showSort, setShowSort] = useState(false);
   const [selectedSort, setSelectedSort] = useState<string>('');
 
@@ -98,9 +98,9 @@ export default function DonationsPage() {
         )
       : rows;
 
-    if (selectedDonor) {
-      matching = matching.filter((row) => String(row.donor_id) === selectedDonor);
-    }
+      if (selectedDonors.length > 0) {
+        matching = matching.filter((row) => selectedDonors.includes(String(row.donor_id)));
+      }
 
     if (selectedSort === 'Amount') {
       return [...matching].sort((a, b) => Number(b.amount) - Number(a.amount));
@@ -111,7 +111,7 @@ export default function DonationsPage() {
       );
     }
     return matching;
-  }, [rows, search, selectedDonor, selectedSort]);
+  }, [rows, search, selectedDonors, selectedSort]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
   const page = Math.min(currentPage, totalPages);
@@ -130,7 +130,7 @@ export default function DonationsPage() {
     },
     {
       key: 'donor_name',
-      header: 'Donor',
+      header: 'Donor Name',
       width: '30%',
       cell: (donation) => donation.donor_name,
     },
@@ -247,15 +247,17 @@ export default function DonationsPage() {
                   onClick={() => setShowFilter((prev) => !prev)}
                 >
                   Filter By Donor
+                  {selectedDonors.length > 0 && ` (${selectedDonors.length})`}
                 </Button>
                 {showFilter && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                     <DropdownSelector
                       options={donorOptions}
                       placeholder="Filter by donor..."
-                      value={selectedDonor}
+                      multiSelect={true}
+                      value={selectedDonors}
                       onChange={(val: string | string[]) => {
-                        setSelectedDonor(val as string);
+                        setSelectedDonors(val as string[]);
                         setCurrentPage(1);
                       }}
                     />
