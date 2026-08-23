@@ -71,6 +71,28 @@ const baseProps = {
   ],
 };
 
+// Fills every required field so the Submit button becomes enabled. Kept as a
+// shared helper since several tests need a fully valid form before they can
+// even click Submit — the button is disabled until then.
+function fillValidForm() {
+  fireEvent.change(document.querySelector('input[type="date"]')!, {
+    target: { value: '2025-05-15' },
+  });
+  fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
+    target: { value: '12000' },
+  });
+  fireEvent.change(screen.getByLabelText('Select type'), {
+    target: { value: 'Travel Foreign' },
+  });
+  fireEvent.change(screen.getByLabelText('Select a project'), {
+    target: { value: 'Project Name 2' },
+  });
+  fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+    target: { value: 'A test description' },
+  });
+  fireEvent.click(screen.getByText('mock-select-file'));
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -107,19 +129,50 @@ describe('AddExpenseModal Component', () => {
     expect(screen.getByText('Submit For Review')).toBeInTheDocument();
   });
 
-  it('shows validation errors when submitting an empty form', () => {
+  // Replaces the old "shows validation errors when submitting an empty form"
+  // test. Submit is now disabled until the form is valid, so a click on an
+  // empty form never reaches handleSubmit — there is nothing for it to
+  // validate. The disabled state itself is the assertion now.
+  it('disables the Submit button when the form is empty', () => {
     render(<AddExpenseModal {...baseProps} />);
-    fireEvent.click(screen.getByText('Submit For Review'));
-  
-    expect(screen.getByText('Enter a valid amount')).toBeInTheDocument();
-    expect(screen.getByText('Select a type of expense')).toBeInTheDocument();
-    expect(screen.getByText('Select a project')).toBeInTheDocument();
-    expect(screen.getByText('Enter a description')).toBeInTheDocument();
-    expect(screen.getByText('Please upload an image of the receipt')).toBeInTheDocument();
+    expect(screen.getByText('Submit For Review')).toBeDisabled();
+  });
+
+  it('keeps the Submit button disabled until date, amount, type, project, and description are filled', () => {
+    render(<AddExpenseModal {...baseProps} />);
+
+    fireEvent.change(document.querySelector('input[type="date"]')!, {
+      target: { value: '2025-05-15' },
+    });
+    expect(screen.getByText('Submit For Review')).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
+      target: { value: '12000' },
+    });
+    expect(screen.getByText('Submit For Review')).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Select type'), {
+      target: { value: 'Travel Foreign' },
+    });
+    expect(screen.getByText('Submit For Review')).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Select a project'), {
+      target: { value: 'Project Name 2' },
+    });
+    expect(screen.getByText('Submit For Review')).toBeDisabled();
+
+    // The receipt is intentionally not part of isFormValid, so the button
+    // enables here, before any file is selected.
+    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+      target: { value: 'A test description' },
+    });
+    expect(screen.getByText('Submit For Review')).not.toBeDisabled();
   });
 
   it('does not call apiFetch when the form is invalid', () => {
     render(<AddExpenseModal {...baseProps} />);
+    // Submit is disabled while the form is empty, so this click is a no-op —
+    // asserting apiFetch was never reached either way.
     fireEvent.click(screen.getByText('Submit For Review'));
     expect(apiFetch).not.toHaveBeenCalled();
   });
@@ -128,23 +181,7 @@ describe('AddExpenseModal Component', () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce({});
     render(<AddExpenseModal {...baseProps} />);
 
-    fireEvent.change(document.querySelector('input[type="date"]')!, {
-      target: { value: '2025-05-15' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
-      target: { value: '12000' },
-    });
-    fireEvent.change(screen.getByLabelText('Select type'), {
-      target: { value: 'Travel Foreign' },
-    });
-    fireEvent.change(screen.getByLabelText('Select a project'), {
-      target: { value: 'Project Name 2' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
-      target: { value: 'A test description' },
-    });
-    fireEvent.click(screen.getByText('mock-select-file'));
-
+    fillValidForm();
     fireEvent.click(screen.getByText('Submit For Review'));
 
     await waitFor(() => {
@@ -169,22 +206,7 @@ describe('AddExpenseModal Component', () => {
     (apiFetch as jest.Mock).mockResolvedValueOnce({});
     render(<AddExpenseModal {...baseProps} />);
 
-    fireEvent.change(document.querySelector('input[type="date"]')!, {
-      target: { value: '2025-05-15' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
-      target: { value: '12000' },
-    });
-    fireEvent.change(screen.getByLabelText('Select type'), {
-      target: { value: 'Travel Foreign' },
-    });
-    fireEvent.change(screen.getByLabelText('Select a project'), {
-      target: { value: 'Project Name 2' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
-      target: { value: 'A test description' },
-    });
-    fireEvent.click(screen.getByText('mock-select-file'));
+    fillValidForm();
     fireEvent.click(screen.getByText('Submit For Review'));
 
     await waitFor(() => {
@@ -196,22 +218,7 @@ describe('AddExpenseModal Component', () => {
     (apiFetch as jest.Mock).mockRejectedValueOnce(new Error('Server exploded'));
     render(<AddExpenseModal {...baseProps} />);
 
-    fireEvent.change(document.querySelector('input[type="date"]')!, {
-      target: { value: '2025-05-15' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Enter the Amount'), {
-      target: { value: '12000' },
-    });
-    fireEvent.change(screen.getByLabelText('Select type'), {
-      target: { value: 'Travel Foreign' },
-    });
-    fireEvent.change(screen.getByLabelText('Select a project'), {
-      target: { value: 'Project Name 2' },
-    });
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
-      target: { value: 'A test description' },
-    });
-    fireEvent.click(screen.getByText('mock-select-file'));
+    fillValidForm();
     fireEvent.click(screen.getByText('Submit For Review'));
 
     await waitFor(() => {
