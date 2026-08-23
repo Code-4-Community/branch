@@ -14,6 +14,7 @@ Lambda for tracking project expenditures.
 | GET | /expenditures/upload-url |  |
 | GET | /expenditures/{id}/receipt |  |
 | GET | /expenditures/{id} |  |
+| PATCH | /expenditures/{id} |  |
 | DELETE | /expenditures/{id} |  |
 | PATCH | /expenditures/{id}/status |  |
 

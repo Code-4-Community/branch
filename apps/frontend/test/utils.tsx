@@ -1,18 +1,73 @@
 import { render, type RenderOptions } from '@testing-library/react';
 import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
 import type { ReactElement } from 'react';
-import { AuthProvider } from '@/context/AuthContext';
+import type { RbacSubject } from '@branch/rbac';
+import { AuthContext, AuthProvider } from '@/context/AuthContext';
+import { adminSubject, session } from './rbac';
 
-function Wrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <ChakraProvider value={defaultSystem}>
-      <AuthProvider>{children}</AuthProvider>
-    </ChakraProvider>
-  );
+/**
+ * Renders with a signed-in admin by default.
+ *
+ * Components now ask `@branch/rbac` whether the current subject may act, so a
+ * page rendered with no session shows every control disabled and a test that
+ * only wanted to check a heading fails for the wrong reason. Pass `subject` to
+ * render as a director, a project member or nobody, and assert on what they can
+ * and cannot reach.
+ */
+function makeWrapper(subject: RbacSubject | null) {
+  const value = subject
+    ? session({ subject })
+    : session({ subject: undefined, isAuthenticated: false });
+
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <ChakraProvider value={defaultSystem}>
+        <AuthContext.Provider
+          value={
+            {
+              ...value,
+              login: jest.fn(),
+              respondToChallenge: jest.fn(),
+              logout: jest.fn(),
+              refresh: jest.fn(),
+              reloadUser: jest.fn(),
+              forgotPassword: jest.fn(),
+              resetPassword: jest.fn(),
+            } as never
+          }
+        >
+          {children}
+        </AuthContext.Provider>
+      </ChakraProvider>
+    );
+  };
 }
 
-const customRender = (ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) =>
-  render(ui, { wrapper: Wrapper, ...options });
+interface Options extends Omit<RenderOptions, 'wrapper'> {
+  /** `null` renders signed out. Defaults to an admin. */
+  subject?: RbacSubject | null;
+}
+
+const customRender = (ui: ReactElement, { subject = adminSubject(), ...options }: Options = {}) =>
+  render(ui, { wrapper: makeWrapper(subject), ...options });
+
+/**
+ * Renders with the real `AuthProvider`, which bootstraps from token storage and
+ * `GET /auth/me`. Only for tests of the session machinery itself — everything
+ * else wants the static subject above, which does not need a stubbed fetch.
+ */
+export const renderWithLiveAuth = (
+  ui: ReactElement,
+  options?: Omit<RenderOptions, 'wrapper'>,
+) =>
+  render(ui, {
+    wrapper: ({ children }) => (
+      <ChakraProvider value={defaultSystem}>
+        <AuthProvider>{children}</AuthProvider>
+      </ChakraProvider>
+    ),
+    ...options,
+  });
 
 export * from '@testing-library/react';
 export { customRender as render };

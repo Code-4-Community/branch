@@ -8,6 +8,10 @@ data "aws_iam_role" "lambda_role" {
   name = "branch-lambda-role"
 }
 
+module "sentry" {
+  source = "../modules/sentry"
+}
+
 locals {
   lambda_functions = toset([
     "auth",
@@ -39,6 +43,10 @@ resource "aws_lambda_function" "functions" {
   memory_size   = 256
   role          = data.aws_iam_role.lambda_role.arn
 
+  # Layers are not part of the env map the workflow copies from prod, so the
+  # preview stack has to attach this itself.
+  layers = [module.sentry.layer_arn]
+
   filename         = data.archive_file.lambda_placeholder.output_path
   source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
 
@@ -47,7 +55,18 @@ resource "aws_lambda_function" "functions" {
     ignore_changes = [filename, source_code_hash]
   }
 
+  # SENTRY_DSN rides in on var.lambda_env (copied from prod), which is why this
+  # module needs no Infisical provider. That same copy carries SENTRY_ENVIRONMENT
+  # = "production", so the per-PR override has to merge last or every preview's
+  # errors land in the production issue stream.
   environment {
-    variables = merge({ NODE_ENV = "production" }, var.lambda_env)
+    variables = merge(
+      { NODE_ENV = "production" },
+      var.lambda_env,
+      {
+        NODE_OPTIONS       = module.sentry.node_options
+        SENTRY_ENVIRONMENT = "pr-${var.pr_number}"
+      },
+    )
   }
 }

@@ -7,6 +7,7 @@ import {
   useEffect,
   useState,
 } from 'react';
+import { ANONYMOUS, type RbacSubject } from '@branch/rbac';
 import { ApiError, apiFetch } from '@/lib/api';
 import {
   authedFetch,
@@ -43,6 +44,15 @@ export interface AuthUser {
   name: string;
   isAdmin: boolean;
   profileImage?: string | null;
+  /**
+   * The authorization subject, built server-side by the same code the lambdas
+   * authorize with. It is the only reason the browser can answer "may they?"
+   * without a second round trip, and the reason it answers it identically.
+   *
+   * Required: `isValidUser` rejects a payload without it rather than degrading
+   * into a signed-in session that is denied everything.
+   */
+  rbac: RbacSubject;
 }
 
 export type ChallengeName =
@@ -79,6 +89,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** Prefer `usePermissions()` over reading this directly. */
+  subject: RbacSubject;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   respondToChallenge: (input: ChallengeResponseInput) => Promise<LoginResult>;
@@ -128,16 +140,37 @@ const MIN_REFRESH_DELAY_MS = 5_000;
 // Context
 // ---------------------------------------------------------------------------
 
-/** Guards against a malformed or empty /auth/me payload being treated as a session. */
+/**
+ * Guards against a malformed or empty /auth/me payload being treated as a session.
+ *
+ * `rbac` is required, not optional. Without it the session would still look
+ * signed in while every permission evaluated against ANONYMOUS -- an empty
+ * navbar and the no-access panel on every page, indistinguishable from an
+ * account that had been stripped. That is a reachable state, because the
+ * frontend and the auth lambda deploy from separate workflows and the browser
+ * can be newer than the API. Failing the bootstrap sends the user to /login,
+ * which is at least honest about the session being unusable.
+ */
 function isValidUser(candidate: unknown): candidate is AuthUser {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const user = candidate as AuthUser;
+  if (typeof user.cognitoSub !== 'string') return false;
+  const rbac = user.rbac;
   return (
-    typeof candidate === 'object' &&
-    candidate !== null &&
-    typeof (candidate as AuthUser).cognitoSub === 'string'
+    typeof rbac === 'object' &&
+    rbac !== null &&
+    Array.isArray(rbac.memberProjectIds) &&
+    Array.isArray(rbac.directorProjectIds)
   );
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+/**
+ * Exported for the test harness only, which provides a session directly rather
+ * than standing up token storage and a fake `GET /auth/me` for every page test.
+ * Application code uses `useAuth()`; there is one provider, mounted in
+ * `providers.tsx`.
+ */
+export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -327,6 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isAuthenticated: user != null,
         isAdmin: user?.isAdmin ?? false,
+        subject: user?.rbac ?? ANONYMOUS,
         isLoading,
         login,
         respondToChallenge,

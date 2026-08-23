@@ -11,6 +11,15 @@ export interface ExpenditureInput {
     spentOn?: string;
 }
 
+/** The subset of an expenditure its author may revise. */
+export interface ExpenditureUpdate {
+    amount?: number;
+    category?: string;
+    description?: string;
+    receiptUrl?: string;
+    spentOn?: string;
+}
+
 export class ExpenditureValidationUtils {
     static validateProjectId(projectID: unknown): number | Error {
         if (projectID === undefined || projectID === null || projectID === '') {
@@ -122,6 +131,60 @@ export class ExpenditureValidationUtils {
         }
 
         return spentOn;
+    }
+
+    /**
+     * PATCH /expenditures/{id}. Every field is optional, but an empty patch is
+     * rejected rather than silently succeeding.
+     *
+     * `status` and `adminNotes` are absent on purpose: they are admin-only and
+     * live on PATCH /expenditures/{id}/status, which carries the
+     * `expense:review` permission. Accepting them here would let an author
+     * approve their own expense.
+     */
+    static validateExpenditureUpdate(body: Record<string, unknown>): ExpenditureUpdate | Error {
+        const update: ExpenditureUpdate = {};
+
+        if (body.amount !== undefined) {
+            const amount = this.validateAmount(body.amount);
+            if (amount instanceof Error) return amount;
+            update.amount = amount;
+        }
+
+        if (body.category !== undefined) {
+            const category = this.validateCategory(body.category);
+            if (category instanceof Error) return category;
+            update.category = category;
+        }
+
+        if (body.description !== undefined) {
+            const description = this.validateDescription(body.description);
+            if (description instanceof Error) return description;
+            update.description = description;
+        }
+
+        const rawReceipt = body.receiptUrl ?? body.receipt_url;
+        if (rawReceipt !== undefined) {
+            const receiptUrl = this.validateReceiptUrl(rawReceipt);
+            if (receiptUrl instanceof Error) return receiptUrl;
+            update.receiptUrl = receiptUrl;
+        }
+
+        if (body.spentOn !== undefined) {
+            const spentOn = this.validateSpentOn(body.spentOn);
+            if (spentOn instanceof Error) return spentOn;
+            update.spentOn = spentOn;
+        }
+
+        if (body.status !== undefined || body.adminNotes !== undefined) {
+            return new Error('status and adminNotes are changed through PATCH /expenditures/{id}/status');
+        }
+
+        if (Object.keys(update).length === 0) {
+            return new Error('No editable fields supplied');
+        }
+
+        return update;
     }
 
     static validateExpenditureInput(body: Record<string, unknown>): ExpenditureInput | Error {

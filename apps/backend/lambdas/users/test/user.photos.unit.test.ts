@@ -1,7 +1,28 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 jest.mock('../db');
-jest.mock('../auth');
+
+// Memberships the mocked session should appear to have. None matter here --
+// profile:* is self-scoped -- but resolveAuth still has to build a subject.
+const mockMemberships: Array<{ project_id: number; role: string }> = [];
+
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. ../db is mocked here, so the
+  // subject is assembled from the auth context rather than read from Postgres.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { buildSubject } = jest.requireActual<typeof import('@branch/rbac')>('@branch/rbac');
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(authenticateRequest as never, async (context) =>
+      buildSubject(context.user, mockMemberships),
+    ),
+  };
+});
 
 // Presigning is the only AWS call these routes make. Stubbing it keeps the real
 // photos.ts logic under test -- the extension allowlist and the key layout --
@@ -18,9 +39,9 @@ import { authenticateRequest } from '../auth';
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
-// Only `authenticateRequest` is mocked: the route guards call the real
-// `checkAuthorization` out of @branch/lambda-auth, so ADMIN_OR_SELF is exercised
-// for real against the identity these tests supply.
+// Only the identity is mocked: dispatch and the controllers run the real
+// @branch/rbac policy, so `profile:update` is exercised for real against the
+// subject built from that identity.
 
 function getEvent(path: string, queryStringParameters?: Record<string, string>) {
   return {

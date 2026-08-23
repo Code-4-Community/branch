@@ -593,7 +593,19 @@ export const ${fnName}: RouteHandler = async (${ctxParam}) => {
   fs.writeFileSync(controllerPath, controllerSource, 'utf8');
 
   routesSource = upsertNamedImport(routesSource, controllerModule, [fnName]);
-  const entryLine = `  { method: '${methodUpper}', pattern: '${colonPattern}', handler: ${fnName} },\n`;
+  // Every route must declare a gate -- the Route union in @branch/lambda-http
+  // has no default arm, so an entry without one will not compile. Default to
+  // 'authenticated' with a TODO rather than guessing a permission: it is the
+  // narrowest gate that is always correct to start from, and the TODO is
+  // visible in review.
+  const gate = options.permission
+    ? `permission: '${options.permission}'`
+    : `access: '${options.access || 'authenticated'}'`;
+  const gateTodo =
+    options.permission || options.access
+      ? ''
+      : ` // TODO: replace with a permission from @branch/rbac if one fits`;
+  const entryLine = `  { method: '${methodUpper}', pattern: '${colonPattern}', ${gate}, handler: ${fnName} },${gateTodo}\n`;
   const markerIdx = routesSource.indexOf(marker);
   const lineStart = routesSource.lastIndexOf('\n', markerIdx) + 1;
   routesSource = routesSource.slice(0, lineStart) + entryLine + routesSource.slice(lineStart);
@@ -1132,6 +1144,12 @@ function main() {
     log(
       '      --status <code>                  Response status code (default: 200)',
     );
+    log(
+      "      --permission <action>            @branch/rbac action, e.g. 'reports:view'",
+    );
+    log(
+      "      --access <public|authenticated>  Gate with no permission (default: authenticated)",
+    );
     log('');
     log('  list-routes <handlerRel>');
     log('    Lists all routes in a handler');
@@ -1186,6 +1204,12 @@ function main() {
           break;
         case '--status':
           options.status = parseInt(value) || 200;
+          break;
+        case '--permission':
+          options.permission = value;
+          break;
+        case '--access':
+          options.access = value;
           break;
       }
     }

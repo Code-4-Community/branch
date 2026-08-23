@@ -25,6 +25,7 @@
   "dependencies": {
     "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
     "@branch/lambda-http": "file:../../../../shared/lambda-http",
+    "@branch/rbac": "file:../../../../shared/rbac",
     "aws-jwt-verify": "^5.1.1",
     "kysely": "^0.28.8",
     "pg": "^8.17.2"

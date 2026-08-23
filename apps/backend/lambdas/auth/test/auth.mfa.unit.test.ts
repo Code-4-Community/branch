@@ -15,8 +15,16 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 });
 
 const mockAuthenticateRequest = jest.fn();
+// dispatch() resolves the caller through resolveAuth before the controller
+// runs, so the mock has to supply it too. The MFA routes only need the auth
+// context (they act on the caller's own Cognito session), so the subject is a
+// plain non-admin with no memberships.
 jest.mock('../auth', () => ({
   authenticateRequest: (...args: unknown[]) => mockAuthenticateRequest(...args),
+  resolveAuth: async (...args: unknown[]) => ({
+    context: await mockAuthenticateRequest(...args),
+    subject: { userId: 1, isAdmin: false, memberProjectIds: [], directorProjectIds: [] },
+  }),
 }));
 
 const mockExecuteTakeFirst = jest.fn();

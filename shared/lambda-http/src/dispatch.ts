@@ -1,7 +1,9 @@
 import type { APIGatewayProxyResult } from 'aws-lambda';
+import { authorize } from '@branch/rbac';
 import { json } from './response';
 import { matchPattern } from './match';
-import type { DispatchOptions } from './types';
+import { ANONYMOUS_AUTH } from './authz';
+import type { DispatchOptions, RequestAuth, Route } from './types';
 
 /**
  * Route a Lambda event to the first matching route and return its response.
@@ -12,11 +14,13 @@ import type { DispatchOptions } from './types';
  *  - the shared dev-server — routes by first segment then strips it, e.g. `/login`
  *    (and `/` for a bare service root).
  *
- * Handles OPTIONS preflight, `/<prefix>/health`, 404, and 500 centrally.
+ * Handles OPTIONS preflight, `/<prefix>/health`, authentication, the route's
+ * declared permission, 404 and 500 centrally. A controller that runs has
+ * already cleared its route's gate.
  */
 export async function dispatch(
   event: any,
-  { prefix, routes }: DispatchOptions,
+  { prefix, routes, resolveAuth }: DispatchOptions,
 ): Promise<APIGatewayProxyResult> {
   try {
     const rawPath: string = event.rawPath || event.path || '/';
@@ -42,9 +46,12 @@ export async function dispatch(
     for (const route of routes) {
       if (route.method.toUpperCase() !== method) continue;
       const params = matchPattern(route.pattern, path);
-      if (params) {
-        return await route.handler({ event, params, method, path });
-      }
+      if (!params) continue;
+
+      const gate = await enforce(route, event, resolveAuth);
+      if ('response' in gate) return gate.response;
+
+      return await route.handler({ event, params, method, path, auth: gate.auth });
     }
 
     return json(404, { message: 'Not Found', path, method });
@@ -52,4 +59,37 @@ export async function dispatch(
     console.error('Lambda error:', err);
     return json(500, { message: 'Internal Server Error' });
   }
+}
+
+type Gate = { auth: RequestAuth } | { response: APIGatewayProxyResult };
+
+async function enforce(
+  route: Route,
+  event: any,
+  resolveAuth: DispatchOptions['resolveAuth'],
+): Promise<Gate> {
+  if (route.access === 'public') return { auth: ANONYMOUS_AUTH };
+
+  // A guarded route in a service that never wired up authentication is a
+  // deployment bug, not an anonymous request. 500 rather than serving it.
+  if (!resolveAuth) {
+    console.error(
+      `Route ${route.method} ${route.pattern} is guarded but the service passed no resolveAuth`,
+    );
+    return { response: json(500, { message: 'Internal Server Error' }) };
+  }
+
+  const auth = await resolveAuth(event);
+  if (!auth.context.isAuthenticated) {
+    return { response: json(401, { message: 'Authentication required' }) };
+  }
+
+  if (route.permission) {
+    const decision = authorize(auth.subject, route.permission);
+    if (!decision.allowed) {
+      return { response: json(403, { message: decision.reason ?? 'Forbidden' }) };
+    }
+  }
+
+  return { auth };
 }

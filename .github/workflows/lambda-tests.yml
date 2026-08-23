@@ -237,10 +237,13 @@ jobs:
           done
           exit $fail
 
-  # The discover job only globs apps/backend/lambdas/*/, so the shared auth
-  # package -- the single most security-critical module in the backend -- would
-  # never have its tests run without this job.
-  shared-auth:
+  # The discover job only globs apps/backend/lambdas/*/, so the shared packages
+  # would never have their tests run without these jobs.
+
+  # @branch/rbac holds the authorization policy for the whole product -- both
+  # the lambdas and the browser evaluate this one table -- so its matrix test is
+  # the closest thing the repo has to a specification of who may do what.
+  shared-rbac:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -249,7 +252,22 @@ jobs:
         with:
           node-version: '20'
       - name: Install dependencies
-        run: npm ci --prefix shared/lambda-auth
+        run: npm ci --prefix shared/rbac
+      - name: Run tests
+        run: npm test --prefix shared/rbac
+
+  # The single most security-critical runtime module in the backend.
+  shared-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # lambda-auth now compiles against @branch/rbac's dist.
+      - name: Build shared packages
+        uses: ./.github/actions/build-shared-packages
       - name: Run tests
         run: npm test --prefix shared/lambda-auth
 
@@ -273,7 +291,7 @@ jobs:
   # silently disable the gate rather than fail loudly.
   lambda-tests:
     name: lambda-tests
-    needs: [test, shared-auth, shared-http, migrations-fresh, migrations-guard]
+    needs: [test, shared-rbac, shared-auth, shared-http, migrations-fresh, migrations-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -281,6 +299,10 @@ jobs:
         run: |
           if [ "${{ needs.test.result }}" != "success" ]; then
             echo "Lambda tests failed or were cancelled"
+            exit 1
+          fi
+          if [ "${{ needs.shared-rbac.result }}" != "success" ]; then
+            echo "shared/rbac policy tests failed or were cancelled"
             exit 1
           fi
           if [ "${{ needs.shared-auth.result }}" != "success" ]; then

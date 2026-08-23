@@ -4,6 +4,8 @@ import { Expenditure } from '@/types';
 import DataTable, { type DataTableColumn } from './DataTable';
 import StatusBadge from './StatusBadge';
 import RowDeleteButton from './RowDeleteButton';
+import Tooltip from './Tooltip';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ExpensesTableProps {
   expenditures: Expenditure[];
@@ -40,6 +42,8 @@ export default function ExpensesTable({
   isLoading = false,
   skeletonRows = 5,
 }: ExpensesTableProps) {
+  const { why } = usePermissions();
+
   // Percentages are shared out among whichever columns are on, so dropping one
   // widens the rest instead of leaving a gap at the end of the row.
   const widths = showProject
@@ -141,12 +145,25 @@ export default function ExpensesTable({
             header: '',
             width: '56px',
             align: 'center' as const,
-            cell: (e: Expenditure) => (
-              <RowDeleteButton
-                label={`Delete expense #${String(e.expenditure_id).padStart(6, '0')}`}
-                onClick={() => onDelete(e)}
-              />
-            ),
+            // Disabled with the policy's own wording rather than hidden: the
+            // row is right there, so an absent trash icon reads as a bug. The
+            // tooltip is the same sentence the API would return.
+            cell: (e: Expenditure) => {
+              const reason = why('expense:delete', {
+                projectId: e.project_id,
+                enteredBy: e.entered_by ?? null,
+                status: e.status,
+              });
+              return (
+                <Tooltip label={reason} wrapsDisabledControl={reason !== undefined}>
+                  <RowDeleteButton
+                    label={`Delete expense #${String(e.expenditure_id).padStart(6, '0')}`}
+                    disabled={reason !== undefined}
+                    onClick={() => onDelete(e)}
+                  />
+                </Tooltip>
+              );
+            },
             skeleton: { width: '32px' },
           },
         ]

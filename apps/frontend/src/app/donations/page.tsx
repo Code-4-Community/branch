@@ -14,6 +14,8 @@ import RowDeleteButton from '../components/RowDeleteButton';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import Pagination from '../components/Pagination';
 import { useApi } from '@/hooks/useApi';
+import { usePermissions } from '@/hooks/usePermissions';
+import { GatedButton } from '../components/Permission';
 import { formatCurrencyPrecise, formatDateNumeric } from '@/lib/format';
 import type { Donation, Donor, Project } from '@/types';
 
@@ -28,6 +30,7 @@ interface DonationRow extends Donation {
 
 export default function DonationsPage() {
   const api = useApi();
+  const { can } = usePermissions();
 
   const [donations, setDonations] = useState<Donation[]>([]);
   const [donors, setDonors] = useState<Donor[]>([]);
@@ -154,19 +157,26 @@ export default function DonationsPage() {
       cell: (donation) => formatCurrencyPrecise(donation.amount),
       skeleton: { width: '55%' },
     },
-    {
-      key: 'actions',
-      header: '',
-      width: '56px',
-      align: 'center' as const,
-      cell: (donation) => (
-        <RowDeleteButton
-          label={`Delete donation from ${donation.donor_name}`}
-          onClick={() => setDonationToDelete(donation)}
-        />
-      ),
-      skeleton: { width: '32px' },
-    },
+    // Recording and removing donations is admin-only. Members still see the
+    // rows for their own projects — the list is scoped server side — but with
+    // no action column rather than a column of disabled buttons.
+    ...(can('donations:delete')
+      ? [
+          {
+            key: 'actions',
+            header: '',
+            width: '56px',
+            align: 'center' as const,
+            cell: (donation: DonationRow) => (
+              <RowDeleteButton
+                label={`Delete donation from ${donation.donor_name}`}
+                onClick={() => setDonationToDelete(donation)}
+              />
+            ),
+            skeleton: { width: '32px' },
+          },
+        ]
+      : []),
   ];
 
   const resetNewDonation = () => {
@@ -289,9 +299,13 @@ export default function DonationsPage() {
                   </div>
                 )}
               </div>
-              <Button icon={<FaPlus aria-hidden />} onClick={() => setShowNewDonation(true)}>
+              <GatedButton
+                action="donations:create"
+                icon={<FaPlus aria-hidden />}
+                onClick={() => setShowNewDonation(true)}
+              >
                 New Donation
-              </Button>
+              </GatedButton>
             </HStack>
           </HStack>
 

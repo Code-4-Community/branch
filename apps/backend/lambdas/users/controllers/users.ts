@@ -3,9 +3,8 @@ import {
   AdminCreateUserCommand,
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json, createAuthGuard, type RouteHandler } from '@branch/lambda-http';
+import { json, requirePermission, type RouteHandler } from '@branch/lambda-http';
 import db from '../db';
-import { authenticateRequest } from '../auth';
 import { UserValidationUtils } from '../validation-utils';
 import {
   AVATAR_EXTENSIONS,
@@ -22,7 +21,10 @@ const cognitoClient = new CognitoIdentityProviderClient({
 
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
-const guard = createAuthGuard(authenticateRequest);
+// Authentication and each route's declared permission are enforced by dispatch
+// before these run -- see routes.ts. The two self-service routes below are the
+// exception: `profile:view` / `profile:update` need the target user id, so they
+// are checked here.
 
 /**
  * Swaps each row's stored `profile_image` for a presigned URL. The bucket
@@ -40,9 +42,6 @@ async function withResolvedPhotos<T extends { profile_image?: string | null }>(
 }
 
 export const listUsers: RouteHandler = async ({ event }) => {
-  const auth = await guard(event, 'ADMIN');
-  if (auth.response) return auth.response;
-
   const queryParams = event.queryStringParameters || {};
   const page = queryParams.page ? parseInt(queryParams.page, 10) : null;
   const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : null;
@@ -84,12 +83,12 @@ export const listUsers: RouteHandler = async ({ event }) => {
   return json(200, { users: await withResolvedPhotos(users) });
 };
 
-export const getUser: RouteHandler = async ({ event, params }) => {
+export const getUser: RouteHandler = async ({ params, auth }) => {
   const userId = params.userId;
-  const auth = await guard(event, 'ADMIN_OR_SELF', userId);
-  if (auth.response) return auth.response;
-
   if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
+
+  const denied = requirePermission(auth.subject, 'profile:view', { userId: Number(userId) });
+  if (denied) return denied;
 
   const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
@@ -115,15 +114,18 @@ export const getUser: RouteHandler = async ({ event, params }) => {
  * Presigned PUT so the browser uploads the photo straight to S3 and then PATCHes
  * the returned key onto the user. The lambda never receives the image bytes,
  * which keeps a large photo under the API Gateway payload limit.
+ *
+ * Handing out a writable URL is part of setting the photo, so this is gated on
+ * `profile:update` rather than `profile:view`.
  */
-export const getPhotoUploadUrl: RouteHandler = async ({ event, params }) => {
+export const getPhotoUploadUrl: RouteHandler = async ({ event, params, auth }) => {
   const userId = params.userId;
-  const auth = await guard(event, 'ADMIN_OR_SELF', userId);
-  if (auth.response) return auth.response;
-
   if (!/^\d+$/.test(userId)) {
     return json(400, { message: 'userId must be a positive integer' });
   }
+
+  const denied = requirePermission(auth.subject, 'profile:update', { userId: Number(userId) });
+  if (denied) return denied;
 
   const fileName = (event.queryStringParameters || {}).fileName;
   if (!fileName || typeof fileName !== 'string') {
@@ -145,13 +147,12 @@ export const getPhotoUploadUrl: RouteHandler = async ({ event, params }) => {
   });
 };
 
-export const patchUser: RouteHandler = async ({ event, params }) => {
+export const patchUser: RouteHandler = async ({ event, params, auth }) => {
   const userId = params.userId;
-  const auth = await guard(event, 'ADMIN_OR_SELF', userId);
-  if (auth.response) return auth.response;
-  const authContext = auth.ctx;
-
   if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
+
+  const denied = requirePermission(auth.subject, 'profile:update', { userId: Number(userId) });
+  if (denied) return denied;
   const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
   // make sure user exists
@@ -172,14 +173,13 @@ export const patchUser: RouteHandler = async ({ event, params }) => {
   const isAdminResult = UserValidationUtils.validateIsAdmin(body.isAdmin);
   if (!isAdminResult.isValid) return json(400, { message: isAdminResult.error });
   if (isAdminResult.value != null) {
-    // is_admin is a privilege grant, not profile data. The ADMIN_OR_SELF
-    // check above intentionally lets a non-admin PATCH their own row, so
-    // without this gate any user could PATCH { isAdmin: true } to their own
-    // userId and self-promote. validateIsAdmin returns value: null when the
-    // field is absent, so ordinary self-service edits are unaffected.
-    if (!authContext.user?.isAdmin) {
-      return json(403, { message: 'Only an admin can change isAdmin' });
-    }
+    // is_admin is a privilege grant, not profile data. `profile:update` above
+    // intentionally lets a non-admin PATCH their own row, so without this
+    // second gate any user could PATCH { isAdmin: true } to their own userId
+    // and self-promote. validateIsAdmin returns value: null when the field is
+    // absent, so ordinary self-service edits are unaffected.
+    const cannotGrant = requirePermission(auth.subject, 'accounts:update');
+    if (cannotGrant) return cannotGrant;
     updates.is_admin = isAdminResult.value;
   }
 
@@ -215,10 +215,7 @@ export const patchUser: RouteHandler = async ({ event, params }) => {
   return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin, profileImage: await resolveProfileImage(updatedUser!.profile_image), created_at: updatedUser!.created_at } });
 };
 
-export const deleteUser: RouteHandler = async ({ event, params }) => {
-  const auth = await guard(event, 'ADMIN');
-  if (auth.response) return auth.response;
-
+export const deleteUser: RouteHandler = async ({ params }) => {
   const userId = params.userId;
   if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
 
@@ -251,9 +248,6 @@ export const deleteUser: RouteHandler = async ({ event, params }) => {
 };
 
 export const createUser: RouteHandler = async ({ event }) => {
-  const auth = await guard(event, 'ADMIN');
-  if (auth.response) return auth.response;
-
   const body = event.body
     ? (JSON.parse(event.body) as Record<string, unknown>)
     : {};

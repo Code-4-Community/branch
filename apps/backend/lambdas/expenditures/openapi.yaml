@@ -147,8 +147,53 @@ paths:
       responses:
         '200':
           description: OK
+    patch:
+      summary: PATCH /expenditures/{id}
+      description: >
+        Revise an expenditure. Allowed for the submitter until an admin approves
+        it, and for an admin at any time. `status` and `adminNotes` are rejected
+        here -- they are admin-only and live on PATCH /expenditures/{id}/status.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                amount:
+                  type: number
+                category:
+                  type: string
+                description:
+                  type: string
+                receiptUrl:
+                  type: string
+                spentOn:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Expenditure updated
+        '400':
+          description: Invalid id, no editable fields, or an admin-only field was sent
+        '401':
+          description: Authentication required
+        '403':
+          description: Not the submitter, or the expenditure is already approved
+        '404':
+          description: Expenditure not found or not visible to the caller
     delete:
       summary: DELETE /expenditures/{id}
+      description: >
+        Allowed for the submitter until an admin approves it, and for an admin
+        at any time.
       parameters:
         - in: path
           name: id
@@ -158,6 +203,10 @@ paths:
       responses:
         '200':
           description: OK
+        '403':
+          description: Not the submitter, or the expenditure is already approved
+        '404':
+          description: Expenditure not found or not visible to the caller
   /expenditures/{id}/receipt:
     get:
       summary: Get a pre-signed S3 URL for downloading an expenditure's receipt

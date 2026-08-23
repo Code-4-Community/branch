@@ -1,17 +1,22 @@
-// Uses the shared render from ../utils, which wraps in AuthProvider — Header
-// now reads the session so it can show who is signed in.
-import { render, screen, waitFor } from '../utils';
+// Uses renderWithLiveAuth: this suite is specifically about Header reflecting a
+// session that AuthProvider resolved from token storage and GET /auth/me, so it
+// needs the real provider rather than the static subject the default render
+// installs.
+import { renderWithLiveAuth as render, screen, waitFor } from '../utils';
 import '@testing-library/jest-dom';
 import Header from '../../src/app/components/Header';
 import { STORAGE_KEYS } from '@/lib/authTokens';
 import { __resetRefreshStateForTests } from '@/lib/authClient';
 
+// `rbac` is not optional: AuthProvider rejects a /auth/me payload without a
+// subject rather than signing the user in and then denying them everything.
 const ME = {
   userId: 7,
   cognitoSub: 'sub-123',
   email: 'jane@example.com',
   name: 'Jane Doe',
   isAdmin: false,
+  rbac: { userId: 7, isAdmin: false, memberProjectIds: [1], directorProjectIds: [] },
 };
 
 function makeToken(claims: Record<string, unknown>) {

@@ -8,15 +8,13 @@ jest.mock('../../src/lib/authClient', () => ({
     authedFetch: (...args: Parameters<typeof mockApiFetch>) => mockApiFetch(...args),
 }));
 
-// The delete column is admin-only, mirroring `DELETE /donors/{id}`.
+// The delete column is admin-only, mirroring `DELETE /donors/{id}`. The mocked
+// session must carry an RBAC subject — the page asks the shared policy, and a
+// session without one denies everything.
 jest.mock('../../src/context/AuthContext', () => ({
     ...jest.requireActual('../../src/context/AuthContext'),
-    useAuth: () => ({
-        user: { userId: 1, name: 'Ada', email: 'ada@branch.org', isAdmin: true },
-        isAuthenticated: true,
-        isAdmin: true,
-        isLoading: false,
-    }),
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    useAuth: () => require('../rbac').session({ subject: require('../rbac').adminSubject() }),
 }));
 
 const donors = [

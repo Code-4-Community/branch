@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '../utils';
 import userEvent from '@testing-library/user-event';
 import ProfilePage from '@/app/profile/page';
 import { ApiError } from '@/lib/api';
+import { session, subjectFor } from '../rbac';
 
 const mockApiFetch = jest.fn();
 jest.mock('../../src/lib/authClient', () => ({
@@ -9,23 +10,18 @@ jest.mock('../../src/lib/authClient', () => ({
   authedFetch: (...args: Parameters<typeof mockApiFetch>) => mockApiFetch(...args),
 }));
 
+const SUBJECT = subjectFor({ userId: 7 });
+
+// The session comes from the shared `session()` helper rather than a hand-rolled
+// object: components ask @branch/rbac whether the subject may act, so a mock
+// missing `subject` makes Header throw on `directorProjectIds`. `reloadUser` is
+// still a local spy, which is what the save test asserts on.
 const mockReloadUser = jest.fn();
+const mockSession = { ...session({ subject: SUBJECT }), reloadUser: mockReloadUser };
+
 jest.mock('../../src/context/AuthContext', () => ({
   ...jest.requireActual('../../src/context/AuthContext'),
-  useAuth: () => ({
-    user: {
-      userId: 7,
-      cognitoSub: 'sub-7',
-      email: 'ada@example.com',
-      name: 'Ada Lovelace',
-      isAdmin: false,
-      profileImage: null,
-    },
-    isAuthenticated: true,
-    isAdmin: false,
-    isLoading: false,
-    reloadUser: mockReloadUser,
-  }),
+  useAuth: () => mockSession,
 }));
 
 jest.mock('qrcode', () => ({

@@ -3,27 +3,34 @@ import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
 // mock auth only for now
-jest.mock('../auth');
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 import { handler } from '../handler';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (requiredAccess === 'PUBLIC') return { allowed: true };
-  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
-  if (requiredAccess === 'ADMIN') {
-    const isAdmin = authContext.user.isAdmin ?? false;
-    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
-  }
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
-  }
-  return { allowed: false, reason: 'Unknown access level' };
-});
 
 const pool = new Pool({
   host: 'localhost',
@@ -221,11 +228,21 @@ describe('Expenditures integration tests', () => {
       expect(JSON.parse(res.body).body.enteredBy).toBe(2);
     });
 
-    test('403: Student cannot create expenditure on their project', async () => {
+    // Filing an expense is open to any member of the project now -- it used to
+    // require Director/Admin, which left students with nothing to submit with.
+    test('201: Student can create an expenditure on their own project', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
 
       const res = await handler(postEvent({ projectID: 2, amount: 500 }));
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(201);
+    });
+
+    test('201: a non-admin cannot file an expenditure as already approved', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+
+      const res = await handler(postEvent({ projectID: 2, amount: 500, status: 'approved' }));
+      expect(res.statusCode).toBe(201);
+      expect(JSON.parse(res.body).body.status).toBe('pending');
     });
 
     test('403: user with no membership on project is rejected', async () => {
@@ -545,36 +562,54 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    test('403: Student cannot delete an expenditure on a project they have no role on', async () => {
+    // 404 rather than 403: a row the caller cannot see must not be confirmed
+    // to exist by the status code.
+    test('404: a user with no membership on the project cannot even see it', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
       const id = await firstExpenditureId(1); // studentUser has no membership on project 1
 
       const res = await handler(idRequestEvent('DELETE', id));
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(404);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('403: Student role on their own project is still not sufficient to delete', async () => {
+    test('403: a member of the project who did not submit it cannot delete', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
-      const id = await firstExpenditureId(2); // studentUser is Student on project 2
+      const id = await firstExpenditureId(2); // entered_by 2; studentUser is user 3
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(403);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('200: Director can delete an expenditure on their own project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(directorUser);
+    // The seeded expenditures on project 1 are already approved, which is the
+    // point: directing the project does not thaw them, and neither does having
+    // submitted them.
+    test('403: an approved expenditure is frozen even for its submitter', async () => {
+      mockAuthenticateRequest.mockResolvedValue(directorUser); // user 1, submitted it
       const id = await firstExpenditureId(1);
 
       const res = await handler(idRequestEvent('DELETE', id));
-      expect(res.statusCode).toBe(200);
-      expect(await expenditureExists(id)).toBe(false);
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toMatch(/Approved expenses/);
+      expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('200: a second Director can delete an expenditure on their own project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser);
-      const id = await firstExpenditureId(1);
+    test('403: a Director on the project cannot delete an expenditure they did not submit', async () => {
+      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser); // user 2, on project 1
+      const id = await firstExpenditureId(1); // entered_by 1
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(403);
+      expect(await expenditureExists(id)).toBe(true);
+    });
+
+    // Seeded expenditure 5 is project 3, entered_by 3, still pending. User 3
+    // has no membership there, so this also covers the author keeping access
+    // to what they filed after leaving a project.
+    test('200: the submitter can delete their own pending expenditure', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+      const id = await firstExpenditureId(3);
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(200);
