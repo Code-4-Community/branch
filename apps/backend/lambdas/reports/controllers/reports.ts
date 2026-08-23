@@ -151,9 +151,11 @@ export const listReports: RouteHandler = async ({ event }) => {
   if (page && limit) {
     const offset = (page - 1) * limit;
 
+    // From the rollup, not a scan of `reports`. No reports reads 0, and an
+    // unknown project has no row — both yield 0, as COUNT(*) did.
     const totalCount = projectId !== null
-      ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).select(db.fn.count('report_id').as('count')).executeTakeFirst()
-      : await db.selectFrom('branch.reports').select(db.fn.count('report_id').as('count')).executeTakeFirst();
+      ? await db.selectFrom('branch.project_rollup').where('project_id', '=', projectId).select('report_count as count').executeTakeFirst()
+      : await db.selectFrom('branch.project_rollup').select(db.fn.sum('report_count').as('count')).executeTakeFirst();
 
     const totalItems = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalItems / limit);
