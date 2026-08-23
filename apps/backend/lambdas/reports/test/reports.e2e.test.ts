@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
+import db from '../db';
 
 jest.mock('../auth', () => {
   // dispatch() resolves the caller through resolveAuth, so an auto-mock would
@@ -97,6 +98,7 @@ describe('Reports e2e tests', () => {
 
   afterAll(async () => {
     await pool.end();
+    await db.destroy();
   });
 
   describe('Health check', () => {
