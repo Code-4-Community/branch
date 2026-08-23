@@ -22,7 +22,7 @@ describe('Donations Page Component', () => {
     it('renders the table with correct headers', () => {
         render(<Donations />);
         expect(screen.getByText('Date')).toBeInTheDocument();
-        expect(screen.getByText('Donor ID')).toBeInTheDocument();
+        expect(screen.getByText('Donor Name')).toBeInTheDocument();
         expect(screen.getByText('Project Name')).toBeInTheDocument();
         expect(screen.getByText('Amount')).toBeInTheDocument();
     });

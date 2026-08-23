@@ -233,13 +233,13 @@ export default function DonationsPage() {
             setSubmitting(true);
             setSubmitError(null);
 
-            // NOTE: /donations expects snake_case. Backend has no donated_at
-            // column write yet — newDate is validated client-side only, per
-            // the separate ticket tracking that backend change.
+            // NOTE: /donations expects snake_case. donated_at is now accepted
+            // by the backend, per tech lead confirmation.
             await api.post('/donations', {
                 donor_id: donorId,
                 project_id: projectId,
                 amount: Number(newAmount),
+                donated_at: newDate,
             });
 
             resetForm();
