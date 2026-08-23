@@ -19,6 +19,7 @@ interface TextInputFieldProps {
   rows?: number;
   /** Rendered before the value, e.g. `$` on the budget field. */
   prefix?: string;
+  icon?: React.ReactNode;
   inputMode?: 'text' | 'decimal' | 'numeric';
 }
 
@@ -35,6 +36,7 @@ export default function TextInputField({
   multiline = false,
   rows = 4,
   prefix,
+  icon,
   inputMode,
 }: TextInputFieldProps) {
   const [internalValue, setInternalValue] = useState('');
@@ -97,9 +99,18 @@ export default function TextInputField({
               {prefix}
             </span>
           )}
+          {icon && (
+            <span
+              aria-hidden
+              className={`pointer-events-none absolute left-3 top-1/2 z-10 flex -translate-y-1/2 items-center ${
+                isError ? 'text-error-red' : 'text-black-700'
+              }`}
+            >
+              {icon}
+            </span>
+          )}
           <Input
-            className={`${sharedClass} !h-10 ${prefix ? '!pl-7' : ''}`}
-            value={currentValue}
+            className={`${sharedClass} !h-10 ${prefix || icon ? '!pl-9' : ''}`}            value={currentValue}
             onChange={handleChange}
             placeholder={placeholder}
             disabled={disabled}
