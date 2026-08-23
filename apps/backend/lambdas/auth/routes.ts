@@ -8,6 +8,12 @@ import {
   handleLogout,
 } from './controllers/auth';
 import { handleForgotPassword, handleResetPassword } from './controllers/password';
+import {
+  handleMfaSetup,
+  handleMfaVerify,
+  handleMfaDisable,
+  handleMfaStatus,
+} from './controllers/mfa';
 
 export const routes: Route[] = [
   // >>> ROUTES-START (do not remove this marker)
@@ -23,5 +29,9 @@ export const routes: Route[] = [
   { method: 'POST', pattern: '/auth/logout', handler: ({ event }) => handleLogout(event) },
   { method: 'POST', pattern: '/auth/forgot-password', handler: ({ event }) => handleForgotPassword(event) },
   { method: 'POST', pattern: '/auth/reset-password', handler: ({ event }) => handleResetPassword(event) },
+  { method: 'POST', pattern: '/auth/mfa-setup', handler: handleMfaSetup },
+  { method: 'POST', pattern: '/auth/mfa-verify', handler: handleMfaVerify },
+  { method: 'POST', pattern: '/auth/mfa-disable', handler: handleMfaDisable },
+  { method: 'GET', pattern: '/auth/mfa-status', handler: handleMfaStatus },
   // <<< ROUTES-END
 ];

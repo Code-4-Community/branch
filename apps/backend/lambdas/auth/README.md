@@ -19,6 +19,10 @@ Lambda for auth handler.
 | POST | /auth/logout |  |
 | POST | /auth/forgot-password |  |
 | POST | /auth/reset-password |  |
+| POST | /auth/mfa-setup |  |
+| POST | /auth/mfa-verify |  |
+| POST | /auth/mfa-disable |  |
+| GET | /auth/mfa-status |  |
 
 ## Setup
 

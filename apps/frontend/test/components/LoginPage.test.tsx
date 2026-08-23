@@ -221,10 +221,10 @@ describe('Login Page Component', () => {
             expect(mockReplace).toHaveBeenCalledWith('/');
         });
 
-        it('explains that an MFA challenge is not supported yet', async () => {
+        it('explains that an unmodelled challenge is not supported yet', async () => {
             mockLogin.mockResolvedValue({
                 status: 'challenge',
-                challengeName: 'SOFTWARE_TOKEN_MFA',
+                challengeName: 'SELECT_MFA_TYPE',
                 session: 'sess-1',
                 email: 'jane@example.com',
             });
@@ -233,7 +233,69 @@ describe('Login Page Component', () => {
             await fillCredentials();
             await submit();
 
-            await waitFor(() => expect(screen.getByText(/SOFTWARE_TOKEN_MFA/)).toBeInTheDocument());
+            await waitFor(() => expect(screen.getByText(/SELECT_MFA_TYPE/)).toBeInTheDocument());
+            expect(mockReplace).not.toHaveBeenCalled();
+        });
+
+        const totp = {
+            status: 'challenge',
+            challengeName: 'SOFTWARE_TOKEN_MFA',
+            session: 'sess-1',
+            email: 'jane@example.com',
+        };
+
+        it('shows the code step for SOFTWARE_TOKEN_MFA without navigating', async () => {
+            mockLogin.mockResolvedValue(totp);
+            render(<LoginPage />);
+
+            await fillCredentials();
+            await submit();
+
+            await waitFor(() => expect(screen.getByText('Enter your code')).toBeInTheDocument());
+            expect(mockReplace).not.toHaveBeenCalled();
+        });
+
+        it('submits the TOTP code and then redirects', async () => {
+            mockLogin.mockResolvedValue(totp);
+            mockRespondToChallenge.mockResolvedValue({ status: 'authenticated' });
+            render(<LoginPage />);
+
+            await fillCredentials();
+            await submit();
+            await waitFor(() => expect(screen.getByText('Enter your code')).toBeInTheDocument());
+
+            await userEvent.type(screen.getByPlaceholderText('123456'), '654321');
+            await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+            await waitFor(() =>
+                expect(mockRespondToChallenge).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        challengeName: 'SOFTWARE_TOKEN_MFA',
+                        session: 'sess-1',
+                        code: '654321',
+                    }),
+                ),
+            );
+            expect(mockReplace).toHaveBeenCalledWith('/');
+        });
+
+        it('shows an inline error for a wrong TOTP code without navigating', async () => {
+            mockLogin.mockResolvedValue(totp);
+            mockRespondToChallenge.mockRejectedValue(
+                new ApiError('Invalid verification code', 400),
+            );
+            render(<LoginPage />);
+
+            await fillCredentials();
+            await submit();
+            await waitFor(() => expect(screen.getByText('Enter your code')).toBeInTheDocument());
+
+            await userEvent.type(screen.getByPlaceholderText('123456'), '000000');
+            await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+            await waitFor(() =>
+                expect(screen.getByText('Invalid verification code')).toBeInTheDocument(),
+            );
             expect(mockReplace).not.toHaveBeenCalled();
         });
     });
