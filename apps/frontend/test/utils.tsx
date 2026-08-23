@@ -1,5 +1,6 @@
 import { render, type RenderOptions } from '@testing-library/react';
-import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
+import { ChakraProvider } from '@chakra-ui/react';
+import { chakraSystem } from '@/lib/chakraSystem';
 import type { ReactElement } from 'react';
 import type { RbacSubject } from '@branch/rbac';
 import { AuthContext, AuthProvider } from '@/context/AuthContext';
@@ -21,7 +22,7 @@ function makeWrapper(subject: RbacSubject | null) {
 
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
-      <ChakraProvider value={defaultSystem}>
+      <ChakraProvider value={chakraSystem}>
         <AuthContext.Provider
           value={
             {
@@ -62,7 +63,7 @@ export const renderWithLiveAuth = (
 ) =>
   render(ui, {
     wrapper: ({ children }) => (
-      <ChakraProvider value={defaultSystem}>
+      <ChakraProvider value={chakraSystem}>
         <AuthProvider>{children}</AuthProvider>
       </ChakraProvider>
     ),

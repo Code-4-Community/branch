@@ -1,6 +1,7 @@
 'use client';
 
-import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
+import { ChakraProvider } from '@chakra-ui/react';
+import { chakraSystem } from '@/lib/chakraSystem';
 import { AuthProvider } from '@/context/AuthContext';
 import AuthGate from './components/AuthGate';
 
@@ -10,7 +11,7 @@ import AuthGate from './components/AuthGate';
 // its own test file.
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <ChakraProvider value={defaultSystem}>
+    <ChakraProvider value={chakraSystem}>
       <AuthProvider>
         <AuthGate>{children}</AuthGate>
       </AuthProvider>
