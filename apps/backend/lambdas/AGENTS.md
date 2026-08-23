@@ -1,12 +1,15 @@
 # AGENTS.md — lambdas
 
-Each `<service>/` here is one Lambda. They share a near-identical shape. **Use the `lambda-cli` (below) to scaffold handlers and add routes** — it keeps `handler.ts` and `openapi.yaml` in sync. Hand-editing routes without it drifts the OpenAPI spec.
+Each `<service>/` here is one Lambda. They share a near-identical shape. **Use the `lambda-cli` (below) to scaffold handlers and add routes** — it keeps `routes.ts` and `openapi.yaml` in sync. Hand-editing routes without it drifts the OpenAPI spec.
 
 ## Lambda anatomy
 
 ```
 <service>/
-  handler.ts        # entry: export const handler = async (event) => ...
+  handler.ts        # entry: 4 lines — dispatch(event, { prefix, routes })
+  routes.ts         # Route[] table; ROUTES-START/END markers bracket the entries
+  controllers/      # <group>.ts files exporting RouteHandlers
+  services/         # (projects, expenditures) shared query/business logic
   dev-server.ts     # local shared-server registration (port 3000)
   db.ts             # Kysely<DB> + pg.Pool
   auth.ts           # thin wrapper over @branch/lambda-auth + domain authz helpers
@@ -20,35 +23,37 @@ Each `<service>/` here is one Lambda. They share a near-identical shape. **Use t
 
 ## Handler pattern
 
+Routing is the shared `@branch/lambda-http` package, not a per-lambda if-chain. `handler.ts` is just:
 ```ts
-export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
-  try {
-    const rawPath = event.rawPath || event.path || '/';
-    const normalizedPath = rawPath.replace(/\/$/, '');
-    const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
+import { dispatch } from '@branch/lambda-http';
+import { routes } from './routes';
 
-    if (method === 'OPTIONS') return json(200, {});                  // CORS preflight
-    if (normalizedPath.endsWith('/health') && method === 'GET')      // health (no auth)
-      return json(200, { ok: true });
+export const handler = (event: any) => dispatch(event, { prefix: 'donors', routes });
+```
+`routes.ts` declares the table — first match wins, so literal segments must precede `:param` ones:
+```ts
+import type { Route } from '@branch/lambda-http';
+import { getDonors, createDonor } from './controllers/donors';
 
-    const authContext = await authenticateRequest(event);            // every service except `auth`
-    if (!authContext.isAuthenticated) return json(401, { message: 'Unauthorized' });
-
-    // >>> ROUTES-START (do not remove this marker)
-    if (normalizedPath === '/donors' && method === 'GET') { /* ... */ }
-    // <<< ROUTES-END
-
-    return json(404, { message: 'Not Found' });
-  } catch (err) {
-    console.error('Lambda error:', err);
-    return json(500, { message: 'Internal Server Error' });
-  }
+export const routes: Route[] = [
+  // >>> ROUTES-START (do not remove this marker)
+  { method: 'GET', pattern: '/donors', handler: getDonors },
+  { method: 'POST', pattern: '/donors', handler: createDonor },
+  // <<< ROUTES-END
+];
+```
+Controllers live in `controllers/<group>.ts` as exported `RouteHandler`s — `async (ctx: RouteCtx) => APIGatewayProxyResult`, where `ctx` is `{ event, params, method, path }` and `params` holds the matched `:param` values (no more `normalizedPath.split('/')[N]`):
+```ts
+export const getDonor: RouteHandler = async ({ params }) => {
+  const { id } = params;
+  // ...
+  return json(200, { ... });
 };
 ```
-
-- **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI injects routes between them.
-- Handles both API Gateway and Lambda Function URL event shapes (`rawPath`/`path`, `requestContext.http.method`/`httpMethod`).
-- Responses go through a local `json(status, body)` helper that sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`).
+- `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health`, 404 and 500 centrally — routes.ts only lists real endpoints.
+- **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
+- Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
+- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requireAuth`, `createAuthGuard`, `matchPattern`).
 
 ## Auth & authorization
 
@@ -116,7 +121,7 @@ await db.selectFrom('branch.users').where('cognito_sub', '=', sub).selectAll().e
 await db.selectFrom('branch.users').select(db.fn.count('user_id').as('count')).executeTakeFirst();
 ```
 
-**Aggregate and filter in SQL, not in the lambda.** Pulling rows over the wire to sum, group or filter them in JS costs a full table scan that no index can fix, and it grows with the table. Use `db.fn.sum`/`db.fn.count` + `groupBy`, and push every filter into `where`. `GET /projects/dashboard` (`projects/handler.ts:83`) is the counter-example: it selects every expenditure row and buckets it by month in a JS loop.
+**Aggregate and filter in SQL, not in the lambda.** Pulling rows over the wire to sum, group or filter them in JS costs a full table scan that no index can fix, and it grows with the table. Use `db.fn.sum`/`db.fn.count` + `groupBy`, and push every filter into `where`. `GET /projects/dashboard` (`projects/controllers/dashboard.ts`) buckets expenditures by month this way, via `to_char(date_trunc('month', spent_on), 'YYYY-MM')`, instead of pulling every row and grouping in JS.
 
 **Check your new query has an index.** Filter, join and `ORDER BY` columns need one — Postgres does not index foreign keys for you. `project_memberships` and `project_donations` in particular have UNIQUE constraints whose *leading* column is not the one most queries filter on, so those don't help. Add the index in the same PR (see `db/README.md`).
 
@@ -153,14 +158,14 @@ When adding new API endpoints or scaffolding new Lambda handlers, use the CLI at
 ## Commands
 
 ### `init-handler <name>`
-Creates a new Lambda handler with boilerplate (handler.ts, dev-server.ts, openapi.yaml, swagger-utils.ts, package.json, tsconfig.json, README.md, test/). Wires in `@branch/types` and `@branch/lambda-auth` automatically.
+Creates a new Lambda handler with boilerplate (handler.ts, routes.ts, db.ts, dev-server.ts, openapi.yaml, swagger-utils.ts, package.json, tsconfig.json, README.md, test/). Wires in `@branch/types`, `@branch/lambda-auth` and `@branch/lambda-http` automatically. `routes.ts` starts empty; `controllers/` is created by the first `add-route`.
 
 ```bash
 node tools/lambda-cli.js init-handler orders
 ```
 
 ### `add-route <handler> <METHOD> <path> [options]`
-Adds a route stub to both `handler.ts` (between the ROUTES-START/ROUTES-END markers) and `openapi.yaml`.
+Inserts a table entry into `routes.ts` (between the ROUTES-START/ROUTES-END markers), scaffolds a stub `RouteHandler` in `controllers/<handler>.ts`, and appends a matching path block to `openapi.yaml`. `{param}` segments become `:param` in the table; `path` is prefixed with `<handler>` automatically if it isn't already (so `add-route auth POST /reset-password` and `add-route auth POST /auth/reset-password` produce the same route).
 
 Options:
 - `--body field:type,field:type` — request body fields
@@ -176,7 +181,7 @@ node tools/lambda-cli.js add-route users POST /users --body name:string --header
 ```
 
 ### `list-routes <handler>`
-Lists all routes defined in a handler (from both handler.ts and openapi.yaml).
+Lists all routes declared in `routes.ts` (the table `dispatch()` actually executes — health/OPTIONS/404/500 aren't listed, since they're handled centrally, not table entries).
 
 ```bash
 node tools/lambda-cli.js list-routes auth
@@ -192,6 +197,6 @@ node tools/lambda-cli.js generate-readme
 
 ## After using add-route
 
-The CLI generates stub code with `// TODO: Add your business logic here`. You must:
+The CLI generates a stub controller function with `// TODO: Add your business logic here`. You must:
 1. Replace the TODO stub with actual implementation
 2. Update the generated OpenAPI spec in `openapi.yaml` with proper request/response schemas, descriptions, and status codes
