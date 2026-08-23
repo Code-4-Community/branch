@@ -150,6 +150,12 @@ resource "aws_iam_role_policy" "ci_preview" {
         Action   = ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:ListFunctions"]
         Resource = "*"
       },
+      {
+        Sid      = "ReadSentryLayer"
+        Effect   = "Allow"
+        Action   = ["lambda:GetLayerVersion"]
+        Resource = module.sentry.layer_arn
+      },
       # API Gateway: create/destroy per-PR REST APIs. ARNs are random ids, so
       # this cannot be name-scoped — bounded to the account/region instead.
       {
