@@ -1,6 +1,7 @@
 import type { RouteCtx } from '@branch/lambda-http';
 import { json, requirePermission } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
+import { sql, type SqlBool } from 'kysely';
 import db from '../db';
 
 // Authentication and the route's permission are enforced by dispatch before any
@@ -30,7 +31,11 @@ export async function getDonations({ event, auth }: RouteCtx) {
   // A non-admin only ever sees donations to their own projects. Applied in SQL
   // so the count and the page agree — filtering after the LIMIT would return
   // short pages and a total the caller is not allowed to know.
+  // `= ANY($1)` and not `IN ($1, ..., $n)`: one bound array is one entry in the
+  // plan cache whatever the caller's project count, instead of a fresh plan per
+  // distinct cardinality.
   const scope = projectScopeIds(auth.subject);
+  const inScope = scope ? sql<SqlBool>`project_id = ANY(${scope})` : null;
 
   if (page && limit) {
     const offset = (page - 1) * limit;
@@ -38,18 +43,22 @@ export async function getDonations({ event, auth }: RouteCtx) {
     let countQuery = db
       .selectFrom('branch.project_donations')
       .select(db.fn.count('donation_id').as('count'));
-    if (scope) countQuery = countQuery.where('project_id', 'in', scope);
-    const totalCount = await countQuery.executeTakeFirst();
-
-    const totalItems = Number(totalCount?.count || 0);
-    const totalPages = Math.ceil(totalItems / limit);
+    if (inScope) countQuery = countQuery.where(inScope);
 
     let pageQuery = db
       .selectFrom('branch.project_donations')
       .selectAll()
       .orderBy('donation_id', 'asc');
-    if (scope) pageQuery = pageQuery.where('project_id', 'in', scope);
-    const donations = await pageQuery.limit(limit).offset(offset).execute();
+    if (inScope) pageQuery = pageQuery.where(inScope);
+
+    // Same predicate on both, and neither depends on the other.
+    const [totalCount, donations] = await Promise.all([
+      countQuery.executeTakeFirst(),
+      pageQuery.limit(limit).offset(offset).execute(),
+    ]);
+
+    const totalItems = Number(totalCount?.count || 0);
+    const totalPages = Math.ceil(totalItems / limit);
 
     return json(200, {
       data: donations,
@@ -58,7 +67,7 @@ export async function getDonations({ event, auth }: RouteCtx) {
   }
 
   let query = db.selectFrom('branch.project_donations').selectAll();
-  if (scope) query = query.where('project_id', 'in', scope);
+  if (inScope) query = query.where(inScope);
   const donations = await query.execute();
   return json(200, { data: donations });
 }
@@ -102,21 +111,21 @@ export async function createDonation({ event }: RouteCtx) {
     return json(400, { message: 'amount must be a positive number' });
   }
 
-  const donor = await db
-    .selectFrom('branch.donors')
-    .select('donor_id')
-    .where('donor_id', '=', donorId)
-    .executeTakeFirst();
+  // Both existence checks up front, together: the FK violation below would also
+  // 404, but only with the combined "Donor or project not found" message, and
+  // these two tell the caller which id was wrong.
+  const [donor, project] = await Promise.all([
+    db.selectFrom('branch.donors').select('donor_id').where('donor_id', '=', donorId).executeTakeFirst(),
+    db
+      .selectFrom('branch.projects')
+      .select('project_id')
+      .where('project_id', '=', projectId)
+      .executeTakeFirst(),
+  ]);
 
   if (!donor) {
     return json(404, { message: 'Donor not found' });
   }
-
-  const project = await db
-    .selectFrom('branch.projects')
-    .select('project_id')
-    .where('project_id', '=', projectId)
-    .executeTakeFirst();
 
   if (!project) {
     return json(404, { message: 'Project not found' });

@@ -186,14 +186,10 @@ export const getOverview: RouteHandler = async (ctx) => {
   const { projectId: id, response } = requireVisibleProject(ctx);
   if (response) return response;
 
-  const project = await db
-    .selectFrom('branch.projects')
-    .where('project_id', '=', id)
-    .selectAll()
-    .executeTakeFirst();
-  if (!project) return json(404, { message: `Project not found for id: ${id}` });
-
-  const [members, expenditures, donationRow] = await Promise.all([
+  // None of the three below depend on the project row, so all four go out at
+  // once and the 404 is settled from the result rather than ahead of them.
+  const [project, members, expenditures, donationRow] = await Promise.all([
+    db.selectFrom('branch.projects').where('project_id', '=', id).selectAll().executeTakeFirst(),
     db
       .selectFrom('branch.project_memberships as pm')
       .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
@@ -213,6 +209,7 @@ export const getOverview: RouteHandler = async (ctx) => {
       .where('project_id', '=', id)
       .executeTakeFirst(),
   ]);
+  if (!project) return json(404, { message: `Project not found for id: ${id}` });
 
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
   // The table below lists every expenditure, including the ones still in

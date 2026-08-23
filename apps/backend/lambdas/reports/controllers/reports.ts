@@ -151,16 +151,21 @@ export const listReports: RouteHandler = async ({ event }) => {
   if (page && limit) {
     const offset = (page - 1) * limit;
 
-    const totalCount = projectId !== null
-      ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).select(db.fn.count('report_id').as('count')).executeTakeFirst()
-      : await db.selectFrom('branch.reports').select(db.fn.count('report_id').as('count')).executeTakeFirst();
+    // Same projectId predicate on both, and neither depends on the other, so
+    // the count and the page go out together.
+    let countQuery = db.selectFrom('branch.reports').select(db.fn.count('report_id').as('count'));
+    if (projectId !== null) countQuery = countQuery.where('project_id', '=', projectId);
+
+    let pageQuery = db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc');
+    if (projectId !== null) pageQuery = pageQuery.where('project_id', '=', projectId);
+
+    const [totalCount, reports] = await Promise.all([
+      countQuery.executeTakeFirst(),
+      pageQuery.limit(limit).offset(offset).execute(),
+    ]);
 
     const totalItems = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalItems / limit);
-
-    const reports = projectId !== null
-      ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute()
-      : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
 
     return json(200, {
       data: reports,

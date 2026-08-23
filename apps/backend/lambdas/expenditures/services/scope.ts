@@ -1,4 +1,5 @@
 import { projectScopeIds, RbacSubject } from '@branch/rbac';
+import { sql, type SqlBool } from 'kysely';
 
 /**
  * The rows of `branch.expenditures` a caller is allowed to see.
@@ -31,9 +32,11 @@ export function applyExpenditureScope<Q extends { where(cb: any): Q }>(
   if (!scope.projectIds) return query;
   const projectIds = scope.projectIds;
   const authorId = scope.authorId;
+  // `= ANY($1)` and not `IN ($1, ..., $n)`: one bound array is one entry in the
+  // plan cache whatever the caller's project count.
   return query.where((eb: any) =>
     eb.or([
-      eb('project_id', 'in', projectIds),
+      sql<SqlBool>`project_id = ANY(${projectIds})`,
       ...(authorId !== null ? [eb('entered_by', '=', authorId)] : []),
     ]),
   );
