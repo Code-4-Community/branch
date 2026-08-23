@@ -53,7 +53,7 @@ export const getDonor: RouteHandler = async ({ params }) => {
 - `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health`, 404 and 500 centrally — routes.ts only lists real endpoints.
 - **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
 - Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
-- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requireAuth`, `createAuthGuard`, `matchPattern`).
+- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requirePermission`, `createAuthResolver`, `matchPattern`).
 
 ## Auth & authorization
 
