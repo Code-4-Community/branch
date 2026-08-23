@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import TextInputField from './TextInputField';
+import ShowPasswordCheckbox from './ShowPasswordCheckbox';
 import { Button } from '@chakra-ui/react';
 
 /**
@@ -37,6 +38,7 @@ export default function SetPasswordForm({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [newPasswordError, setNewPasswordError] = useState('');
   const [confirmPasswordError, setConfirmPasswordError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   function validate(): boolean {
     let valid = true;
@@ -58,13 +60,17 @@ export default function SetPasswordForm({
     return valid;
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     if (!validate()) return;
     await onSubmit(newPassword);
   }
 
   return (
-    <div className="flex flex-col items-center text-center w-80">
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col items-center text-center w-80"
+    >
       <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">
         {heading}
       </h1>
@@ -81,6 +87,9 @@ export default function SetPasswordForm({
           isError={!!newPasswordError}
           value={newPassword}
           onChange={(value) => setNewPassword(value)}
+          type={showPassword ? 'text' : 'password'}
+          name="new-password"
+          autoComplete="new-password"
         />
         <TextInputField
           label="Confirm Password *"
@@ -89,15 +98,23 @@ export default function SetPasswordForm({
           isError={!!confirmPasswordError}
           value={confirmPassword}
           onChange={(value) => setConfirmPassword(value)}
+          type={showPassword ? 'text' : 'password'}
+          name="confirm-password"
+          autoComplete="new-password"
+        />
+        <ShowPasswordCheckbox
+          checked={showPassword}
+          onChange={setShowPassword}
+          label="Show passwords"
         />
       </div>
       <Button
+        type="submit"
         className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10"
-        onClick={handleSubmit}
         loading={isLoading}
       >
         {submitLabel}
       </Button>
-    </div>
+    </form>
   );
 }
