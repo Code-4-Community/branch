@@ -54,11 +54,14 @@ jobs:
           # var and is applied per-PR (workspace pr-<N>) by preview-env.yml, so it
           # must NOT be planned in the default workspace here. preview-shared IS
           # planned normally (grep -vx matches the exact dir only).
+          # infrastructure/modules/* are shared child modules, not root modules:
+          # they have no backend or provider and are planned via their callers.
           dirs=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | \
             tr ' ' '\n' | \
             xargs -I {} dirname {} | \
             sort -u | \
             grep -vx 'infrastructure/preview' | \
+            grep -v '^infrastructure/modules/' | \
             jq -R -s -c 'split("\n") | map(select(length > 0))')
 
           echo "Unique directories with changes: $dirs"

@@ -1,4 +1,11 @@
 resource "aws_db_instance" "branch_rds" {
+  # Was unset, so the provider generated a `terraform-<hex>` instance name. A
+  # rename is an in-place ModifyDBInstance, but it changes the endpoint host, so
+  # apply_immediately keeps the endpoint Terraform writes into the lambda env in
+  # sync with reality instead of leaving it pending until the maintenance window.
+  identifier        = "branch-rds"
+  apply_immediately = true
+
   allocated_storage = 10
   db_name           = "branch_rds"
   engine            = "postgres"

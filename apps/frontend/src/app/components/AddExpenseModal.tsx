@@ -8,6 +8,12 @@ import FileUpload from './FileUpload';
 import { FiDollarSign } from 'react-icons/fi';
 import { getReceiptUploadUrl, uploadReceiptToS3 } from '@/lib/expenditures';
 import { Project } from '@/types';
+
+function formatAmountDisplay(digits: string): string {
+  if (!digits) return '';
+  const trimmed = digits.replace(/^0+(?=\d)/, '');
+  return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
 interface AddExpenseModalProps {
   open: boolean;
   onClose: () => void;
@@ -28,7 +34,7 @@ export default function AddExpenseModal({
   const [newDate, setNewDate] = useState('');
   const [newType, setNewType] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newAmount, setNewAmount] = useState('');
+  const [amountDigits, setAmountDigits] = useState('');
   const [newProject, setNewProject] = useState('');
   const [newFile, setNewFile] = useState<File | null>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
@@ -41,11 +47,21 @@ export default function AddExpenseModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
+  const amount = amountDigits ? Number(amountDigits) : 0;
+  
+  const isFormValid =
+    newDate.trim().length > 0 &&
+    newType.trim().length > 0 &&
+    newDescription.trim().length > 0 &&
+    amountDigits.length > 0 &&
+    amount > 0 &&
+    newProject.trim().length > 0;
+
   function resetForm() {
     setNewDate('');
     setNewType('');
     setNewDescription('');
-    setNewAmount('');
+    setAmountDigits('');
     setNewProject('');
     setNewFile(null);
     setReceiptUrl(null);
@@ -84,7 +100,7 @@ export default function AddExpenseModal({
     const hasDateError = !newDate.trim();
     const hasTypeError = !newType.trim();
     const hasDescError = !newDescription.trim();
-    const hasAmountError = !newAmount.trim() || isNaN(Number(newAmount)) || Number(newAmount) < 0;
+    const hasAmountError = !amountDigits || amount <= 0;
     const hasProjectError = !newProject.trim();
     const hasFileError = !newFile || !receiptUrl;
 
@@ -106,7 +122,7 @@ export default function AddExpenseModal({
     try {
       await api.post('/expenditures', {
         projectID: selectedProject.project_id,
-        amount: Number(newAmount),
+        amount,
         category: newType,
         description: newDescription,
         spentOn: newDate,
@@ -219,12 +235,12 @@ export default function AddExpenseModal({
                         <FiDollarSign size={20} strokeWidth={2.5}/>
                       </span>
                       <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={newAmount}
+                        type="text"
+                        inputMode="numeric"
+                        value={formatAmountDisplay(amountDigits)}
                         onChange={(e) => {
-                          setNewAmount(e.target.value);
+                          const digitsOnly = e.target.value.replace(/\D/g, '');
+                          setAmountDigits(digitsOnly.slice(0, 9));
                           setAmountError(false);
                         }}
                         placeholder="Enter the Amount"
@@ -292,11 +308,13 @@ export default function AddExpenseModal({
                   <textarea
                     value={newDescription}
                     onChange={(e) => {
+                      if (e.target.value.length > 500) return;
                       setNewDescription(e.target.value);
                       setDescError(false);
                     }}
                     placeholder="Placeholder"
                     rows={4}
+                    maxLength={500}
                     style={{
                       border: `1px solid ${descError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
                       borderRadius: '6px',
@@ -305,9 +323,12 @@ export default function AddExpenseModal({
                       outline: 'none',
                       width: '100%',
                       fontFamily: 'inherit',
-                      resize: 'vertical',
+                      resize: 'none',
                     }}
                   />
+                  <span style={{ fontSize: '12px', color: 'var(--color-black-500)', textAlign: 'right' }}>
+                    {newDescription.length}/500
+                  </span>
                   {descError && (
                     <span style={{ color: 'var(--color-error-red)', fontSize: '12px' }}>
                       Enter a description
@@ -353,9 +374,11 @@ export default function AddExpenseModal({
                 Cancel
               </Button>
               <Button
-                backgroundColor="var(--color-core-green)"
+                backgroundColor={isFormValid ? 'var(--color-core-green)' : 'var(--color-primary-500)'}
                 color="var(--color-core-white)"
+                disabled={!isFormValid}
                 onClick={handleSubmit}
+                cursor={isFormValid ? 'pointer' : 'not-allowed'}
               >
                 Submit For Review
               </Button>

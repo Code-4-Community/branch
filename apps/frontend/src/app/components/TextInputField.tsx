@@ -21,6 +21,11 @@ interface TextInputFieldProps {
   prefix?: string;
   icon?: React.ReactNode;
   inputMode?: 'text' | 'decimal' | 'numeric';
+  /** `password` masks the value; the caller flips it to `text` to reveal. */
+  type?: 'text' | 'email' | 'password';
+  /** Both are needed for browsers to recognise and offer to save credentials. */
+  name?: string;
+  autoComplete?: string;
 }
 
 export default function TextInputField({
@@ -38,6 +43,9 @@ export default function TextInputField({
   prefix,
   icon,
   inputMode,
+  type = 'text',
+  name,
+  autoComplete,
 }: TextInputFieldProps) {
   const [internalValue, setInternalValue] = useState('');
 
@@ -115,6 +123,9 @@ export default function TextInputField({
             placeholder={placeholder}
             disabled={disabled}
             inputMode={inputMode}
+            type={type}
+            name={name}
+            autoComplete={autoComplete}
           />
         </div>
       )}
