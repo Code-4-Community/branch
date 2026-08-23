@@ -25,10 +25,11 @@ describe("NavBar", () => {
   });
 
   it("does not link to routes that do not exist", () => {
-    // Regression guard: the Navbar used to link to /profile and /logout, and
-    // defaulted /dashboard and /projects to pages that had never been built.
+    // Regression guard: the Navbar used to link to /logout, and defaulted
+    // /dashboard and /projects to pages that had never been built. /profile is
+    // a real link (see NAV_ITEMS) now that apps/frontend/src/app/profile/page.tsx
+    // exists, so it is not part of this guard.
     render(<NavBar roleOverride="admin" activePath="/dashboard" />);
-    expect(screen.queryByText("Profile")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Log Out" })).not.toBeInTheDocument();
   });
 
@@ -42,6 +43,7 @@ describe("NavBar", () => {
       "Expenses",
       "Reports",
       "Accounts",
+      "Profile",
       "Log Out",
     ];
     labels.forEach((label) => {
@@ -67,7 +69,7 @@ describe("NavBar", () => {
 
   it("shows shared items for all roles", () => {
     // Expenses is shared: non-admins submit expenses there.
-    const sharedItems = ["Projects", "Donors", "Donations", "Expenses", "Log Out"];
+    const sharedItems = ["Projects", "Donors", "Donations", "Expenses", "Profile", "Log Out"];
     const roles: UserRole[] = ["admin", "standard", "limited"];
 
     roles.forEach((role) => {
