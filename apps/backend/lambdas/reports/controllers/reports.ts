@@ -1,11 +1,9 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { json, parseBody, createAuthGuard } from '@branch/lambda-http';
+import { json, parseBody } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import db from '../db';
-import { authenticateRequest } from '../auth';
 import {
-  checkProjectAccess,
   fetchReportData,
   generatePdf,
   generateDocx,
@@ -30,7 +28,8 @@ const DOWNLOAD_URL_TTL_SECONDS = 900;
 type FileType = typeof ALLOWED_EXTENSIONS[number];
 type ReportType = typeof REPORT_TYPES[number];
 
-const guard = createAuthGuard(authenticateRequest);
+// Reports are admin-only end to end: every route carries a `reports:*`
+// permission and dispatch enforces it before these run.
 
 // Numeric-only id, mirroring the old REPORT_ID_ROUTE/REPORT_DOWNLOAD_ROUTE regexes
 // so a non-numeric :id falls through to the same 404 as an unmatched route.
@@ -68,10 +67,6 @@ function notFoundUnlessNumericId(id: string, path: string, method: string) {
 }
 
 export const generateReport: RouteHandler = async ({ event }) => {
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-  const user = auth.ctx.user!;
-
   const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
   const projectId = body.project_id;
@@ -95,11 +90,6 @@ export const generateReport: RouteHandler = async ({ event }) => {
   const reportData = await fetchReportData(projectId);
   if (!reportData) {
     return json(404, { message: 'Project not found' });
-  }
-
-  const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin ?? false);
-  if (!hasAccess) {
-    return json(403, { message: 'You do not have access to generate reports for this project' });
   }
 
   let fileBuffer: Buffer;
@@ -131,9 +121,6 @@ export const generateReport: RouteHandler = async ({ event }) => {
 };
 
 export const listReports: RouteHandler = async ({ event }) => {
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-
   const queryParams = event.queryStringParameters || {};
   const pageStr = queryParams.page as string | undefined;
   const limitStr = queryParams.limit as string | undefined;
@@ -189,10 +176,6 @@ export const listReports: RouteHandler = async ({ event }) => {
 };
 
 export const getUploadUrl: RouteHandler = async ({ event }) => {
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-  const user = auth.ctx.user!;
-
   const queryParams = event.queryStringParameters || {};
   const { fileName, projectId: projectIdStr } = queryParams;
 
@@ -218,11 +201,6 @@ export const getUploadUrl: RouteHandler = async ({ event }) => {
     .executeTakeFirst();
   if (!projectExists) return json(404, { message: 'Project not found' });
 
-  const hasAccess = await checkProjectAccess(user.userId!, projectId, user.isAdmin);
-  if (!hasAccess) {
-    return json(403, { message: 'You do not have access to upload reports for this project' });
-  }
-
   const key = `${reportKeyPrefix(projectId)}${Date.now()}-${safeFileName}`;
   const uploadUrl = await getSignedUrl(s3, new PutObjectCommand({
     Bucket: BUCKET,
@@ -234,10 +212,6 @@ export const getUploadUrl: RouteHandler = async ({ event }) => {
 };
 
 export const createReport: RouteHandler = async ({ event }) => {
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-  const user = auth.ctx.user!;
-
   const body = parseBody(event);
   if (body === null) {
     return json(400, { message: 'Invalid JSON in request body' });
@@ -266,11 +240,6 @@ export const createReport: RouteHandler = async ({ event }) => {
     .executeTakeFirst();
   if (!projectExists) return json(404, { message: 'Project not found' });
 
-  const hasAccess = await checkProjectAccess(user.userId!, projectId as number, user.isAdmin);
-  if (!hasAccess) {
-    return json(403, { message: 'You do not have access to upload reports for this project' });
-  }
-
   // Checked after authorization: the key must sit under this project's prefix,
   // or a caller with access to one project could register another project's
   // object and then read it back through GET /reports/{id}/download.
@@ -287,22 +256,13 @@ export const createReport: RouteHandler = async ({ event }) => {
   return json(201, report);
 };
 
-export const downloadReport: RouteHandler = async ({ event, params, path, method }) => {
+export const downloadReport: RouteHandler = async ({ params, path, method }) => {
   const notFound = notFoundUnlessNumericId(params.id, path, method);
   if (notFound) return notFound;
   const id = params.id;
 
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-  const user = auth.ctx.user!;
-
   const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
-
-  const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
-  if (!hasAccess) {
-    return json(403, { message: 'You do not have access to this report' });
-  }
 
   const key = keyFromObjectUrl(report.object_url);
   if (!key || !key.startsWith(reportKeyPrefix(report.project_id))) {
@@ -317,42 +277,24 @@ export const downloadReport: RouteHandler = async ({ event, params, path, method
   return json(200, { downloadUrl, expiresIn: DOWNLOAD_URL_TTL_SECONDS });
 };
 
-export const getReport: RouteHandler = async ({ event, params, path, method }) => {
+export const getReport: RouteHandler = async ({ params, path, method }) => {
   const notFound = notFoundUnlessNumericId(params.id, path, method);
   if (notFound) return notFound;
   const id = params.id;
 
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-  const user = auth.ctx.user!;
-
   const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
-
-  const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
-  if (!hasAccess) {
-    return json(403, { message: 'You do not have access to this report' });
-  }
 
   return json(200, { ok: true, route: 'GET /reports/{id}', pathParams: { id }, body: report });
 };
 
-export const deleteReport: RouteHandler = async ({ event, params, path, method }) => {
+export const deleteReport: RouteHandler = async ({ params, path, method }) => {
   const notFound = notFoundUnlessNumericId(params.id, path, method);
   if (notFound) return notFound;
   const id = params.id;
 
-  const auth = await guard(event);
-  if (auth.response) return auth.response;
-  const user = auth.ctx.user!;
-
   const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
-
-  const hasAccess = await checkProjectAccess(user.userId!, report.project_id, user.isAdmin);
-  if (!hasAccess) {
-    return json(403, { message: 'You do not have access to delete this report' });
-  }
 
   const deleted = await db.deleteFrom('branch.reports').where('report_id', '=', Number(id)).execute();
   if (!deleted[0] || deleted[0].numDeletedRows === 0n) {

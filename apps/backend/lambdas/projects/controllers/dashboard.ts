@@ -1,22 +1,16 @@
 import { sql } from 'kysely';
-import { json, createAuthGuard, RouteHandler } from '@branch/lambda-http';
+import { json, RouteHandler } from '@branch/lambda-http';
 import db from '../db';
-import { authenticateRequest, canAccessProject, canEditProject } from '../auth';
 import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
-import { projectIdFrom, isProjectActive } from '../services/projects';
+import { isProjectActive } from '../services/projects';
+import { requireVisibleProject } from './project-guard';
 
-const guard = createAuthGuard(authenticateRequest);
+// Authentication and each route's declared permission are enforced by dispatch
+// before these run — see routes.ts. `dashboard:view` is admin-only, so this
+// handler no longer re-checks it.
 
 // GET /projects/dashboard
-export const getDashboard: RouteHandler = async ({ event }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
-  if (response) return response;
-  const { user } = ctx;
-
-  if (!user!.isAdmin) {
-    return json(403, { message: 'Admin access required' });
-  }
-
+export const getDashboard: RouteHandler = async () => {
   try {
     // Cards read "this year" / "active projects", so spend is scoped to the
     // calendar year and the count to projects that have not ended. The
@@ -188,17 +182,9 @@ export const getDashboard: RouteHandler = async ({ event }) => {
 // One call for the whole detail page: the header, the funding donut, the
 // staff column and the expenses table previously needed three round trips
 // and still could not show a spend total without summing on the client.
-export const getOverview: RouteHandler = async ({ event, params }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
+export const getOverview: RouteHandler = async (ctx) => {
+  const { projectId: id, response } = requireVisibleProject(ctx);
   if (response) return response;
-  const { user } = ctx;
-
-  const id = projectIdFrom(params.id);
-  if (id === null) return json(400, { message: 'Project id must be a valid number' });
-
-  if (!(await canAccessProject(user!.userId!, id))) {
-    return json(403, { message: 'You do not have access to this project' });
-  }
 
   const project = await db
     .selectFrom('branch.projects')
@@ -207,7 +193,7 @@ export const getOverview: RouteHandler = async ({ event, params }) => {
     .executeTakeFirst();
   if (!project) return json(404, { message: `Project not found for id: ${id}` });
 
-  const [members, expenditures, donationRow, canEdit] = await Promise.all([
+  const [members, expenditures, donationRow] = await Promise.all([
     db
       .selectFrom('branch.project_memberships as pm')
       .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
@@ -226,10 +212,6 @@ export const getOverview: RouteHandler = async ({ event, params }) => {
       .select(db.fn.sum('amount').as('total'))
       .where('project_id', '=', id)
       .executeTakeFirst(),
-    // Returned so the UI does not have to re-derive the rule: editing is
-    // open to a project's Directors as well as admins, so gating the
-    // button on `isAdmin` alone would hide it from people who may edit.
-    canEditProject(user!.userId!, id),
   ]);
 
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
@@ -255,6 +237,5 @@ export const getOverview: RouteHandler = async ({ event, params }) => {
     members,
     expenditures,
     isActive: isProjectActive(project.end_date),
-    canEdit,
   });
 };

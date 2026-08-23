@@ -14,6 +14,7 @@ import DropdownSelector from '../components/DropdownSelector';
 import ExpenseFilterMenu, { type FilterGroup } from '../components/ExpenseFilterMenu';
 import ReviewExpenseModal from '../components/ReviewExpenseModal';
 import { useApi } from '@/hooks/useApi';
+import { GatedButton } from '../components/Permission';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
 import { IoClose } from 'react-icons/io5';
@@ -288,14 +289,13 @@ function ExpensePageContent() {
               </div>
 
               {/* + New Expense */}
-              <Button
-                backgroundColor="var(--color-core-green)"
-                color="var(--color-core-white)"
+              <GatedButton
+                action="expenses:create"
+                icon={<FaPlus aria-hidden />}
                 onClick={() => setShowNewExpense(true)}
               >
-                <FaPlus />
                 New Expense
-              </Button>
+              </GatedButton>
             </HStack>
           </HStack>
 

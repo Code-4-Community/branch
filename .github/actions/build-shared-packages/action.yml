@@ -10,17 +10,22 @@ description: >
   updated only the first two -- so preview deploys failed at esbuild with
   "Could not resolve @branch/lambda-http" while the other two were green.
 
+  @branch/rbac is also consumed by apps/frontend, so frontend-ci runs this
+  action too.
+
   Requires actions/checkout to have run.
 
 runs:
   using: composite
   steps:
-    # Order matters: lambda-http declares lambda-auth as file:../lambda-auth
-    # and compiles against its dist.
+    # Order matters: rbac has no @branch deps, lambda-auth declares rbac, and
+    # lambda-http declares both -- each compiles against the previous dist.
     - name: Build shared packages
       shell: bash
       run: |
         set -euo pipefail
+        npm ci --prefix shared/rbac --no-audit --no-fund
+        npm run build --prefix shared/rbac
         npm ci --prefix shared/lambda-auth --no-audit --no-fund
         npm run build --prefix shared/lambda-auth
         npm ci --prefix shared/lambda-http --no-audit --no-fund

@@ -25,6 +25,25 @@ export async function getReceiptDownloadUrl(
   return authedFetch(`/expenditures/${id}/receipt`);
 }
 
+/** The subset of an expenditure its author may revise. PATCH /expenditures/{id}. */
+export interface ExpenditureEdit {
+  amount?: number;
+  category?: string;
+  description?: string;
+  spentOn?: string;
+}
+
+/**
+ * The submitter's own edit. `status` and `adminNotes` are rejected by this route
+ * on purpose -- they belong to `reviewExpenditure` below, which is admin-only.
+ */
+export async function updateExpenditure(id: number, patch: ExpenditureEdit): Promise<void> {
+  await authedFetch(`/expenditures/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
 export async function reviewExpenditure(
   id: number,
   status: ExpenditureStatus,

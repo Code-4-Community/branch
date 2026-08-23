@@ -23,14 +23,32 @@ export const routes: Route[] = [
 ];
 ```
 
-A handler receives `{ event, params, method, path }` and returns an
-`APIGatewayProxyResult`, normally via `json(status, body)`.
+A handler receives `{ event, params, method, path, auth }` and returns an
+`APIGatewayProxyResult`, normally via `json(status, body)`. `auth` carries the
+already-verified `AuthContext` and the `@branch/rbac` subject — a controller
+must not authenticate again.
+
+Every route declares its gate, and the `Route` union has no default arm, so
+omitting one is a compile error:
+
+```ts
+{ method: 'GET',  pattern: '/reports',      permission: 'reports:view', handler: listReports }
+{ method: 'GET',  pattern: '/projects/:id', access: 'authenticated',    handler: getProject }
+{ method: 'POST', pattern: '/auth/login',   access: 'public',           handler: login }
+```
+
+`permission` accepts only a `GlobalAction`. Record-scoped rules
+(`expense:update`, `project:view`) have nothing to evaluate against at the
+routing layer and are checked in the controller with `requirePermission` once
+the row is loaded.
 
 ## What dispatch handles centrally
 
 - **Both path shapes.** API Gateway's `{proxy+}` forwards the full path
   (`/projects/7`); the shared dev-server strips the first segment (`/7`).
   Paths are canonicalized to the prefixed form, so one table serves both.
+- **Authentication and the route's permission**, resolved once per request via
+  `resolveAuth`. A controller that runs has already cleared its route's gate.
 - OPTIONS preflight, `GET /<prefix>/health`, 404, and 500.
 - CORS headers on every response, via `json`.
 
@@ -38,19 +56,21 @@ A handler receives `{ event, params, method, path }` and returns an
 
 | Export | Purpose |
 | --- | --- |
-| `dispatch(event, { prefix, routes })` | Route an event; returns a response. |
+| `dispatch(event, { prefix, routes, resolveAuth })` | Route an event; returns a response. |
 | `json(status, body)` | JSON response with CORS headers. |
 | `parseBody(event)` | Parse a JSON body; `null` when malformed. |
-| `requireAuth(ctx, level, resourceUserId?)` | 401/403 response, or `undefined` when allowed. |
-| `createAuthGuard(authenticate)` | Bind a service's db-scoped `authenticateRequest` into an authenticate-and-authorize guard. |
+| `requirePermission(subject, action, resource?)` | 403 carrying the policy's own reason, or `undefined` when allowed. |
+| `createAuthResolver(authenticate, loadSubject)` | Bind a service's db-scoped auth into the `resolveAuth` dispatch expects. |
 | `matchPattern(pattern, path)` | Params on match, `null` otherwise. |
 
 ## Build
 
 Compiles to a gitignored `dist/` that lambdas consume as a `file:` dependency,
-and depends on `@branch/lambda-auth`'s own `dist/`, so build that one first:
+and depends on `@branch/rbac`'s and `@branch/lambda-auth`'s own `dist/`, so
+build those first (`.github/actions/build-shared-packages` does exactly this):
 
 ```bash
+npm ci --prefix shared/rbac && npm run build --prefix shared/rbac
 npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
 npm ci --prefix shared/lambda-http && npm run build --prefix shared/lambda-http
 npm test --prefix shared/lambda-http

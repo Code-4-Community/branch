@@ -10,14 +10,22 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 const mockAuthenticateRequest = jest.fn();
-const mockCanDeleteProject = jest.fn();
+// The subject dispatch will authorize against. `project:delete` is declared on
+// the route, so this object is the whole authorization decision for these
+// tests -- there is no canDeleteProject helper any more.
+const mockSubject = {
+  userId: 1,
+  isAdmin: true,
+  memberProjectIds: [] as number[],
+  directorProjectIds: [] as number[],
+};
 
 jest.mock('../auth', () => ({
   authenticateRequest: (...a: unknown[]) => mockAuthenticateRequest(...a),
-  canDeleteProject: (...a: unknown[]) => mockCanDeleteProject(...a),
-  canAccessProject: jest.fn(),
-  canCreateProject: jest.fn(),
-  canEditProject: jest.fn(),
+  resolveAuth: async (...a: unknown[]) => ({
+    context: await mockAuthenticateRequest(...a),
+    subject: mockSubject,
+  }),
 }));
 
 const mockDeleteExecute = jest.fn();
@@ -52,6 +60,7 @@ const staffContext = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSubject.isAdmin = true;
   mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 1n }]);
 });
 
@@ -67,29 +76,26 @@ describe('DELETE /projects/{id}', () => {
 
   test('403 for an authenticated non-admin, and nothing is deleted', async () => {
     mockAuthenticateRequest.mockResolvedValue(staffContext);
-    mockCanDeleteProject.mockResolvedValue(false);
+    mockSubject.isAdmin = false;
 
     const res = await handler(deleteEvent(4));
 
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Admin access required');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
     expect(mockDeleteExecute).not.toHaveBeenCalled();
   });
 
   test('200 for an admin', async () => {
     mockAuthenticateRequest.mockResolvedValue(adminContext);
-    mockCanDeleteProject.mockResolvedValue(true);
 
     const res = await handler(deleteEvent(4));
 
     expect(res.statusCode).toBe(200);
-    expect(mockCanDeleteProject).toHaveBeenCalledWith(1);
     expect(mockDeleteExecute).toHaveBeenCalled();
   });
 
   test('404 when an admin targets a project that does not exist', async () => {
     mockAuthenticateRequest.mockResolvedValue(adminContext);
-    mockCanDeleteProject.mockResolvedValue(true);
     mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 0n }]);
 
     const res = await handler(deleteEvent(999));
@@ -97,13 +103,25 @@ describe('DELETE /projects/{id}', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  test('400 for a non-numeric id, checked before any authorization work', async () => {
+  test('400 for a non-numeric id from an admin', async () => {
     mockAuthenticateRequest.mockResolvedValue(adminContext);
 
     const res = await handler(deleteEvent('abc'));
 
     expect(res.statusCode).toBe(400);
-    expect(mockCanDeleteProject).not.toHaveBeenCalled();
+    expect(mockDeleteExecute).not.toHaveBeenCalled();
+  });
+
+  // Authorization now runs in dispatch, before the controller sees the id, so a
+  // non-admin gets 403 rather than a 400 that would confirm the id is malformed
+  // — and either way nothing is deleted.
+  test('403, not 400, for a non-numeric id from a non-admin', async () => {
+    mockAuthenticateRequest.mockResolvedValue(staffContext);
+    mockSubject.isAdmin = false;
+
+    const res = await handler(deleteEvent('abc'));
+
+    expect(res.statusCode).toBe(403);
     expect(mockDeleteExecute).not.toHaveBeenCalled();
   });
 });

@@ -16,9 +16,8 @@ export interface AuthContext {
   isAuthenticated: boolean;
 }
 
-export type AccessLevel = 'PUBLIC' | 'AUTHENTICATED' | 'ADMIN' | 'SELF' | 'ADMIN_OR_SELF';
-
-export interface AuthorizationCheck {
-  allowed: boolean;
-  reason?: string;
-}
+// AccessLevel / AuthorizationCheck used to live here: a flat enum of PUBLIC,
+// AUTHENTICATED, ADMIN, SELF and ADMIN_OR_SELF. It could not express "admin or
+// director" or "the author, until it is approved", and the frontend could not
+// evaluate it at all. @branch/rbac replaced it; a second authorization
+// mechanism left exported here would only invite a rule to drift back into it.

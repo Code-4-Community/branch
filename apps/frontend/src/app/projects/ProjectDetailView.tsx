@@ -14,7 +14,7 @@ import StaffCard from '../components/StaffCard';
 import ProjectFormModal from '../components/ProjectFormModal';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { useApi } from '@/hooks/useApi';
-import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import { DEFAULT_LANDING_PATH } from '@/lib/routes';
 import type { ProjectOverview } from '@/types';
 
@@ -24,7 +24,7 @@ const PREVIEW_STAFF = 4;
 
 export default function ProjectDetailView({ id }: { id: string }) {
   const api = useApi();
-  const { isAdmin } = useAuth();
+  const { can } = usePermissions();
 
   const [overview, setOverview] = useState<ProjectOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +84,8 @@ export default function ProjectDetailView({ id }: { id: string }) {
     );
   if (!overview) return shell(<p>Project not found.</p>);
 
-  const { project, stats, members, expenditures, canEdit } = overview;
+  const { project, stats, members, expenditures } = overview;
+  const canEdit = can('project:update');
   const visibleStaff = showAllStaff ? members : members.slice(0, PREVIEW_STAFF);
   const visibleExpenses = showAllExpenses
     ? expenditures
@@ -105,9 +106,10 @@ export default function ProjectDetailView({ id }: { id: string }) {
                   Edit Project
                 </Button>
               )}
-              {/* Deleting a project is admin-only on the backend
-                  (`canDeleteProject`), which is narrower than `canEdit`. */}
-              {isAdmin && (
+              {/* Deleting a project cascades to its memberships, donations,
+                  expenditures and reports, so it is its own permission even
+                  though both currently resolve to admin. */}
+              {can('project:delete') && (
                 <Button
                   variant="danger"
                   icon={<LuTrash2 aria-hidden />}

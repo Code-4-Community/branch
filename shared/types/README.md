@@ -7,7 +7,7 @@ Shared type definitions for the Branch lambdas. This replaces the per-lambda cop
 | File | Contents |
 |------|----------|
 | `db-types.d.ts` | Kysely row types generated from `apps/backend/db/migrations/**` (`DB`, `BranchUsers`, `BranchProjects`, ...) |
-| `auth-types.d.ts` | Auth DTOs (`AuthenticatedUser`, `AuthContext`, `AccessLevel`, `AuthorizationCheck`) |
+| `auth-types.d.ts` | Auth DTOs (`AuthenticatedUser`, `AuthContext`). Authorization lives in `@branch/rbac`. |
 
 `auth-types.d.ts` is the **single declaration** of those DTOs. `@branch/lambda-auth` depends on this
 package and re-exports them from its own `src/types.ts`, so both packages always agree by

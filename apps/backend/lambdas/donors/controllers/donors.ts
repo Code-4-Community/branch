@@ -1,16 +1,13 @@
 import type { RouteCtx } from '@branch/lambda-http';
 import { json } from '@branch/lambda-http';
 import db from '../db';
-import { authenticateRequest } from '../auth';
 import { DonorValidationUtils } from '../validation-utils';
+
+// Authentication and the route's permission are enforced by dispatch before any
+// of these run — see routes.ts.
 
 // GET /donors
 export async function getDonors({ event }: RouteCtx) {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
-
   const queryParams = event.queryStringParameters || {};
   const pageStr = queryParams.page as string | undefined;
   const limitStr = queryParams.limit as string | undefined;
@@ -61,23 +58,8 @@ export async function getDonors({ event }: RouteCtx) {
 
 // POST /donors
 export async function createDonor({ event }: RouteCtx) {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
-
-  const { user } = authContext;
-
-  if (!user) {
-    return json(401, { message: 'Authentication required' });
-  }
-  if (!user.isAdmin) {
-    return json(403, { message: 'Only admins can create donors' });
-  }
-
   const body = event.body ? (JSON.parse(event.body) as Record<string, unknown>) : {};
 
-  // Validate input
   const validationResult = DonorValidationUtils.validateDonorInput(body);
   if (validationResult instanceof Error) {
     return json(400, { message: validationResult.message });
@@ -85,7 +67,6 @@ export async function createDonor({ event }: RouteCtx) {
 
   const { organization, contactName, contactEmail } = validationResult;
 
-  // Insert donor with authenticated user as entered_by
   try {
     await db
       .insertInto('branch.donors')
@@ -112,19 +93,10 @@ export async function createDonor({ event }: RouteCtx) {
 }
 
 // DELETE /donors/{id}
-export async function deleteDonor({ event, params }: RouteCtx) {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
-
+export async function deleteDonor({ params }: RouteCtx) {
   const id = params.id;
   if (!id || !/^\d+$/.test(id)) {
     return json(400, { message: 'id must be a positive integer' });
-  }
-
-  if (!authContext.user?.isAdmin) {
-    return json(403, { message: 'Only admins can delete donors' });
   }
 
   const deleted = await db.deleteFrom('branch.donors').where('donor_id', '=', Number(id)).execute();

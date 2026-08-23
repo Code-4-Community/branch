@@ -3,7 +3,28 @@ import { dispatch, json, type Route } from '@branch/lambda-http';
 
 // Mock the database module BEFORE importing handler
 jest.mock('../db');
-jest.mock('../auth');
+// Memberships the mocked session should appear to have. Named `mock*` so it can
+// be referenced from the jest.mock factory below.
+const mockMemberships: Array<{ project_id: number; role: string }> = [];
+
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. This suite mocks ../db, so
+  // the subject is assembled from the auth context and `mockMemberships`
+  // instead of being read from Postgres -- same buildSubject either way.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { buildSubject } = jest.requireActual<typeof import('@branch/rbac')>('@branch/rbac');
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(authenticateRequest as never, async (context) =>
+      buildSubject(context.user, mockMemberships),
+    ),
+  };
+});
 
 // The DELETE route calls AdminDeleteUser; never let a test reach a real pool.
 const mockSend = jest.fn();
@@ -18,40 +39,12 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 import { before } from 'node:test';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (requiredAccess === 'PUBLIC') {
-    return { allowed: true };
-  }
-  
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return { allowed: false, reason: 'Authentication required' };
-  }
-  
-  if (requiredAccess === 'ADMIN') {
-    const isAdmin = authContext.user.isAdmin ?? false;
-    return { 
-      allowed: isAdmin, 
-      reason: isAdmin ? undefined : 'Admin access required' 
-    };
-  }
-  
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { 
-      allowed, 
-      reason: allowed ? undefined : 'Admin access or resource ownership required' 
-    };
-  }
-  
-  return { allowed: false, reason: 'Unknown access level' };
-});
 
 
 // Helper function to create a POST event
@@ -558,9 +551,11 @@ describe('route precedence', () => {
     const literalHandler = jest.fn(async () => json(200, { matched: 'literal' }));
     const paramHandler = jest.fn(async () => json(200, { matched: 'param' }));
 
+    // `access: 'public'` keeps this about matching order: dispatch then skips
+    // authentication entirely, so no session has to be faked to observe it.
     const routes: Route[] = [
-      { method: 'GET', pattern: '/users/me', handler: literalHandler },
-      { method: 'GET', pattern: '/users/:userId', handler: paramHandler },
+      { method: 'GET', pattern: '/users/me', access: 'public', handler: literalHandler },
+      { method: 'GET', pattern: '/users/:userId', access: 'public', handler: paramHandler },
     ];
 
     const literalRes = await dispatch(

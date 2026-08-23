@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import RootPage from '@/app/page';
+import { adminSubject, memberSubject, session } from '../rbac';
 
 const mockReplace = jest.fn();
 
@@ -14,7 +15,9 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-let authState = { isAuthenticated: false, isAdmin: false, isLoading: false };
+// A mocked session must carry an RBAC subject: AuthGate asks the shared policy
+// now, and a subject-less session denies everything.
+let authState: ReturnType<typeof session> = session();
 
 jest.mock('../../src/context/AuthContext', () => ({
   ...jest.requireActual('../../src/context/AuthContext'),
@@ -30,14 +33,14 @@ beforeEach(() => {
   jest.clearAllMocks();
   sessionStorage.clear();
   setLocation('/');
-  authState = { isAuthenticated: false, isAdmin: false, isLoading: false };
+  authState = session();
 });
 
 describe('RootPage', () => {
   it('never renders the app shell', () => {
     // The reported bug: this page used to render <NavBar role="admin" />
     // unconditionally, so opening the site looked like being signed in.
-    authState = { isAuthenticated: false, isAdmin: false, isLoading: true };
+    authState = session({ isLoading: true });
     const { container } = render(<RootPage />);
 
     expect(container.querySelector('nav')).toBeNull();
@@ -50,7 +53,7 @@ describe('RootPage', () => {
   });
 
   it('sends an authenticated admin to /dashboard', async () => {
-    authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
+    authState = session({ subject: adminSubject() });
     render(<RootPage />);
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/dashboard'));
   });
@@ -58,13 +61,13 @@ describe('RootPage', () => {
   it('sends an authenticated non-admin somewhere they can load', async () => {
     // /dashboard is admin-only, so routing every session there would land a
     // non-admin on the no-access panel straight off the root route.
-    authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+    authState = session({ subject: memberSubject() });
     render(<RootPage />);
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/projects'));
   });
 
   it('waits for the session before routing', () => {
-    authState = { isAuthenticated: false, isAdmin: false, isLoading: true };
+    authState = session({ isLoading: true });
     render(<RootPage />);
 
     expect(mockReplace).not.toHaveBeenCalled();

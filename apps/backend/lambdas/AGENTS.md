@@ -53,22 +53,65 @@ export const getDonor: RouteHandler = async ({ params }) => {
 - `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health`, 404 and 500 centrally — routes.ts only lists real endpoints.
 - **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
 - Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
-- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requireAuth`, `createAuthGuard`, `matchPattern`).
+- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requirePermission`, `createAuthResolver`, `matchPattern`).
 
 ## Auth & authorization
 
-Generic logic lives in `@branch/lambda-auth`; each lambda's `auth.ts` binds it to the local `db`:
+**Every permission in the product is declared once, in `@branch/rbac`.** Read
+`shared/rbac/README.md` (it carries the role matrix) before adding a gate.
+Do not write a `canDoThing(userId, ...)` helper in a lambda — that pattern is
+what this replaced, and a local copy is a rule the frontend cannot see.
+
+Each lambda's `auth.ts` is now identical boilerplate binding the shared pieces to the local `db`:
 ```ts
-import { authenticateRequest as _authenticateRequest } from '@branch/lambda-auth';
+import { authenticateRequest as _authenticateRequest, loadRbacSubject } from '@branch/lambda-auth';
+import { createAuthResolver } from '@branch/lambda-http';
 import db from './db';
 export * from '@branch/lambda-auth';
 export async function authenticateRequest(event: any) {
   return _authenticateRequest(db, event);
 }
+export const resolveAuth = createAuthResolver(authenticateRequest, (ctx) => loadRbacSubject(db, ctx));
 ```
-- `authenticateRequest(event)` → `AuthContext` (`{ isAuthenticated, user? }`). Verifies the Cognito access token, looks the user up by `cognito_sub`, sets `isAdmin` (true if `is_admin` or in Cognito `Admins` group).
-- `checkAuthorization(ctx, level, resourceUserId?)` → `{ allowed, reason? }`. Levels: `PUBLIC`, `AUTHENTICATED`, `ADMIN`, `SELF`, `ADMIN_OR_SELF`. `@branch/lambda-http` wraps it as `requireAuth(ctx, level, resourceUserId?)` (401/403 response, or `undefined` when allowed) and `createAuthGuard(authenticateRequest)` (binds a service's `authenticateRequest` into a single authenticate-and-authorize call — see `users/controllers/users.ts`).
-- **Domain authz** stays local: e.g. `projects/auth.ts` adds `canAccessProject`, `canEditProject` (roles PI/Accountant/Admin), `canCreateProject` (admin only). Add new project/resource checks here, not in the shared package.
+
+`handler.ts` hands `resolveAuth` to `dispatch`, which calls it **once per request**.
+
+### Two layers, and which one to use
+
+1. **Route level** — declared in `routes.ts`, enforced by `dispatch` before the
+   controller runs. Use it whenever the decision needs nothing but the caller:
+
+   ```ts
+   { method: 'GET',  pattern: '/reports',      permission: 'reports:view', handler: listReports }
+   { method: 'GET',  pattern: '/projects/:id', access: 'authenticated',    handler: getProject }
+   { method: 'POST', pattern: '/auth/login',   access: 'public',           handler: login }
+   ```
+
+   `Route` is a union with no default arm, so **forgetting the gate is a type
+   error**. `permission` only accepts a `GlobalAction`; a record-scoped one would
+   have nothing to evaluate against here and is rejected by the compiler.
+
+2. **Record level** — inside the controller, once the row is loaded:
+
+   ```ts
+   const denied = requirePermission(auth.subject, 'expense:update', resourceOf(expenditure));
+   if (denied) return denied;
+   ```
+
+   The 403 body is the policy's own `reason`, which is the same string the
+   frontend puts in the disabled control's tooltip.
+
+Controllers read `ctx.auth.subject` and **must not re-authenticate** — dispatch
+already did, and a second call is a second round trip.
+
+### List scoping
+
+A non-admin must never receive a row they may not read, not even to filter it
+out afterwards. Use `projectScopeIds(subject)` from `@branch/rbac` and push it
+into the `where`; it returns `null` for an unrestricted caller and never an
+empty array (`IN ()` is a syntax error, and skipping the filter on empty turns
+"member of nothing" into "sees everything"). **Filter the pagination count with
+the same predicate** or the total leaks what the page does not.
 
 ## DB access
 

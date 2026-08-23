@@ -2,7 +2,28 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
-jest.mock('../auth');
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({
     send: jest.fn().mockReturnValue({} as any),

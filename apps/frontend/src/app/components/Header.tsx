@@ -3,6 +3,7 @@
 import React from 'react';
 import Image from "next/image";
 import { assetPath } from "@/lib/asset";
+import { isDirector } from "@branch/rbac";
 import { useAuth } from "@/context/AuthContext";
 
 interface HeaderProps {
@@ -23,7 +24,10 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   // Identity comes from GET /auth/me, not from decoding a token — isAdmin in
   // particular exists only in Postgres and is not a JWT claim.
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, subject } = useAuth();
+  // Purely a label. "Director" is not a column anywhere; it is what directing
+  // at least one project makes you, which is exactly how the policy reads it.
+  const roleLabel = isAdmin ? 'Admin' : isDirector(subject) ? 'Director' : null;
 
   // Padding utilities need the ! prefix here: Chakra's reset zeroes padding on
   // bare elements and outranks unprefixed Tailwind utilities.
@@ -47,12 +51,12 @@ const Header: React.FC<HeaderProps> = ({
               <span className="max-w-[22ch] truncate text-sm font-semibold text-core-black">{user.name}</span>
               <span className="max-w-[26ch] truncate text-xs text-gray-500">{user.email}</span>
             </div>
-            {isAdmin && (
+            {roleLabel && (
               <span
                 className="hidden shrink-0 rounded-full !px-2 !py-0.5 text-xs font-semibold sm:inline"
                 style={{ backgroundColor: '#e6f0e8', color: '#2E6038' }}
               >
-                Admin
+                {roleLabel}
               </span>
             )}
             <div

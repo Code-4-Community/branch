@@ -8,7 +8,6 @@ import {
 import { json, parseBody } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import db from '../db';
-import { authenticateRequest } from '../auth';
 import { cognitoClient } from '../services/cognito';
 
 /**
@@ -56,20 +55,21 @@ function mapMfaError(error: any): APIGatewayProxyResult {
  * POST /auth/mfa-verify using the *same* secret's current code, not a stale one
  * from an earlier call.
  */
-export const handleMfaSetup: RouteHandler = async ({ event }) => {
+export const handleMfaSetup: RouteHandler = async ({ event, auth }) => {
   const accessToken = getBearerAccessToken(event);
   if (!accessToken) {
     return json(401, { message: 'Authorization header is required' });
   }
 
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return json(401, { message: 'Authentication required' });
-  }
+  // The route is `access: 'authenticated'`, so dispatch has already verified
+  // the session -- this handler used to re-run authenticateRequest itself.
+  // `user` is always set alongside isAuthenticated; narrowed for the compiler.
+  const user = auth.context.user;
+  if (!user) return json(401, { message: 'Authentication required' });
 
   const me = await db
     .selectFrom('branch.users')
-    .where('cognito_sub', '=', authContext.user.cognitoSub)
+    .where('cognito_sub', '=', user.cognitoSub)
     .select(['email'])
     .executeTakeFirst();
 
@@ -83,7 +83,7 @@ export const handleMfaSetup: RouteHandler = async ({ event }) => {
       return json(500, { message: 'Failed to generate MFA secret' });
     }
 
-    const label = encodeURIComponent(`BRANCH:${me?.email ?? authContext.user.cognitoSub}`);
+    const label = encodeURIComponent(`BRANCH:${me?.email ?? user.cognitoSub}`);
     const otpauthUrl = `otpauth://totp/${label}?secret=${secretCode}&issuer=BRANCH`;
 
     return json(200, { secretCode, otpauthUrl });

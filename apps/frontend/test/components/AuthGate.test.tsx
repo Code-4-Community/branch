@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import AuthGate from '@/app/components/AuthGate';
+import { adminSubject, memberSubject, session } from '../rbac';
 
 // jest.setup.ts returns a fresh router spy on every call, so redirects need a
 // local mock with stable spies and a mutable pathname.
@@ -17,7 +18,9 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-let authState = { isAuthenticated: false, isAdmin: false, isLoading: false };
+// A mocked session must carry an RBAC subject: AuthGate asks the shared policy
+// now, and a subject-less session denies everything.
+let authState: ReturnType<typeof session> = session();
 
 jest.mock('../../src/context/AuthContext', () => ({
   ...jest.requireActual('../../src/context/AuthContext'),
@@ -35,7 +38,7 @@ function renderGate() {
 beforeEach(() => {
   jest.clearAllMocks();
   currentPath = '/projects';
-  authState = { isAuthenticated: false, isAdmin: false, isLoading: false };
+  authState = session();
 });
 
 describe('AuthGate', () => {
@@ -43,7 +46,7 @@ describe('AuthGate', () => {
     it('does not redirect', () => {
       // Regression guard: redirecting before rehydration would bounce a
       // returning user to /login during their own bootstrap.
-      authState = { isAuthenticated: false, isAdmin: false, isLoading: true };
+      authState = session({ isLoading: true });
       renderGate();
 
       expect(mockReplace).not.toHaveBeenCalled();
@@ -61,7 +64,7 @@ describe('AuthGate', () => {
 
     it('keeps the dashboard behind the admin flag', () => {
       currentPath = '/dashboard';
-      authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      authState = session({ subject: memberSubject() });
       renderGate();
 
       expect(screen.getByText(/don't have access to this page/i)).toBeInTheDocument();
@@ -77,7 +80,7 @@ describe('AuthGate', () => {
     });
 
     it('renders children for an authenticated user', () => {
-      authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      authState = session({ subject: memberSubject() });
       renderGate();
 
       expect(screen.getByTestId('protected-content')).toBeInTheDocument();
@@ -88,7 +91,7 @@ describe('AuthGate', () => {
   describe('public routes', () => {
     it('bounces an authenticated non-admin off /login to a page they can load', () => {
       currentPath = '/login';
-      authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      authState = session({ subject: memberSubject() });
       renderGate();
 
       expect(mockReplace).toHaveBeenCalledWith('/projects');
@@ -96,7 +99,7 @@ describe('AuthGate', () => {
 
     it('bounces an authenticated admin off /login to the dashboard', () => {
       currentPath = '/login';
-      authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
+      authState = session({ subject: adminSubject() });
       renderGate();
 
       expect(mockReplace).toHaveBeenCalledWith('/dashboard');
@@ -121,7 +124,7 @@ describe('AuthGate', () => {
   describe('admin routes', () => {
     it('shows a no-access panel to a non-admin instead of redirecting', () => {
       currentPath = '/reports';
-      authState = { isAuthenticated: true, isAdmin: false, isLoading: false };
+      authState = session({ subject: memberSubject() });
       renderGate();
 
       expect(screen.getByText(/don't have access to this page/i)).toBeInTheDocument();
@@ -132,7 +135,7 @@ describe('AuthGate', () => {
 
     it('renders children for an admin', () => {
       currentPath = '/reports';
-      authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
+      authState = session({ subject: adminSubject() });
       renderGate();
 
       expect(screen.getByTestId('protected-content')).toBeInTheDocument();
@@ -151,7 +154,7 @@ describe('AuthGate', () => {
     it('classifies production-style paths the same as dev ones', () => {
       // next.config.ts sets trailingSlash: true, so production emits "/login/".
       currentPath = '/login/';
-      authState = { isAuthenticated: true, isAdmin: true, isLoading: false };
+      authState = session({ subject: adminSubject() });
       renderGate();
 
       expect(mockReplace).toHaveBeenCalledWith('/dashboard');

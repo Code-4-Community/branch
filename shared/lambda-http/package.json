@@ -9,7 +9,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@branch/lambda-auth": "file:../lambda-auth"
+    "@branch/lambda-auth": "file:../lambda-auth",
+    "@branch/rbac": "file:../rbac"
   },
   "devDependencies": {
     "@jest/globals": "^30.2.0",

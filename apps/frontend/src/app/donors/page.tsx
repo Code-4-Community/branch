@@ -15,7 +15,8 @@ import RowDeleteButton from '../components/RowDeleteButton';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import Pagination from '../components/Pagination';
 import { useApi } from '@/hooks/useApi';
-import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
+import { GatedButton } from '../components/Permission';
 import { formatDateNumeric } from '@/lib/format';
 import type { Donation, Donor } from '@/types';
 
@@ -34,7 +35,8 @@ interface DonorRow extends Donor {
 
 export default function DonorsPage() {
   const api = useApi();
-  const { isAdmin } = useAuth();
+  const { can } = usePermissions();
+  const canEditDonors = can('donors:create');
 
   const [donors, setDonors] = useState<Donor[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
@@ -155,7 +157,7 @@ export default function DonorsPage() {
     {
       key: 'organization',
       header: 'Donor Name',
-      width: isAdmin ? '47%' : '55%',
+      width: canEditDonors ? '47%' : '55%',
       cell: (donor) => donor.organization,
     },
     {
@@ -172,8 +174,9 @@ export default function DonorsPage() {
       cell: (donor) => formatDateNumeric(donor.last_donation) || '—',
       skeleton: { width: '70%' },
     },
-    // Deleting a donor is admin-only on the backend (`donors/handler.ts`).
-    ...(isAdmin
+    // Deleting a donor is admin-only, and a director reading this page is not
+    // one — the whole column goes rather than a row of dead buttons.
+    ...(can('donors:delete')
       ? [
           {
             key: 'actions',
@@ -298,9 +301,13 @@ export default function DonorsPage() {
                   </div>
                 )}
               </div>
-              <Button icon={<FaPlus aria-hidden />} onClick={() => setShowNewDonor(true)}>
+              <GatedButton
+                action="donors:create"
+                icon={<FaPlus aria-hidden />}
+                onClick={() => setShowNewDonor(true)}
+              >
                 New Donor
-              </Button>
+              </GatedButton>
             </HStack>
           </HStack>
 

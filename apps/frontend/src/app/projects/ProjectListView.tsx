@@ -9,7 +9,7 @@ import ProjectCard from '../components/ProjectCard';
 import Button from '../components/Button';
 import LoadingState from '../components/LoadingState';
 import ProjectFormModal from '../components/ProjectFormModal';
-import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useApi } from '@/hooks/useApi';
 import { formatDateLong } from '@/lib/format';
 import { projectPath } from '@/lib/routes';
@@ -22,7 +22,7 @@ import type { ProjectSummary } from '@/types';
  */
 export default function ProjectListView() {
   const api = useApi();
-  const { isAdmin } = useAuth();
+  const { can } = usePermissions();
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export default function ProjectListView() {
                     heading row rather than a separate page title, as designed. */}
                 <div className="flex flex-wrap items-center justify-between !gap-4">
                   <h1>Active Projects</h1>
-                  {isAdmin && (
+                  {can('project:create') && (
                     <Button icon={<LuPlus aria-hidden />} onClick={() => setFormOpen(true)}>
                       Add New Project
                     </Button>

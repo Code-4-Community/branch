@@ -14,8 +14,10 @@ import { projectPath } from '@/lib/routes';
 import type { DashboardResponse } from '@/types/dashboard';
 
 /**
- * Admin-only overview of spend and projects. Gated twice: `/dashboard` is in
- * `ADMIN_PREFIXES`, and `GET /projects/dashboard` checks isAdmin server side.
+ * Admin-only overview of spend and projects. Gated twice from one rule:
+ * `PAGE_PERMISSIONS` maps `/dashboard` to `dashboard:view` for AuthGate, and
+ * the same permission is declared on `GET /projects/dashboard` in the lambda's
+ * route table.
  */
 
 /** How many project cards the design shows before "View All". */
