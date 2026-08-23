@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { LuPlus } from 'react-icons/lu';
 import NavBar from '../components/Navbar';
@@ -10,7 +11,7 @@ import Button from '../components/Button';
 import LoadingState from '../components/LoadingState';
 import ProjectFormModal from '../components/ProjectFormModal';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useApi } from '@/hooks/useApi';
+import { projectsQuery } from '@/lib/queries';
 import { formatDateLong } from '@/lib/format';
 import { projectPath } from '@/lib/routes';
 import type { ProjectSummary } from '@/types';
@@ -21,29 +22,28 @@ import type { ProjectSummary } from '@/types';
  * is computed server-side and arrives as `is_active`.
  */
 export default function ProjectListView() {
-  const api = useApi();
   const { can } = usePermissions();
+  const queryClient = useQueryClient();
 
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setFormOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setError(null);
-      const rows = await api.get<ProjectSummary[]>('/projects');
-      setProjects(Array.isArray(rows) ? rows : []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load projects');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [api]);
+  // Shares `['projects']` with the navbar's flyout, the donations, expenses and
+  // reports pages, and with RoutePrefetcher — which has usually already filled
+  // this in while /auth/me was still in flight.
+  const {
+    data: projects = [],
+    error: loadError,
+    isPending: isLoading,
+  } = useQuery(projectsQuery());
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const error = loadError
+    ? loadError instanceof Error
+      ? loadError.message
+      : 'Could not load projects'
+    : null;
+
+  const reload = () =>
+    void queryClient.invalidateQueries({ queryKey: projectsQuery().queryKey });
 
   const { active, archived } = useMemo(
     () => ({
@@ -136,7 +136,7 @@ export default function ProjectListView() {
       <ProjectFormModal
         open={isFormOpen}
         onClose={() => setFormOpen(false)}
-        onSaved={() => void load()}
+        onSaved={reload}
       />
     </div>
   );

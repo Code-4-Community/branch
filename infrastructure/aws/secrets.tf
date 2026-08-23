@@ -18,6 +18,12 @@ data "infisical_secrets" "sentry_folder" {
   folder_path  = "/sentry"
 }
 
+data "infisical_secrets" "grafana_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/grafana"
+}
+
 data "infisical_secrets" "github_folder" {
   env_slug     = "dev"
   workspace_id = var.infisical_workspace_id

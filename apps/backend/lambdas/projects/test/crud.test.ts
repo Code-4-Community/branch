@@ -97,6 +97,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
+  await db.destroy();
 });
 
 test("health test 🌞", async () => {
