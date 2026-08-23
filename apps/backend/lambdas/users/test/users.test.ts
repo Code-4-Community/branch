@@ -14,6 +14,7 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
+import db from '../db';
 import { handler } from '../handler';
 import { authenticateRequest } from '../auth';
 
@@ -92,7 +93,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await db.destroy();
 });
 
 

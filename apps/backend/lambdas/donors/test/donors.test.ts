@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 import { handler } from '../handler';
+import db from '../db';
 jest.mock('../auth', () => {
   // dispatch() resolves the caller through resolveAuth, so an auto-mock would
   // hand it `undefined` and every route would 500. Only the authenticate half
@@ -658,6 +659,7 @@ describe("Donor API when DB is empty", () => {
 
 afterAll(async () => {
   await pool.end();
+  await db.destroy();
 });
 
 
