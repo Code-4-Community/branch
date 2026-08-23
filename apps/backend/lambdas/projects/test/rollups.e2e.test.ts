@@ -257,6 +257,33 @@ describe('expenditure_rollup trigger', () => {
     expect(body.summary.totalSpent).toBe(250);
   });
 
+  test('one statement updating many rows moves every one of them', async () => {
+    await client.query(`
+      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
+      VALUES (1, 1, 10, 'Travel',    'pending', CURRENT_DATE),
+             (1, 1, 20, 'Equipment', 'pending', CURRENT_DATE),
+             (2, 1, 30, 'Travel',    'pending', CURRENT_DATE)
+    `);
+    await auditRollups(client);
+
+    await client.query(`UPDATE branch.expenditures SET status = 'approved'`);
+    await auditRollups(client);
+
+    expect((await get('/dashboard')).summary.totalSpent).toBe(60);
+  });
+
+  test('TRUNCATE clears the rollup even though it fires no row triggers', async () => {
+    await client.query(`
+      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
+      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE)
+    `);
+    await client.query('TRUNCATE branch.expenditures');
+    await auditRollups(client);
+
+    expect(await bucketsFor(1)).toBe(0);
+    expect((await get('/dashboard')).summary.totalSpent).toBe(0);
+  });
+
   test('deleting a project cascades without orphaning or resurrecting a bucket', async () => {
     // Cascade order is undefined, so the decrement must tolerate a bucket
     // that is already gone rather than re-inserting it.
@@ -326,6 +353,50 @@ describe('project_rollup trigger', () => {
 
     const projects = await get('/');
     expect(projects.find((p: any) => p.project_id === 1).member_count).toBe(2);
+  });
+
+  test('moving a donation between projects debits one and credits the other', async () => {
+    await client.query(`
+      INSERT INTO branch.project_donations (donor_id, project_id, amount) VALUES (1, 1, 500)
+    `);
+    await client.query(`UPDATE branch.project_donations SET project_id = 2 WHERE project_id = 1`);
+    await auditRollups(client);
+
+    expect((await get('/1/overview')).stats.totalDonated).toBe(0);
+    expect((await get('/2/overview')).stats.totalDonated).toBe(500);
+  });
+
+  test('moving a membership between projects debits one and credits the other', async () => {
+    await client.query(`DELETE FROM branch.project_memberships`);
+    await client.query(`
+      INSERT INTO branch.project_memberships (project_id, user_id, role) VALUES (1, 1, 'Student')
+    `);
+    await client.query(`
+      UPDATE branch.project_memberships SET project_id = 2 WHERE project_id = 1 AND user_id = 1
+    `);
+    await auditRollups(client);
+
+    const projects = await get('/');
+    expect(projects.find((p: any) => p.project_id === 1).member_count).toBe(0);
+    expect(projects.find((p: any) => p.project_id === 2).member_count).toBe(1);
+  });
+
+  test('TRUNCATE of donations, memberships and reports zeroes their counters', async () => {
+    await client.query(`
+      INSERT INTO branch.project_donations (donor_id, project_id, amount) VALUES (1, 1, 500)
+    `);
+    await client.query(`
+      INSERT INTO branch.reports (project_id, title, object_url, report_type)
+      VALUES (1, 'a', 's3://a', 'technical')
+    `);
+    await client.query('TRUNCATE branch.project_donations, branch.project_memberships, branch.reports');
+    await auditRollups(client);
+
+    const { rows } = await client.query('SELECT * FROM branch.project_rollup WHERE project_id = 1');
+    expect(rows[0].member_count).toBe(0);
+    expect(rows[0].donation_count).toBe(0);
+    expect(rows[0].report_count).toBe(0);
+    expect(Number(rows[0].total_donated)).toBe(0);
   });
 
   test('reports move report_count', async () => {

@@ -169,6 +169,53 @@ BEGIN
 END;
 $$;
 
+-- TRUNCATE does not fire row triggers, so without these it would leave the
+-- rollups holding totals for rows that no longer exist.
+CREATE FUNCTION branch.expenditures_rollup_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM branch.expenditure_rollup;
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION branch.donations_rollup_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE branch.project_rollup
+       SET total_donated = 0, donation_count = 0, updated_at = CURRENT_TIMESTAMP;
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION branch.memberships_rollup_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE branch.project_rollup SET member_count = 0, updated_at = CURRENT_TIMESTAMP;
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION branch.reports_rollup_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE branch.project_rollup SET report_count = 0, updated_at = CURRENT_TIMESTAMP;
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER expenditures_rollup_truncate
+    AFTER TRUNCATE ON expenditures
+    FOR EACH STATEMENT EXECUTE FUNCTION branch.expenditures_rollup_truncate();
+
+CREATE TRIGGER donations_rollup_truncate
+    AFTER TRUNCATE ON project_donations
+    FOR EACH STATEMENT EXECUTE FUNCTION branch.donations_rollup_truncate();
+
+CREATE TRIGGER memberships_rollup_truncate
+    AFTER TRUNCATE ON project_memberships
+    FOR EACH STATEMENT EXECUTE FUNCTION branch.memberships_rollup_truncate();
+
+CREATE TRIGGER reports_rollup_truncate
+    AFTER TRUNCATE ON reports
+    FOR EACH STATEMENT EXECUTE FUNCTION branch.reports_rollup_truncate();
+
 CREATE TRIGGER projects_rollup_seed
     AFTER INSERT ON projects
     FOR EACH ROW EXECUTE FUNCTION branch.projects_rollup_seed();
