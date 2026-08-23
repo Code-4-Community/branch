@@ -19,6 +19,7 @@
 
 | Name | Source | Version |
 |------|--------|---------|
+| <a name="module_sentry"></a> [sentry](#module\_sentry) | ../modules/sentry | n/a |
 | <a name="module_tags"></a> [tags](#module\_tags) | ../modules/tags | n/a |
 
 ## Resources
@@ -79,6 +80,7 @@
 | [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
 | [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
+| [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
 
 ## Inputs
 
