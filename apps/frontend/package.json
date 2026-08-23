@@ -16,6 +16,7 @@
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@tanstack/react-query": "^5.102.1",
     "next": "15.5.4",
     "qrcode": "^1.5.4",
     "react": "19.1.0",

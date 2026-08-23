@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { STORAGE_KEYS } from '@/lib/authTokens';
 import { __resetRefreshStateForTests, onSessionExpired } from '@/lib/authClient';
+import { TestQueryProvider } from '../utils';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,7 +67,9 @@ function seedTokens(access = TOKENS.AccessToken) {
 }
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <AuthProvider>{children}</AuthProvider>
+  <TestQueryProvider>
+    <AuthProvider>{children}</AuthProvider>
+  </TestQueryProvider>
 );
 
 async function renderAuth() {
