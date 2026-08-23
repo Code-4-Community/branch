@@ -75,7 +75,7 @@ paths:
         '404':
           description: User not found
     patch:
-      summary: PATCH /{userId}
+      summary: PATCH /users/{userId}
       parameters:
         - in: path
           name: userId
