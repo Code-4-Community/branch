@@ -113,3 +113,45 @@ paths:
       responses:
         '200':
           description: OK
+  /{userId}/photo-upload-url:
+    get:
+      summary: GET /users/{userId}/photo-upload-url
+      description: >-
+        Presigned PUT for a profile photo. The browser uploads straight to S3 and
+        then PATCHes the returned `key` as `profileImage`, so the image bytes
+        never pass through the lambda. Admin or self only.
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: fileName
+          required: true
+          description: Only the extension is used; png, jpg, jpeg and webp are accepted.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: Presigned PUT URL, valid for one hour.
+                  key:
+                    type: string
+                    description: Store this via PATCH /users/{userId} as profileImage.
+                  contentType:
+                    type: string
+                    description: Must be sent as the Content-Type of the PUT.
+        '400':
+          description: Missing fileName, or an unsupported image type
+        '401':
+          description: Authentication required
+        '403':
+          description: Not permitted to set this user's photo

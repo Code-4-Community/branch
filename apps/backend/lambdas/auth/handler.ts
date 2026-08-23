@@ -29,6 +29,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { authenticateRequest } from './auth';
 import db from './db';
+import { resolveProfileImage } from './photos';
 
 // Initialize Cognito client (region defaults to us-east-2)
 const cognitoClient = new CognitoIdentityProviderClient({
@@ -640,7 +641,7 @@ async function handleMe(event: any): Promise<APIGatewayProxyResult> {
     email: me.email,
     name: me.name,
     isAdmin: me.is_admin === true,
-    profileImage: me.profile_image,
+    profileImage: await resolveProfileImage(me.profile_image),
   });
 }
 

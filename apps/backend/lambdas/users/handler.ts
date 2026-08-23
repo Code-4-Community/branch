@@ -7,6 +7,14 @@ import {
 import db from './db'
 import { authenticateRequest, checkAuthorization, AuthContext } from './auth';
 import { UserValidationUtils } from './validation-utils';
+import {
+  AVATAR_EXTENSIONS,
+  avatarContentType,
+  avatarKey,
+  isAvatarKeyFor,
+  presignAvatarUpload,
+  resolveProfileImage,
+} from './photos';
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || 'us-east-2',
@@ -21,6 +29,21 @@ function requireAuth(authContext: AuthContext, level: Parameters<typeof checkAut
       ? json(403, { message: authCheck.reason || 'Forbidden' })
       : json(401, { message: 'Authentication required' });
   }
+}
+
+/**
+ * Swaps each row's stored `profile_image` for a presigned URL. The bucket
+ * blocks public access, so the key on its own will not load in an `<img>`.
+ */
+async function withResolvedPhotos<T extends { profile_image?: string | null }>(
+  rows: T[],
+): Promise<T[]> {
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      profile_image: await resolveProfileImage(row.profile_image),
+    })),
+  );
 }
 
 
@@ -85,7 +108,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
                 .offset(offset)
                 .execute();
             return json(200, {
-                users,
+                users: await withResolvedPhotos(users),
                 pagination: {
                     page,
                     limit,
@@ -100,7 +123,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
             .selectAll()
             .execute();
 
-      return json(200, { users });
+      return json(200, { users: await withResolvedPhotos(users) });
     } 
 
     // GET /{userId}
@@ -114,17 +137,56 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
       if (!user) return json(404, { message: 'User not found' });
       
-      return json(200, { 
-        ok: true, 
-        route: 'GET /users/{userId}', 
-        pathParams: { userId }, 
-        body: { 
+      return json(200, {
+        ok: true,
+        route: 'GET /users/{userId}',
+        pathParams: { userId },
+        body: {
           userId: user.user_id,
-          email: user.email, 
-          name: user.name, 
+          email: user.email,
+          name: user.name,
           isAdmin: user.is_admin,
-          profile_image: user.profile_image,
-        } 
+          profile_image: await resolveProfileImage(user.profile_image),
+          created_at: user.created_at,
+        }
+      });
+    }
+
+    // GET /{userId}/photo-upload-url — presigned PUT so the browser uploads the
+    // photo straight to S3, then PATCHes the returned key onto the user. The
+    // lambda never receives the image bytes, which keeps it under the API
+    // Gateway payload limit.
+    const photoUrlSegments = normalizedPath.split('/').filter(Boolean);
+    if (
+      photoUrlSegments.length === 2 &&
+      photoUrlSegments[1] === 'photo-upload-url' &&
+      method === 'GET'
+    ) {
+      const userId = photoUrlSegments[0];
+      const authError = requireAuth(authContext, 'ADMIN_OR_SELF', userId);
+      if (authError) return authError;
+
+      if (!/^\d+$/.test(userId)) {
+        return json(400, { message: 'userId must be a positive integer' });
+      }
+
+      const fileName = (event.queryStringParameters || {}).fileName;
+      if (!fileName || typeof fileName !== 'string') {
+        return json(400, { message: 'fileName is required' });
+      }
+
+      const contentType = avatarContentType(fileName);
+      if (!contentType) {
+        return json(400, {
+          message: `Unsupported image type, expected one of: ${AVATAR_EXTENSIONS.join(', ')}`,
+        });
+      }
+
+      const key = avatarKey(Number(userId), fileName);
+      return json(200, {
+        uploadUrl: await presignAvatarUpload(key, contentType),
+        key,
+        contentType,
       });
     }
     
@@ -168,7 +230,19 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
 
       const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
       if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
-      if (profileImageResult.value != null) updates.profile_image = profileImageResult.value;
+      if (profileImageResult.value != null) {
+        // Two shapes are legitimate: a key this service minted for *this* user,
+        // or an absolute URL (how the column was populated before uploads
+        // existed). Anything else is refused rather than stored -- a photo key
+        // is presigned on the way out, so accepting an arbitrary key would make
+        // PATCH a way to obtain a readable URL for another user's object, and
+        // storing unreadable junk in the column has no upside either.
+        const isAbsoluteUrl = /^https?:\/\//.test(profileImageResult.value);
+        if (!isAbsoluteUrl && !isAvatarKeyFor(profileImageResult.value, Number(userId))) {
+          return json(400, { message: 'profileImage is not a photo key for this user' });
+        }
+        updates.profile_image = profileImageResult.value;
+      }
 
       if (Object.keys(updates).length === 0) {
         return json(400, { message: 'No valid fields provided to update' });
@@ -183,7 +257,7 @@ export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
       // get updated user
       let updatedUser = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
 
-      return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin, profileImage: updatedUser!.profile_image } });
+      return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin, profileImage: await resolveProfileImage(updatedUser!.profile_image), created_at: updatedUser!.created_at } });
     }
     
     // DELETE /users/{userId}
