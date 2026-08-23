@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&family=Roboto+Slab:wght@400;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -38,9 +37,9 @@
     /* Status pills */
     --color-status-pending: #FFD167;
 
-  /* Font Families */
-    --font-heading: 'Roboto Slab', serif;
-    --font-body: 'PT Sans', sans-serif;
+  /* Font Families — the --font-*-slab/-sans vars come from next/font in layout.tsx */
+    --font-heading: var(--font-roboto-slab), serif;
+    --font-body: var(--font-pt-sans), sans-serif;
   
     /* Font Sizes */
     --font-size-heading-1: 36px;
