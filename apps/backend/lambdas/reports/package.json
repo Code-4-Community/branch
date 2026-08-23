@@ -8,7 +8,7 @@
     "build": "tsc",
     "test": "jest --forceExit",
     "test:e2e": "start-server-and-test dev http-get://localhost:3000/reports/health 'jest --testMatch=\"**/*.e2e.test.ts\" --forceExit'",
-    "package": "esbuild handler.ts --bundle --platform=node --target=node20 --outfile=dist/handler.js && mkdir -p dist/fonts/Roboto && cp node_modules/pdfmake/build/fonts/Roboto/*.ttf dist/fonts/Roboto/ && cd dist && zip -qr ../lambda.zip handler.js fonts"
+    "package": "esbuild handler.ts --bundle --platform=node --target=node20 --minify '--external:@aws-sdk/*' --outfile=dist/handler.js && mkdir -p dist/fonts/Roboto && cp node_modules/pdfmake/build/fonts/Roboto/*.ttf dist/fonts/Roboto/ && cd dist && zip -qr ../lambda.zip handler.js fonts"
   },
   "devDependencies": {
     "@branch/types": "file:../../../../shared/types",
