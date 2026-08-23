@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, parseBody } from '@branch/lambda-http';
 import { authenticateRequest } from '../auth';
+import { loadRbacSubject } from '@branch/lambda-auth';
 import db from '../db';
 import {
   cognitoClient,
@@ -212,6 +213,12 @@ export async function handleMe(event: any): Promise<APIGatewayProxyResult> {
     return json(401, { message: 'Authentication required' });
   }
 
+  // The RBAC subject travels with identity so the browser evaluates the same
+  // policy against the same facts the lambdas used. Without it the frontend
+  // would have to re-derive "is a director" and "which projects am I on" from
+  // separate endpoints, which is exactly the drift @branch/rbac exists to stop.
+  const rbac = await loadRbacSubject(db, authContext);
+
   return json(200, {
     userId: me.user_id,
     cognitoSub: me.cognito_sub,
@@ -219,6 +226,7 @@ export async function handleMe(event: any): Promise<APIGatewayProxyResult> {
     name: me.name,
     isAdmin: me.is_admin === true,
     profileImage: me.profile_image,
+    rbac,
   });
 }
 

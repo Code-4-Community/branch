@@ -2,10 +2,28 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
-jest.mock('../auth', () => ({
-  ...jest.requireActual<typeof import('../auth')>('../auth'),
-  authenticateRequest: jest.fn(),
-}));
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 import { handler } from '../handler';
 import db from '../db';
@@ -133,14 +151,14 @@ describe('Authorization', () => {
     mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
     const res = await handler(postEvent({ name: 'Nope' }));
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Admin access required');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('403: non-member cannot read a project', async () => {
     mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
     const res = await handler(getEvent('/projects/1'));
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('You do not have access to this project');
+    expect(JSON.parse(res.body).message).toBe('You are not a member of this project');
   });
 
   test('200: admin lists every project', async () => {
@@ -170,7 +188,7 @@ describe('Authorization', () => {
     mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
     const res = await handler(putEvent('/projects/1', { name: 'X' }));
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('You do not have access to edit this project');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('200: Director member can read their project', async () => {
@@ -180,11 +198,13 @@ describe('Authorization', () => {
     expect(JSON.parse(res.body).project_id).toBe(1);
   });
 
-  test('200: Director member can edit their project', async () => {
+  // Directors lost project editing: `project:update` is admin-only. They keep
+  // read access to the projects they are on, which the test above covers.
+  test('403: Director member can no longer edit their project', async () => {
     mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
     const res = await handler(putEvent('/projects/1', { name: 'Renamed by Director' }));
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).name).toBe('Renamed by Director');
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('403: Director member cannot edit a project they do not belong to', async () => {
@@ -348,7 +368,7 @@ describe('GET /dashboard (e2e)', () => {
     mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult);
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Admin access required');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('summary aggregates seed totals 🌞', async () => {

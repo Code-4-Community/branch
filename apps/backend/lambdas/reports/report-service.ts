@@ -123,30 +123,10 @@ export interface ReportData {
   }>;
 }
 
-export async function checkProjectAccess(
-  userId: number,
-  projectId: number,
-  isAdmin: boolean,
-): Promise<boolean> {
-  const projectExists = await db
-    .selectFrom('branch.projects')
-    .where('project_id', '=', projectId)
-    .select('project_id')
-    .executeTakeFirst();
-
-  if (!projectExists) return false;
-
-  if (isAdmin) return true;
-
-  const membership = await db
-    .selectFrom('branch.project_memberships')
-    .where('project_id', '=', projectId)
-    .where('user_id', '=', userId)
-    .select('role')
-    .executeTakeFirst();
-
-  return !!membership;
-}
+// checkProjectAccess used to live here. Reports became admin-only, so every
+// route in this service carries a `reports:*` permission that dispatch enforces
+// and there is no membership case left to check. Project-scoped access rules
+// belong in @branch/rbac now, not in a service module.
 
 export async function fetchReportData(projectId: number): Promise<ReportData | null> {
   const project = await db

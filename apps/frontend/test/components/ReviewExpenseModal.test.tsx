@@ -5,8 +5,11 @@ import {
   getReceiptDownloadUrl,
   reviewExpenditure,
 } from '@/lib/expenditures';
+import { adminSubject, memberSubject, session } from '../rbac';
 
-let authState = { isAdmin: false };
+// The dialog asks the shared policy whether the caller may review, so the
+// mocked session has to carry a subject; `isAdmin` alone denies everything.
+let authState = session({ subject: memberSubject() });
 
 jest.mock('../../src/context/AuthContext', () => ({
   ...jest.requireActual('../../src/context/AuthContext'),
@@ -44,7 +47,7 @@ const baseProps = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  authState = { isAdmin: false };
+  authState = session({ subject: memberSubject() });
   (getExpenditure as jest.Mock).mockResolvedValue(detail);
 });
 
@@ -80,7 +83,7 @@ describe('ReviewExpenseModal', () => {
 
   describe('admin', () => {
     beforeEach(() => {
-      authState = { isAdmin: true };
+      authState = session({ subject: adminSubject() });
     });
 
     it('shows the three decision pills, admin notes, and save button', async () => {

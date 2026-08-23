@@ -64,7 +64,22 @@ Import direction is one-way and must stay that way: `api.ts` ← `authClient.ts`
 
 **Refresh.** Access tokens last one hour. `AuthProvider` schedules a refresh ~2 minutes before expiry, and `authedFetch` refreshes reactively on a 401. Refresh is single-flight, so a burst of concurrent 401s produces one `POST /auth/refresh`. Cognito does not re-issue a refresh token, so `saveTokens` leaves the stored one alone when the response omits it.
 
-**Guarding.** `src/app/components/AuthGate.tsx`, mounted once in `providers.tsx`, is the app's only route guard — static export means `middleware.ts` would never run. `src/lib/routes.ts` classifies routes and is **protected-by-default**: a new page under `src/app/` is guarded without opting in. Public routes are `/login`, `/forgot-password`, `/reset-password` (authenticated users get bounced off them); `/expenses`, `/reports` and `/accounts` additionally require `isAdmin`. Always compare paths through `normalizePath` — `trailingSlash: true` means production sees `/login/` where dev and tests see `/login`.
+**Guarding.** `src/app/components/AuthGate.tsx`, mounted once in `providers.tsx`, is the app's only route guard — static export means `middleware.ts` would never run. `src/lib/routes.ts` classifies routes and is **protected-by-default**: a new page under `src/app/` is guarded without opting in. Public routes are `/login`, `/forgot-password`, `/reset-password` (authenticated users get bounced off them). Which permission a page needs comes from `PAGE_PERMISSIONS` in `@branch/rbac`, so AuthGate, the Navbar and the lambdas all read one table. Always compare paths through `normalizePath` — `trailingSlash: true` means production sees `/login/` where dev and tests see `/login`.
+
+## Permissions
+
+**`@branch/rbac` is the only place a permission is defined, and the backend runs the same module.** `GET /auth/me` returns an `rbac` subject (`{ userId, isAdmin, memberProjectIds, directorProjectIds }`) that `AuthProvider` exposes; `usePermissions()` evaluates the shared policy against it. See `shared/rbac/README.md` for the role matrix.
+
+Two components express it, and they are the only two:
+
+- **`<Can action="…">`** — hides what the user may not see.
+- **`<GatedButton action="…">`** — disables what they may not do, with the policy's own denial message as the tooltip. That string is word-for-word the 403 body the API would have returned.
+
+Both live in `src/app/components/Permission.tsx`. Record-scoped actions take a `resource` prop and the type system requires it.
+
+**Never gate on `isAdmin` in a component.** It cannot express "admin or director" (the Donors page) or "the author, unless it is already approved" (an expense), and a second copy of a rule is one that drifts from the API. `isAdmin` remains only for the role badge in `Header`.
+
+Tests: `test/rbac.ts` has `adminSubject` / `directorSubject` / `memberSubject` and a `session()` builder. The shared `render` from `test/utils.tsx` signs in as an admin by default — pass `{ subject }` to render as someone else, or `renderWithLiveAuth` for the handful of tests that exercise `AuthProvider` itself.
 
 **Challenges.** `login()` returns `{ status: 'authenticated' }` or `{ status: 'challenge', ... }`. `NEW_PASSWORD_REQUIRED` is handled by the login page; the other challenge names are plumbed through `respondToChallenge` and become reachable if MFA is switched on in `infrastructure/aws/cognito.tf`, needing only a UI step.
 
@@ -99,7 +114,7 @@ Gate the affordance on the same rule the backend enforces, not a looser one — 
 ## Conventions
 
 - Page/interactive components start with `'use client'`.
-- Types are currently defined **inline** per file (`Expenditure`, `Project`, `User`). `@branch/types` is **not** consumed by the frontend yet — don't assume shared types here.
+- Types are currently defined **inline** per file (`Expenditure`, `Project`, `User`). `@branch/types` is **not** consumed by the frontend — but `@branch/rbac` **is**, as a `file:` dependency, and its gitignored `dist/` must be built before `npm ci` resolves it (frontend-ci runs `.github/actions/build-shared-packages` first).
 - Filters synced to the URL via `useQueryParams<T>(defaults)` (uses `router.replace`, supports comma-separated array values).
 
 ## Testing

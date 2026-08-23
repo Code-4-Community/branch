@@ -1,9 +1,10 @@
-import { Insertable } from 'kysely';
+import { Insertable, Updateable } from 'kysely';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { DB } from '@branch/types';
 import db from '../db';
 import type { ExpenditureStatus } from '../validation-utils';
+import { applyExpenditureScope, type ExpenditureScope } from './scope';
 
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
@@ -47,24 +48,24 @@ export async function deleteReceiptObject(receiptUrl: string | null): Promise<bo
   }
 }
 
-export async function countExpenditures(projectId: number | null): Promise<number> {
-  const totalCount = projectId !== null
-    ? await db.selectFrom('branch.expenditures').where('project_id', '=', projectId).select(db.fn.count('expenditure_id').as('count')).executeTakeFirst()
-    : await db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count')).executeTakeFirst();
+export async function countExpenditures(projectId: number | null, scope: ExpenditureScope): Promise<number> {
+  let query = db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count'));
+  if (projectId !== null) query = query.where('project_id', '=', projectId);
+  const totalCount = await applyExpenditureScope(query, scope).executeTakeFirst();
 
   return Number(totalCount?.count || 0);
 }
 
-export async function queryExpenditures(projectId: number | null, page?: { limit: number; offset: number }) {
-  if (page) {
-    return projectId !== null
-      ? db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').limit(page.limit).offset(page.offset).execute()
-      : db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').limit(page.limit).offset(page.offset).execute();
-  }
+export async function queryExpenditures(
+  projectId: number | null,
+  scope: ExpenditureScope,
+  page?: { limit: number; offset: number },
+) {
+  let query = db.selectFrom('branch.expenditures').selectAll();
+  if (projectId !== null) query = query.where('project_id', '=', projectId);
+  const scoped = applyExpenditureScope(query, scope).orderBy('spent_on', 'desc');
 
-  return projectId !== null
-    ? db.selectFrom('branch.expenditures').where('project_id', '=', projectId).selectAll().orderBy('spent_on', 'desc').execute()
-    : db.selectFrom('branch.expenditures').selectAll().orderBy('spent_on', 'desc').execute();
+  return page ? scoped.limit(page.limit).offset(page.offset).execute() : scoped.execute();
 }
 
 export async function findMembership(projectId: number, userId: number) {
@@ -101,6 +102,22 @@ export async function findExpenditureById(id: number) {
 export async function deleteExpenditureById(id: number): Promise<bigint> {
   const deleted = await db.deleteFrom('branch.expenditures').where('expenditure_id', '=', id).execute();
   return deleted[0]?.numDeletedRows ?? 0n;
+}
+
+/**
+ * The author's own edit. Deliberately cannot reach `status`, `admin_notes` or
+ * `entered_by` — those are the admin's fields and the audit trail, and a
+ * whitelist here is what keeps `expense:review` from being bypassable by
+ * sending extra keys to the edit route.
+ */
+export type ExpenditureEdit = Pick<
+  Updateable<DB['branch.expenditures']>,
+  'amount' | 'category' | 'description' | 'receipt_url' | 'spent_on'
+>;
+
+export async function updateExpenditure(id: number, values: ExpenditureEdit): Promise<void> {
+  if (Object.keys(values).length === 0) return;
+  await db.updateTable('branch.expenditures').set(values).where('expenditure_id', '=', id).execute();
 }
 
 export async function updateExpenditureStatus(

@@ -7,6 +7,13 @@
  * design had no guard at all, so every page was implicitly public.
  */
 
+import {
+  can,
+  pagePermission as policyPagePermission,
+  type Action,
+  type RbacSubject,
+} from '@branch/rbac';
+
 export type RouteAccess = 'public' | 'protected' | 'bootstrap';
 
 export const LOGIN_PATH = '/login';
@@ -14,13 +21,20 @@ export const LOGIN_PATH = '/login';
 /**
  * Landing route when nothing more specific applies. Must stay reachable by every
  * role — it was `/dashboard`, which dropped non-admins on the no-access panel
- * once that page became admin-only. Prefer `landingPathFor()` when the role is known.
+ * once that page became admin-only. Prefer `landingPathFor()` when the subject
+ * is known.
  */
 export const DEFAULT_LANDING_PATH = '/projects';
 export const ADMIN_LANDING_PATH = '/dashboard';
 
-export function landingPathFor(isAdmin: boolean): string {
-  return isAdmin ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
+/**
+ * Asks the policy rather than reading `isAdmin`, so widening `dashboard:view`
+ * later moves the landing page with it instead of leaving this behind.
+ */
+export function landingPathFor(subject: RbacSubject | boolean): string {
+  const allowed =
+    typeof subject === 'boolean' ? subject : can(subject, 'dashboard:view');
+  return allowed ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
 }
 
 /**
@@ -43,16 +57,6 @@ const PUBLIC_PREFIXES = [
   '/forgot-password',
   '/reset-password',
 ] as const;
-
-/**
- * Require `isAdmin` on top of authentication.
- *
- * `/expenses` is deliberately not here: non-admins submit expenses and read
- * their own submissions there. Only the approve/deny controls and admin notes
- * inside the review modal are admin-gated, and the backend already lets any
- * authenticated user list expenditures.
- */
-const ADMIN_PREFIXES = ['/dashboard', '/reports', '/accounts'] as const;
 
 /**
  * Strips the trailing slash and lowercases.
@@ -81,9 +85,16 @@ export function classifyRoute(pathname: string): RouteAccess {
   return 'protected';
 }
 
-export function requiresAdmin(pathname: string): boolean {
-  const path = normalizePath(pathname);
-  return ADMIN_PREFIXES.some((prefix) => matchesPrefix(path, prefix));
+/**
+ * The permission a page requires, or `undefined` when a session is enough.
+ *
+ * The table lives in `@branch/rbac` rather than here so the navbar, the route
+ * guard and the lambdas all answer from one place. This used to be a hardcoded
+ * `ADMIN_PREFIXES` list, which had no way to express "/donors is admin *and*
+ * director" and would have needed a second, divergent rule to gain one.
+ */
+export function pagePermission(pathname: string): Action | undefined {
+  return policyPagePermission(normalizePath(pathname));
 }
 
 /**

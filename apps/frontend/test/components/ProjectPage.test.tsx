@@ -2,6 +2,7 @@ import { act } from 'react';
 import { render, screen, waitFor } from '../utils';
 import ProjectPage from '@/app/projects/page';
 import type { ProjectOverview } from '@/types';
+import { memberSubject } from '../rbac';
 
 const mockApiFetch = jest.fn();
 jest.mock('../../src/lib/authClient', () => ({
@@ -137,22 +138,17 @@ describe('Project Page', () => {
         expect(screen.getAllByText('spent')).toHaveLength(2);
     });
 
-    it('hides Edit Project when the server says the user cannot edit', async () => {
-        mockApiFetch.mockImplementation((url: string) => {
-            return new Promise((resolve) => {
-                resolvers.push(() => {
-                    if (url === '/projects/1/overview') resolve({ ...overview, canEdit: false });
-                    if (url === '/projects') resolve([]);
-                });
-            });
-        });
-
-        render(<ProjectPage />);
+    // Editing a project is admin-only, so a member of it still gets a read-only
+    // page. The overview payload still carries `canEdit`; the button now asks
+    // the shared policy instead, so the two can never disagree.
+    it('hides Edit Project from a non-admin member of the project', async () => {
+        render(<ProjectPage />, { subject: memberSubject([1]) });
         act(() => resolvers.forEach(r => r()));
         await waitFor(() => {
             expect(screen.getByRole('heading', { name: 'Clinician Communication Study' })).toBeInTheDocument();
         });
         expect(screen.queryByRole('button', { name: /edit project/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /delete project/i })).not.toBeInTheDocument();
     });
 
     it('renders the donut percentage from the server-computed stats', async () => {

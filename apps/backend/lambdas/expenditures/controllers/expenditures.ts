@@ -1,20 +1,34 @@
 import type { RouteHandler } from '@branch/lambda-http';
-import { json, requireAuth } from '@branch/lambda-http';
-import { authenticateRequest } from '../auth';
+import { json, requirePermission } from '@branch/lambda-http';
+import { can } from '@branch/rbac';
+import type { ExpenseResource } from '@branch/rbac';
 import { ExpenditureValidationUtils } from '../validation-utils';
 import * as expendituresService from '../services/expenditures';
+import { expenditureScope } from '../services/scope';
+
+// Authentication and each route's declared permission are enforced by dispatch
+// before any of these run — see routes.ts. What is left here is the part the
+// routing layer cannot do: checks that need the row in hand.
 
 function invalidId(id: string): boolean {
   return !/^\d+$/.test(id) || parseInt(id, 10) < 1;
 }
 
-// GET /expenditures
-export const getExpenditures: RouteHandler = async ({ event }) => {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
+/** The policy's view of an expenditure row. */
+function resourceOf(expenditure: {
+  project_id: number;
+  entered_by: number | null;
+  status: string;
+}): ExpenseResource {
+  return {
+    projectId: expenditure.project_id,
+    enteredBy: expenditure.entered_by,
+    status: expenditure.status,
+  };
+}
 
+// GET /expenditures
+export const getExpenditures: RouteHandler = async ({ event, auth }) => {
   const queryParams = event.queryStringParameters || {};
   const pageStr = queryParams.page as string | undefined;
   const limitStr = queryParams.limit as string | undefined;
@@ -36,30 +50,45 @@ export const getExpenditures: RouteHandler = async ({ event }) => {
   const limit = limitStr ? parseInt(limitStr, 10) : null;
   const projectId = projectIdStr ? parseInt(projectIdStr, 10) : null;
 
+  // Narrowing, never widening: an explicit ?projectId= filters within the
+  // caller's scope rather than escaping it, so asking for someone else's
+  // project returns an empty list instead of a 403 that confirms it exists.
+  const scope = expenditureScope(auth.subject);
+
   if (page && limit) {
     const offset = (page - 1) * limit;
-    const totalItems = await expendituresService.countExpenditures(projectId);
+    const totalItems = await expendituresService.countExpenditures(projectId, scope);
     const totalPages = Math.ceil(totalItems / limit);
-    const expenditures = await expendituresService.queryExpenditures(projectId, { limit, offset });
+    const expenditures = await expendituresService.queryExpenditures(projectId, scope, { limit, offset });
 
     return json(200, {
-      data: expenditures,
+      data: redactAdminNotes(expenditures, auth.subject),
       pagination: { page, limit, totalItems, totalPages },
     });
   }
 
-  const expenditures = await expendituresService.queryExpenditures(projectId);
-  return json(200, { data: expenditures });
+  const expenditures = await expendituresService.queryExpenditures(projectId, scope);
+  return json(200, { data: redactAdminNotes(expenditures, auth.subject) });
 };
 
-// POST /expenditures
-export const createExpenditure: RouteHandler = async ({ event }) => {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return json(401, { message: 'Authentication required' });
-  }
+/**
+ * Admin notes are an internal reviewer channel, so they never leave the API for
+ * a non-admin. Stripped server-side rather than merely hidden in the table —
+ * the column was previously in every list payload.
+ */
+function redactAdminNotes<T extends { admin_notes?: string | null }>(
+  rows: T[],
+  subject: Parameters<typeof can>[0],
+): T[] {
+  if (can(subject, 'expense:viewAdminNotes')) return rows;
+  return rows.map(({ ...row }) => {
+    delete row.admin_notes;
+    return row;
+  });
+}
 
-  const { user } = authContext;
+// POST /expenditures
+export const createExpenditure: RouteHandler = async ({ event, auth }) => {
   const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
   const validationResult = ExpenditureValidationUtils.validateExpenditureInput(body);
@@ -69,13 +98,12 @@ export const createExpenditure: RouteHandler = async ({ event }) => {
 
   const { projectID, amount, category, description, status, receiptUrl, spentOn } = validationResult;
 
-  // Authorize: must be global admin, or Director/Admin on this project
-  if (!user.isAdmin) {
-    const membership = await expendituresService.findMembership(projectID, user.userId!);
-    if (!membership || !['Director', 'Admin'].includes(membership.role)) {
-      return json(403, { message: 'Unable to create expenditure for this project' });
-    }
-  }
+  const denied = requirePermission(auth.subject, 'expense:create', { projectId: projectID });
+  if (denied) return denied;
+
+  // A submitter cannot file an already-approved expense. The status field is
+  // still accepted so an admin can record a decision at creation time.
+  const effectiveStatus = can(auth.subject, 'expense:review') ? status : 'pending';
 
   const project = await expendituresService.findProjectById(projectID);
   if (!project) {
@@ -85,11 +113,11 @@ export const createExpenditure: RouteHandler = async ({ event }) => {
   try {
     await expendituresService.insertExpenditure({
       project_id: projectID,
-      entered_by: user.userId!,
+      entered_by: auth.subject.userId!,
       amount,
       category: category ?? null,
       description: description ?? null,
-      status,
+      status: effectiveStatus,
       receipt_url: receiptUrl ?? null,
       spent_on: spentOn ? new Date(spentOn) : new Date(),
     });
@@ -103,11 +131,11 @@ export const createExpenditure: RouteHandler = async ({ event }) => {
     route: 'POST /expenditures',
     body: {
       projectID,
-      enteredBy: user.userId!,
+      enteredBy: auth.subject.userId!,
       amount,
       category: category ?? null,
       description: description ?? null,
-      status,
+      status: effectiveStatus,
       receiptUrl: receiptUrl ?? null,
       spentOn: spentOn ?? new Date().toISOString().split('T')[0],
     },
@@ -115,13 +143,7 @@ export const createExpenditure: RouteHandler = async ({ event }) => {
 };
 
 // GET /expenditures/upload-url — presigned PUT for a receipt PDF.
-export const getUploadUrl: RouteHandler = async ({ event }) => {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return json(401, { message: 'Authentication required' });
-  }
-  const { user } = authContext;
-
+export const getUploadUrl: RouteHandler = async ({ event, auth }) => {
   const queryParams = event.queryStringParameters || {};
   const { fileName, projectId: projectIdStr } = queryParams;
 
@@ -136,14 +158,10 @@ export const getUploadUrl: RouteHandler = async ({ event }) => {
   }
   const projectId = parseInt(projectIdStr, 10);
 
-  // Same authorization as POST /expenditures: you may only attach a receipt
-  // to a project you are allowed to file an expenditure against.
-  if (!user.isAdmin) {
-    const membership = await expendituresService.findMembership(projectId, user.userId!);
-    if (!membership || !['Director', 'Admin'].includes(membership.role)) {
-      return json(403, { message: 'Unable to upload a receipt for this project' });
-    }
-  }
+  // Same gate as POST /expenditures: you may only attach a receipt to a project
+  // you are allowed to file against.
+  const denied = requirePermission(auth.subject, 'expense:uploadReceipt', { projectId });
+  if (denied) return denied;
 
   const { uploadUrl, objectUrl } = await expendituresService.presignUploadUrl(projectId, fileName);
   return json(200, { uploadUrl, objectUrl });
@@ -151,28 +169,17 @@ export const getUploadUrl: RouteHandler = async ({ event }) => {
 
 // GET /expenditures/{id}/receipt — presigned GET so the receipt can be read
 // without the bucket being public.
-export const getReceipt: RouteHandler = async ({ event, params }) => {
+export const getReceipt: RouteHandler = async ({ params, auth }) => {
   const { id } = params;
   if (invalidId(id)) {
     return json(400, { message: 'id must be a positive integer' });
   }
 
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return json(401, { message: 'Authentication required' });
-  }
-  const { user } = authContext;
-
   const expenditure = await expendituresService.findExpenditureById(Number(id));
   if (!expenditure) return json(404, { message: 'Expenditure not found' });
 
-  // Mirrors GET /expenditures/{id}: admin, or any membership on the project.
-  if (!user.isAdmin) {
-    const membership = await expendituresService.findMembership(expenditure.project_id, user.userId!);
-    if (!membership) {
-      return json(403, { message: 'Unable to view this receipt' });
-    }
-  }
+  const denied = requirePermission(auth.subject, 'expense:viewReceipt', resourceOf(expenditure));
+  if (denied) return denied;
 
   if (!expenditure.receipt_url) {
     return json(404, { message: 'Expenditure has no receipt' });
@@ -192,27 +199,17 @@ export const getReceipt: RouteHandler = async ({ event, params }) => {
 };
 
 // GET /expenditures/{id}
-export const getExpenditureById: RouteHandler = async ({ event, params }) => {
+export const getExpenditureById: RouteHandler = async ({ params, auth }) => {
   const { id } = params;
   if (invalidId(id)) {
     return json(400, { message: 'id must be a positive integer' });
   }
 
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return json(401, { message: 'Authentication required' });
-  }
-  const { user } = authContext;
-
   const expenditure = await expendituresService.findExpenditureById(Number(id));
   if (!expenditure) return json(404, { message: 'Expenditure not found' });
 
-  if (!user.isAdmin) {
-    const membership = await expendituresService.findMembership(expenditure.project_id, user.userId!);
-    if (!membership) {
-      return json(403, { message: 'Unable to view this expenditure' });
-    }
-  }
+  const denied = requirePermission(auth.subject, 'expense:view', resourceOf(expenditure));
+  if (denied) return denied;
 
   // "Submitted By" in the review modal needs a name, not an id.
   const submitter = expenditure.entered_by
@@ -235,7 +232,11 @@ export const getExpenditureById: RouteHandler = async ({ event, params }) => {
       category: expenditure.category,
       description: expenditure.description,
       status: expenditure.status,
-      adminNotes: expenditure.admin_notes,
+      // Withheld rather than nulled would look like "no notes"; the key is
+      // absent so a client can tell it was not shown.
+      ...(can(auth.subject, 'expense:viewAdminNotes')
+        ? { adminNotes: expenditure.admin_notes }
+        : {}),
       receiptUrl: expenditure.receipt_url,
       spent_on: expenditure.spent_on,
       createdAt: expenditure.created_at,
@@ -243,31 +244,74 @@ export const getExpenditureById: RouteHandler = async ({ event, params }) => {
   });
 };
 
-// DELETE /expenditures/{id}
-export const deleteExpenditure: RouteHandler = async ({ event, params }) => {
+// PATCH /expenditures/{id} — the submitter's own edit.
+export const updateExpenditure: RouteHandler = async ({ event, params, auth }) => {
   const { id } = params;
   if (invalidId(id)) {
     return json(400, { message: 'id must be a positive integer' });
   }
 
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return json(401, { message: 'Authentication required' });
+  const expenditure = await expendituresService.findExpenditureById(Number(id));
+  if (!expenditure) return json(404, { message: 'Expenditure not found' });
+
+  // Ordered so someone who cannot see the row gets 404, not 403 — a 403 here
+  // would confirm the expense exists.
+  const invisible = requirePermission(auth.subject, 'expense:view', resourceOf(expenditure));
+  if (invisible) return json(404, { message: 'Expenditure not found' });
+
+  const denied = requirePermission(auth.subject, 'expense:update', resourceOf(expenditure));
+  if (denied) return denied;
+
+  const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+  const update = ExpenditureValidationUtils.validateExpenditureUpdate(body);
+  if (update instanceof Error) {
+    return json(400, { message: update.message });
   }
-  const { user } = authContext;
+
+  await expendituresService.updateExpenditure(Number(id), {
+    ...(update.amount !== undefined ? { amount: update.amount } : {}),
+    ...(update.category !== undefined ? { category: update.category } : {}),
+    ...(update.description !== undefined ? { description: update.description } : {}),
+    ...(update.receiptUrl !== undefined ? { receipt_url: update.receiptUrl } : {}),
+    ...(update.spentOn !== undefined ? { spent_on: new Date(update.spentOn) } : {}),
+  });
+
+  const updated = await expendituresService.findExpenditureById(Number(id));
+
+  return json(200, {
+    ok: true,
+    route: 'PATCH /expenditures/{id}',
+    pathParams: { id },
+    body: {
+      expenditureId: updated!.expenditure_id,
+      projectId: updated!.project_id,
+      amount: updated!.amount,
+      category: updated!.category,
+      description: updated!.description,
+      status: updated!.status,
+      receiptUrl: updated!.receipt_url,
+      spent_on: updated!.spent_on,
+    },
+  });
+};
+
+// DELETE /expenditures/{id}
+export const deleteExpenditure: RouteHandler = async ({ params, auth }) => {
+  const { id } = params;
+  if (invalidId(id)) {
+    return json(400, { message: 'id must be a positive integer' });
+  }
 
   const expenditure = await expendituresService.findExpenditureById(Number(id));
   if (!expenditure) {
     return json(404, { message: 'Expenditure not found' });
   }
 
-  // (mirrors POST endpoint) Authorize: must be global admin, or Director/Admin on this expenditure's project
-  if (!user.isAdmin) {
-    const membership = await expendituresService.findMembership(expenditure.project_id, user.userId!);
-    if (!membership || !['Director', 'Admin'].includes(membership.role)) {
-      return json(403, { message: 'Unable to delete this expenditure' });
-    }
-  }
+  const invisible = requirePermission(auth.subject, 'expense:view', resourceOf(expenditure));
+  if (invisible) return json(404, { message: 'Expenditure not found' });
+
+  const denied = requirePermission(auth.subject, 'expense:delete', resourceOf(expenditure));
+  if (denied) return denied;
 
   const numDeletedRows = await expendituresService.deleteExpenditureById(Number(id));
   if (numDeletedRows === 0n) {
@@ -281,12 +325,9 @@ export const deleteExpenditure: RouteHandler = async ({ event, params }) => {
   return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id }, receiptDeleted });
 };
 
-// PATCH /expenditures/{id}/status — approve/decline (admin only)
+// PATCH /expenditures/{id}/status — approve/decline. `expense:review` on the
+// route makes this admin-only.
 export const patchExpenditureStatus: RouteHandler = async ({ event, params }) => {
-  const authContext = await authenticateRequest(event);
-  const authError = requireAuth(authContext, 'ADMIN');
-  if (authError) return authError;
-
   const { id } = params;
   if (invalidId(id)) {
     return json(400, { message: 'id must be a positive integer' });

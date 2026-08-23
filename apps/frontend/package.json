@@ -11,6 +11,7 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
+    "@branch/rbac": "file:../../shared/rbac",
     "@chakra-ui/react": "^3.33.0",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",

@@ -7,8 +7,10 @@ import { PT_Sans } from "next/font/google";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useAuth } from "@/context/AuthContext";
 import { useApi } from "@/hooks/useApi";
+import { usePermissions } from "@/hooks/usePermissions";
+import { authorizeAny, type RbacSubject } from "@branch/rbac";
 import { assetPath } from "@/lib/asset";
-import { normalizePath, projectPath } from "@/lib/routes";
+import { normalizePath, pagePermission, projectPath } from "@/lib/routes";
 import type { ProjectSummary } from "@/types";
 import LoadingState from "./LoadingState";
 
@@ -16,12 +18,10 @@ const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400", "700"] });
 
 // ─── Types & Definitions ──────────────────────────────────────────────────────
 
-export type UserRole = "admin" | "standard" | "limited";
 interface NavItem {
   label: string;
   href?: string;
   action?: "logout";
-  roles?: UserRole[];
   /** Renders the expandable project list beneath this item. */
   submenu?: "projects";
 }
@@ -29,14 +29,18 @@ interface NavItem {
 // Every href here must resolve to a real route. "Log Out" is an action rather
 // than a route — keying the special case on `action` means a future /logout
 // page couldn't silently turn the button back into a dead link.
+//
+// No `roles` field any more: which links a user sees comes from the same
+// PAGE_PERMISSIONS table AuthGate guards with, so a link can never appear for a
+// page that would then refuse to render.
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", roles: ["admin"] },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Projects", href: "/projects", submenu: "projects" },
   { label: "Donors", href: "/donors" },
   { label: "Donations", href: "/donations" },
   { label: "Expenses", href: "/expenses" },
-  { label: "Reports", href: "/reports", roles: ["admin"] },
-  { label: "Accounts", href: "/accounts", roles: ["admin"] },
+  { label: "Reports", href: "/reports" },
+  { label: "Accounts", href: "/accounts" },
   { label: "Profile", href: "/profile" },
   { label: "Log Out", action: "logout" },
 ];
@@ -146,14 +150,17 @@ function ProjectsSubmenu({
 }
 
 /**
- * `roleOverride` exists for tests only — it is named that way so nobody mistakes
- * it for the source of truth again. The role comes from the session, which comes
- * from GET /auth/me; it used to default to "admin", which made the role-based
- * filtering below purely decorative. Hiding a link was never a security control
- * anyway — AuthGate enforces admin routes.
+ * `subjectOverride` exists for tests only — it is named that way so nobody
+ * mistakes it for the source of truth again. It replaced a `roleOverride` enum
+ * of "admin" | "standard" | "limited", which was a second, coarser role model
+ * living beside the real one: it could not express "director", so it could not
+ * describe who sees the Donors link.
+ *
+ * Hiding a link was never a security control — AuthGate refuses the page and
+ * every lambda refuses the request.
  */
 export const NavBar: React.FC<{
-  roleOverride?: UserRole;
+  subjectOverride?: RbacSubject;
   activePath?: string;
   /**
    * Which project the flyout should mark as current. Passed in rather than
@@ -163,14 +170,16 @@ export const NavBar: React.FC<{
    */
   activeProjectId?: number | null;
 }> = ({
-  roleOverride,
+  subjectOverride,
   activePath,
   activeProjectId = null
 }) => {
   const pathname = usePathname?.() ?? "/";
   const currentPath = normalizePath(activePath ?? pathname);
   const router = useRouter();
-  const { logout, isAdmin } = useAuth();
+  const { logout } = useAuth();
+  const { subject } = usePermissions();
+  const effectiveSubject = subjectOverride ?? subject;
   const api = useApi();
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -191,8 +200,13 @@ export const NavBar: React.FC<{
   const hasLoadedProjects = useRef(false);
   const submenuRef = useRef<HTMLLIElement | null>(null);
 
-  const role: UserRole = roleOverride ?? (isAdmin ? "admin" : "standard");
-  const visibleItems = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(role));
+  // One filter, reading the same PAGE_PERMISSIONS table AuthGate guards with,
+  // so a link can never appear for a page that would then refuse to render.
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!item.href) return true;
+    const required = pagePermission(item.href);
+    return required === undefined || authorizeAny(effectiveSubject, required).allowed;
+  });
 
   // Compare normalized paths: trailingSlash: true means production sees
   // "/expenses/" where dev and tests see "/expenses". The boundary check stops

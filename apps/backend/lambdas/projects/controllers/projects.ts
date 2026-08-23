@@ -1,13 +1,8 @@
-import { json, parseBody, createAuthGuard, RouteHandler } from '@branch/lambda-http';
+import { json, parseBody, RouteHandler } from '@branch/lambda-http';
+import { projectScopeIds } from '@branch/rbac';
 import db from '../db';
 import { ProjectValidationUtils } from '../validation-utils';
-import {
-  authenticateRequest,
-  canAccessProject,
-  canCreateProject,
-  canDeleteProject,
-  canEditProject,
-} from '../auth';
+import { requireVisibleProject } from './project-guard';
 import {
   deleteProjectObjects,
   findUnknownUserIds,
@@ -17,23 +12,20 @@ import {
   toIsoDate,
 } from '../services/projects';
 
-const guard = createAuthGuard(authenticateRequest);
+// Authentication and each route's declared permission are enforced by dispatch
+// before these run — see routes.ts. `project:create`, `project:update` and
+// `project:delete` are all settled there; what remains here is the per-record
+// visibility check, which needs the id.
 
 // GET /projects
-export const listProjects: RouteHandler = async ({ event }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
-  if (response) return response;
-  const { user } = ctx;
+export const listProjects: RouteHandler = async ({ auth }) => {
+  // Scoped in SQL rather than by fetching everything and filtering: a non-admin
+  // must never receive a row for a project they are not on, not even to drop it.
+  const scope = projectScopeIds(auth.subject);
 
-  const projects = user!.isAdmin
-    ? await db.selectFrom("branch.projects").selectAll().orderBy('project_id', 'asc').execute()
-    : await db
-        .selectFrom("branch.projects as p")
-        .innerJoin("branch.project_memberships as pm", "pm.project_id", "p.project_id")
-        .where("pm.user_id", "=", user!.userId!)
-        .selectAll("p")
-        .orderBy('p.project_id', 'asc')
-        .execute();
+  let query = db.selectFrom('branch.projects').selectAll().orderBy('project_id', 'asc');
+  if (scope) query = query.where('project_id', 'in', scope);
+  const projects = await query.execute();
 
   // The list cards render "spent / budget", a member count and an
   // active-vs-archived split. Serving those aggregates here keeps the page
@@ -52,34 +44,25 @@ export const listProjects: RouteHandler = async ({ event }) => {
 };
 
 // GET /projects/{id}
-export const getProject: RouteHandler = async ({ event, params }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
+export const getProject: RouteHandler = async (ctx) => {
+  const { projectId, response } = requireVisibleProject(ctx);
   if (response) return response;
-  const { user } = ctx;
 
-  const id = params.id;
-  if (!id) return json(400, { message: 'id is required' });
-  if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
-  if (!(await canAccessProject(user!.userId!, Number(id)))) {
-    return json(403, { message: 'You do not have access to this project' });
-  }
-  const project = await db.selectFrom("branch.projects").where("project_id", "=", Number(id)).selectAll().executeTakeFirst();
-  if (!project) return json(404, { message: `Project not found for id: ${id}` });
+  const project = await db
+    .selectFrom('branch.projects')
+    .where('project_id', '=', projectId)
+    .selectAll()
+    .executeTakeFirst();
+  if (!project) return json(404, { message: `Project not found for id: ${projectId}` });
   return json(200, project);
 };
 
-// PUT /projects/{id}
+// PUT /projects/{id} — admin-only via `project:update` on the route.
 export const updateProject: RouteHandler = async ({ event, params }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
-  if (response) return response;
-  const { user } = ctx;
-
   const id = params.id;
   if (!id) return json(400, { message: 'id is required' });
   if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
-  if (!(await canEditProject(user!.userId!, Number(id)))) {
-    return json(403, { message: 'You do not have access to edit this project' });
-  }
+
   const body = parseBody(event);
   if (body === null) return json(400, { message: 'Invalid JSON in request body' });
 
@@ -153,22 +136,11 @@ export const updateProject: RouteHandler = async ({ event, params }) => {
   }
 };
 
-// DELETE /projects/{id}
-export const deleteProject: RouteHandler = async ({ event, params }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
-  if (response) return response;
-  const { user } = ctx;
-
+// DELETE /projects/{id} — admin-only via `project:delete` on the route.
+export const deleteProject: RouteHandler = async ({ params }) => {
   const id = params.id;
   if (!id) return json(400, { message: 'id is required' });
   if (!/^\d+$/.test(id)) return json(400, { message: 'id must be a valid number' });
-
-  // The gate at the top of this handler establishes authentication but not
-  // authorization; this route previously had neither check, so any
-  // authenticated user could delete any project.
-  if (!(await canDeleteProject(user!.userId!))) {
-    return json(403, { message: 'Admin access required' });
-  }
 
   const deleted = await db.deleteFrom('branch.projects').where('project_id', '=', Number(id)).execute();
   if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
@@ -185,15 +157,8 @@ export const deleteProject: RouteHandler = async ({ event, params }) => {
   return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id }, filesDeleted });
 };
 
-// POST /projects
+// POST /projects — admin-only via `project:create` on the route.
 export const createProject: RouteHandler = async ({ event }) => {
-  const { ctx, response } = await guard(event, 'AUTHENTICATED');
-  if (response) return response;
-  const { user } = ctx;
-
-  if (!(await canCreateProject(user!.userId!))) {
-    return json(403, { message: 'Admin access required' });
-  }
   const body = parseBody(event);
   if (body === null) return json(400, { message: 'Invalid JSON in request body' });
 

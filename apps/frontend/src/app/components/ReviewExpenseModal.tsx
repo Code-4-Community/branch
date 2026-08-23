@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Dialog, Portal, CloseButton } from '@chakra-ui/react';
-import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   getExpenditure,
   getReceiptDownloadUrl,
@@ -60,7 +60,10 @@ export default function ReviewExpenseModal({
   onClose,
   onReviewed,
 }: ReviewExpenseModalProps) {
-  const { isAdmin } = useAuth();
+  const { can } = usePermissions();
+  // Approval status and admin notes are the two fields the policy reserves for
+  // admins; everything else in this dialog is read-only for everyone.
+  const canReview = can('expense:review');
 
   const [detail, setDetail] = useState<ExpenditureDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -239,7 +242,7 @@ export default function ReviewExpenseModal({
 
                   {/* Admin decision and notes are admin-only; everyone else sees
                       the expense read-only. */}
-                  {isAdmin ? (
+                  {canReview ? (
                     <>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <span style={LABEL_STYLE}>Admin Decision*</span>
@@ -309,7 +312,7 @@ export default function ReviewExpenseModal({
               <Button variant="outline" borderColor="var(--color-black-500)" onClick={onClose}>
                 Cancel
               </Button>
-              {isAdmin && (
+              {canReview && (
                 <Button
                   backgroundColor="var(--color-primary-500)"
                   color="var(--color-core-white)"

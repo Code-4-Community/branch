@@ -26,8 +26,11 @@ beforeEach(() => {
 describe('AccountsPage', () => {
     it('renders the headings', async () => {
         render(<AccountsPage />);
-        expect(await screen.findByText('Accounts')).toBeInTheDocument();
-        expect(screen.getByText('Core BRANCH Facilitation Team')).toBeInTheDocument();
+        // Scoped to the heading: the nav rail now renders an "Accounts" link
+        // too, because the test session is an admin who may reach the page.
+        expect(screen.getByRole('heading', { name: 'Accounts' })).toBeInTheDocument();
+        // Awaited: the two section headings only render once the roster loads.
+        expect(await screen.findByText('Core BRANCH Facilitation Team')).toBeInTheDocument();
         expect(screen.getByText('BRANCH Team Members')).toBeInTheDocument();
     });
 

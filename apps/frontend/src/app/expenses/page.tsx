@@ -14,6 +14,8 @@ import DropdownSelector from '../components/DropdownSelector';
 import ExpenseFilterMenu, { type FilterGroup } from '../components/ExpenseFilterMenu';
 import ReviewExpenseModal from '../components/ReviewExpenseModal';
 import { useApi } from '@/hooks/useApi';
+import { usePermissions } from '@/hooks/usePermissions';
+import Tooltip from '../components/Tooltip';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
 import { IoClose } from 'react-icons/io5';
@@ -54,6 +56,10 @@ export default function ExpensePage() {
 
 function ExpensePageContent() {
   const api = useApi();
+  const { why } = usePermissions();
+  // Enabled when they could file against *any* project; which project decides
+  // the real permission, and the modal's own list is already scoped to theirs.
+  const cannotCreate = why('expenses:create');
 
   // Data
   const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
@@ -288,14 +294,17 @@ function ExpensePageContent() {
               </div>
 
               {/* + New Expense */}
-              <Button
-                backgroundColor="var(--color-core-green)"
-                color="var(--color-core-white)"
-                onClick={() => setShowNewExpense(true)}
-              >
-                <FaPlus />
-                New Expense
-              </Button>
+              <Tooltip label={cannotCreate} wrapsDisabledControl={cannotCreate !== undefined}>
+                <Button
+                  backgroundColor="var(--color-core-green)"
+                  color="var(--color-core-white)"
+                  disabled={cannotCreate !== undefined}
+                  onClick={() => setShowNewExpense(true)}
+                >
+                  <FaPlus />
+                  New Expense
+                </Button>
+              </Tooltip>
             </HStack>
           </HStack>
 

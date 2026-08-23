@@ -32,7 +32,7 @@ import FullPageSpinner from './components/FullPageSpinner';
 const SPA_FALLBACK_KEY = 'branch_spa_fallback_path';
 
 export default function RootPage() {
-  const { isAuthenticated, isAdmin, isLoading } = useAuth();
+  const { isAuthenticated, subject, isLoading } = useAuth();
   const router = useRouter();
   const [notFound, setNotFound] = useState(false);
 
@@ -64,8 +64,8 @@ export default function RootPage() {
 
     // A genuine visit to "/". Route by session, but only once it is known.
     if (isLoading) return;
-    router.replace(isAuthenticated ? landingPathFor(isAdmin) : LOGIN_PATH);
-  }, [isLoading, isAuthenticated, isAdmin, router]);
+    router.replace(isAuthenticated ? landingPathFor(subject) : LOGIN_PATH);
+  }, [isLoading, isAuthenticated, subject, router]);
 
   if (notFound) return <NotFoundPanel />;
   return <FullPageSpinner />;

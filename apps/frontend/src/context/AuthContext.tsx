@@ -7,6 +7,7 @@ import {
   useEffect,
   useState,
 } from 'react';
+import { ANONYMOUS, type RbacSubject } from '@branch/rbac';
 import { ApiError, apiFetch } from '@/lib/api';
 import {
   authedFetch,
@@ -43,6 +44,16 @@ export interface AuthUser {
   name: string;
   isAdmin: boolean;
   profileImage?: string | null;
+  /**
+   * The authorization subject, built server-side by the same code the lambdas
+   * authorize with. It is the only reason the browser can answer "may they?"
+   * without a second round trip, and the reason it answers it identically.
+   *
+   * Optional in the type so an older cached payload cannot crash the app; the
+   * fallback is ANONYMOUS, which denies everything, so a missing subject fails
+   * closed rather than opening the UI up.
+   */
+  rbac?: RbacSubject;
 }
 
 export type ChallengeName =
@@ -79,6 +90,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** Prefer `usePermissions()` over reading this directly. */
+  subject: RbacSubject;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   respondToChallenge: (input: ChallengeResponseInput) => Promise<LoginResult>;
@@ -137,7 +150,13 @@ function isValidUser(candidate: unknown): candidate is AuthUser {
   );
 }
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+/**
+ * Exported for the test harness only, which provides a session directly rather
+ * than standing up token storage and a fake `GET /auth/me` for every page test.
+ * Application code uses `useAuth()`; there is one provider, mounted in
+ * `providers.tsx`.
+ */
+export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -327,6 +346,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isAuthenticated: user != null,
         isAdmin: user?.isAdmin ?? false,
+        subject: user?.rbac ?? ANONYMOUS,
         isLoading,
         login,
         respondToChallenge,

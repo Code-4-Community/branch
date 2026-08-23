@@ -10,15 +10,22 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 const mockAuthenticateRequest = jest.fn();
-const mockCanDeleteProject = jest.fn();
+// The subject dispatch will authorize against. `project:delete` is declared on
+// the route, so this object is the whole authorization decision for these
+// tests -- there is no canDeleteProject helper any more.
+const mockSubject = {
+  userId: 1,
+  isAdmin: true,
+  memberProjectIds: [] as number[],
+  directorProjectIds: [] as number[],
+};
 
 jest.mock('../auth', () => ({
   authenticateRequest: (...a: unknown[]) => mockAuthenticateRequest(...a),
-  canDeleteProject: (...a: unknown[]) => mockCanDeleteProject(...a),
-  canAccessProject: jest.fn(),
-  canCreateProject: jest.fn(),
-  canEditProject: jest.fn(),
-  canListAssignableStaff: jest.fn(),
+  resolveAuth: async (...a: unknown[]) => ({
+    context: await mockAuthenticateRequest(...a),
+    subject: mockSubject,
+  }),
 }));
 
 const mockDeleteExecute = jest.fn();
@@ -72,8 +79,8 @@ describe('DELETE /projects/{id} object cleanup', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.REPORTS_BUCKET_NAME = 'bucket';
-    mockAuthenticateRequest.mockResolvedValue(adminContext as never);
-    mockCanDeleteProject.mockResolvedValue(true as never);
+    mockSubject.isAdmin = true;
+  mockAuthenticateRequest.mockResolvedValue(adminContext as never);
     mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 1n }] as never);
   });
 
@@ -166,7 +173,7 @@ describe('DELETE /projects/{id} object cleanup', () => {
   });
 
   test('does not run for a caller who may not delete', async () => {
-    mockCanDeleteProject.mockResolvedValue(false as never);
+    mockSubject.isAdmin = false;
 
     const res = await handler(deleteEvent(7));
 

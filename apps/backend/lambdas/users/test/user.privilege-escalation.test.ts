@@ -8,7 +8,28 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 jest.mock('../db');
-jest.mock('../auth');
+// Memberships the mocked session should appear to have. Named `mock*` so it can
+// be referenced from the jest.mock factory below.
+const mockMemberships: Array<{ project_id: number; role: string }> = [];
+
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. This suite mocks ../db, so
+  // the subject is assembled from the auth context and `mockMemberships`
+  // instead of being read from Postgres -- same buildSubject either way.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { buildSubject } = jest.requireActual<typeof import('@branch/rbac')>('@branch/rbac');
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(authenticateRequest as never, async (context) =>
+      buildSubject(context.user, mockMemberships),
+    ),
+  };
+});
 
 import { handler } from '../handler';
 import db from '../db';

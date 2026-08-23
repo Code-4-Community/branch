@@ -1,15 +1,13 @@
 import type { RouteCtx } from '@branch/lambda-http';
-import { json } from '@branch/lambda-http';
+import { json, requirePermission } from '@branch/lambda-http';
+import { projectScopeIds } from '@branch/rbac';
 import db from '../db';
-import { authenticateRequest } from '../auth';
+
+// Authentication and the route's permission are enforced by dispatch before any
+// of these run — see routes.ts.
 
 // GET /donors/donations
-export async function getDonations({ event }: RouteCtx) {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
-
+export async function getDonations({ event, auth }: RouteCtx) {
   const queryParams = event.queryStringParameters || {};
   const pageStr = queryParams.page as string | undefined;
   const limitStr = queryParams.limit as string | undefined;
@@ -29,24 +27,29 @@ export async function getDonations({ event }: RouteCtx) {
   const page = pageStr ? parseInt(pageStr, 10) : null;
   const limit = limitStr ? parseInt(limitStr, 10) : null;
 
+  // A non-admin only ever sees donations to their own projects. Applied in SQL
+  // so the count and the page agree — filtering after the LIMIT would return
+  // short pages and a total the caller is not allowed to know.
+  const scope = projectScopeIds(auth.subject);
+
   if (page && limit) {
     const offset = (page - 1) * limit;
 
-    const totalCount = await db
+    let countQuery = db
       .selectFrom('branch.project_donations')
-      .select(db.fn.count('donation_id').as('count'))
-      .executeTakeFirst();
+      .select(db.fn.count('donation_id').as('count'));
+    if (scope) countQuery = countQuery.where('project_id', 'in', scope);
+    const totalCount = await countQuery.executeTakeFirst();
 
     const totalItems = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalItems / limit);
 
-    const donations = await db
+    let pageQuery = db
       .selectFrom('branch.project_donations')
       .selectAll()
-      .orderBy('donation_id', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
+      .orderBy('donation_id', 'asc');
+    if (scope) pageQuery = pageQuery.where('project_id', 'in', scope);
+    const donations = await pageQuery.limit(limit).offset(offset).execute();
 
     return json(200, {
       data: donations,
@@ -54,20 +57,14 @@ export async function getDonations({ event }: RouteCtx) {
     });
   }
 
-  const donations = await db
-    .selectFrom('branch.project_donations')
-    .selectAll()
-    .execute();
+  let query = db.selectFrom('branch.project_donations').selectAll();
+  if (scope) query = query.where('project_id', 'in', scope);
+  const donations = await query.execute();
   return json(200, { data: donations });
 }
 
 // POST /donors/donations
 export async function createDonation({ event }: RouteCtx) {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
-
   const body = event.body ? (JSON.parse(event.body) as Record<string, unknown>) : {};
   const { donor_id, project_id, amount, donated_at } = body;
 
@@ -104,22 +101,7 @@ export async function createDonation({ event }: RouteCtx) {
   if (!isFinite(donationAmount) || donationAmount <= 0) {
     return json(400, { message: 'amount must be a positive number' });
   }
-  // Check user is admin or a member of the project
-  if (!authContext.user?.isAdmin) {
-    const userId = authContext.user!.userId as number;
-    const membership = await db
-      .selectFrom('branch.project_memberships')
-      .select('membership_id')
-      .where('project_id', '=', projectId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
 
-    if (!membership) {
-      return json(403, { message: 'You must be a member' });
-    }
-  }
-
-  // Checked after the membership check so project existence isn't leaked to non-members
   const donor = await db
     .selectFrom('branch.donors')
     .select('donor_id')
@@ -165,12 +147,7 @@ export async function createDonation({ event }: RouteCtx) {
 }
 
 // DELETE /donors/donations/{id}
-export async function deleteDonation({ event, params }: RouteCtx) {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated) {
-    return json(401, { message: 'Authentication required' });
-  }
-
+export async function deleteDonation({ params, auth }: RouteCtx) {
   const id = params.id;
   if (!id || !/^\d+$/.test(id)) {
     return json(400, { message: 'id must be a positive integer' });
@@ -186,19 +163,12 @@ export async function deleteDonation({ event, params }: RouteCtx) {
     return json(404, { message: 'Donation not found' });
   }
 
-  if (!authContext.user?.isAdmin) {
-    const userId = authContext.user!.userId as number;
-    const membership = await db
-      .selectFrom('branch.project_memberships')
-      .select('membership_id')
-      .where('project_id', '=', donation.project_id)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    if (!membership) {
-      return json(403, { message: 'You must be a member of this project to delete this donation' });
-    }
-  }
+  // Writing donations is admin-only (route permission), but a 404 must not
+  // leak the existence of a donation on a project the caller cannot see.
+  const invisible = requirePermission(auth.subject, 'donation:view', {
+    projectId: donation.project_id,
+  });
+  if (invisible) return json(404, { message: 'Donation not found' });
 
   const deleted = await db.deleteFrom('branch.project_donations').where('donation_id', '=', Number(id)).execute();
   if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
