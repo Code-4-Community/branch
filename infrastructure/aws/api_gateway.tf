@@ -22,6 +22,12 @@ resource "aws_api_gateway_gateway_response" "cors" {
     "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
     "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
   }
+
+  # API Gateway's own default for these types; declared only so plans stop
+  # proposing to delete it. Omitting it empties gateway-generated error bodies.
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
 }
 
 # Define supported HTTP methods per Lambda function based on handlers
