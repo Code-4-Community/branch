@@ -8,6 +8,10 @@ data "aws_iam_role" "lambda_role" {
   name = "branch-lambda-role"
 }
 
+module "sentry" {
+  source = "../modules/sentry"
+}
+
 locals {
   lambda_functions = toset([
     "auth",
@@ -39,6 +43,10 @@ resource "aws_lambda_function" "functions" {
   memory_size   = 256
   role          = data.aws_iam_role.lambda_role.arn
 
+  # Layers are not part of the env map the workflow copies from prod, so the
+  # preview stack has to attach this itself.
+  layers = [module.sentry.layer_arn]
+
   filename         = data.archive_file.lambda_placeholder.output_path
   source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
 
@@ -47,7 +55,17 @@ resource "aws_lambda_function" "functions" {
     ignore_changes = [filename, source_code_hash]
   }
 
+  # var.lambda_env is copied from prod, which carries SENTRY_ENVIRONMENT =
+  # "production" -- it must lose to the per-PR value, hence the trailing merge.
   environment {
-    variables = merge({ NODE_ENV = "production" }, var.lambda_env)
+    variables = merge(
+      { NODE_ENV = "production" },
+      var.lambda_env,
+      {
+        NODE_OPTIONS       = module.sentry.node_options
+        SENTRY_DSN         = module.sentry.dsn
+        SENTRY_ENVIRONMENT = "pr-${var.pr_number}"
+      },
+    )
   }
 }

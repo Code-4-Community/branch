@@ -114,6 +114,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
   }
 }
 
+module "sentry" {
+  source = "../modules/sentry"
+}
+
 # Define all Lambda functions
 locals {
   lambda_functions = toset([
@@ -158,6 +162,10 @@ resource "aws_lambda_function" "functions" {
   memory_size   = 256
   role          = aws_iam_role.lambda_role.arn
 
+  # Error monitoring. The layer is the only source of the Sentry SDK -- it is
+  # deliberately not a lambda dependency, so nothing here changes the bundles.
+  layers = [module.sentry.layer_arn]
+
   # Use S3 for deployment (initial placeholder, replaced by GitHub Actions)
   s3_bucket = aws_s3_bucket.lambda_deployments.id
   s3_key    = aws_s3_object.lambda_placeholder[each.key].key
@@ -195,6 +203,16 @@ resource "aws_lambda_function" "functions" {
       # on branch-reports only; listed here so this authoritative block does not
       # wipe it. Harmless on the other five functions.
       REPORTS_BUCKET_NAME = aws_s3_bucket.reports_bucket.id
+
+      # Loads the Sentry layer's handler wrapper before the function starts.
+      # Dropping NODE_OPTIONS silently disables error reporting -- the layer
+      # alone does nothing.
+      NODE_OPTIONS = module.sentry.node_options
+      SENTRY_DSN   = module.sentry.dsn
+
+      # Preview stacks copy this map from prod, then override the environment,
+      # so PR errors do not land in the production issue stream.
+      SENTRY_ENVIRONMENT = "production"
     }
   }
 }
