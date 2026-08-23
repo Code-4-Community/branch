@@ -36,7 +36,6 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
 }));
 jest.mock('../report-service', () => ({
-  checkProjectAccess: jest.fn(),
   fetchReportData: jest.fn(),
   generatePdf: jest.fn(),
   generateDocx: jest.fn(),
@@ -53,14 +52,11 @@ jest.mock('../report-service', () => ({
 import { handler } from '../handler';
 import db from '../db';
 import { authenticateRequest } from '../auth';
-import { checkProjectAccess } from '../report-service';
 import * as reportService from '../report-service';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockReportService = reportService as jest.Mocked<typeof reportService>;
-const mockCheckProjectAccess = mockReportService.checkProjectAccess; 
-                                                                           
 function getEvent(queryStringParameters?: Record<string, string>) {
   return {
     rawPath: '/',
@@ -83,6 +79,17 @@ const adminAuthContext = {
     userId: 1,
     email: 'ashley@branch.org',
     isAdmin: true,
+  },
+};
+
+// Reports are admin-only, so a signed-in non-admin is the whole negative case.
+const nonAdminAuthContext = {
+  isAuthenticated: true as const,
+  user: {
+    cognitoSub: 'staff-sub',
+    userId: 3,
+    email: 'nour@branch.org',
+    isAdmin: false,
   },
 };
 
@@ -111,7 +118,6 @@ describe('POST /reports unit tests', () => {
       donations: [],
       expenditures: [],
     } as any);
-    mockReportService.checkProjectAccess.mockResolvedValue(true);
     mockReportService.generatePdf.mockResolvedValue(Buffer.from('pdf') as any);
     mockReportService.generateDocx.mockResolvedValue(Buffer.from('docx') as any);
     mockReportService.uploadToS3.mockResolvedValue('https://s3.example.com/reports/1/ts.pdf');
@@ -165,8 +171,19 @@ describe('POST /reports unit tests', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  test('403: no project access returns 403', async () => {
-    mockReportService.checkProjectAccess.mockResolvedValue(false);
+  // Reports are admin-only end to end: `reports:generate` is declared on the
+  // route, so a non-admin never reaches the controller and the per-project
+  // access check the handler used to make is gone with it.
+  test('403: a non-admin cannot generate a report at all', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+    const res = await handler(postEvent({ project_id: 1 }));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
+  });
+
+  test('403: being a Director on the project does not help', async () => {
+    mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+    mockMemberships.push({ project_id: 1, role: 'Director' });
     const res = await handler(postEvent({ project_id: 1 }));
     expect(res.statusCode).toBe(403);
   });
@@ -359,7 +376,6 @@ describe('GET /reports/upload-url unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
-    mockCheckProjectAccess.mockReturnValue(true as any);
     setupProjectMock({ project_id: 1 });
   });
 
@@ -412,11 +428,12 @@ describe('GET /reports/upload-url unit tests', () => {
       expect(JSON.parse(res.body).message).toBe('Project not found');
     });
 
-    test('403: user has no project access returns 403', async () => {
-      mockCheckProjectAccess.mockReturnValue(false as any);
+    test('403: a non-admin is refused, whatever their role on the project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+      mockMemberships.push({ project_id: 1, role: 'Director' });
       const res = await handler(uploadUrlEvent({ fileName: 'f.pdf', projectId: '1' }));
       expect(res.statusCode).toBe(403);
-      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
+      expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
     });
 
     test('200: returns uploadUrl and objectUrl for pdf', async () => {
@@ -507,7 +524,6 @@ describe('POST /reports unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
-    mockCheckProjectAccess.mockReturnValue(true as any);
     setupProjectMock({ project_id: 1 });
   });
 
@@ -578,11 +594,12 @@ describe('POST /reports unit tests', () => {
   });
 
   describe('Business logic', () => {
-    test('403: user has no project access returns 403', async () => {
-      mockCheckProjectAccess.mockReturnValue(false as any);
+    test('403: a non-admin is refused, whatever their role on the project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+      mockMemberships.push({ project_id: 1, role: 'Director' });
       const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(403);
-      expect(JSON.parse(res.body).message).toBe('You do not have access to upload reports for this project');
+      expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
     });
 
     test('404: nonexistent project returns 404', async () => {
@@ -655,7 +672,6 @@ describe('GET /reports/{id} unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
-    mockCheckProjectAccess.mockReturnValue(true as any);
     setupReportMock(fakeReport);
   });
 
@@ -693,11 +709,11 @@ describe('GET /reports/{id} unit tests', () => {
       expect(JSON.parse(res.body).message).toBe('Report not found');
     });
 
-    test('403: user has no project access', async () => {
-      mockCheckProjectAccess.mockReturnValue(false as any);
+    test('403: a non-admin cannot read a report', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
       const res = await handler(idEvent('GET', '5'));
       expect(res.statusCode).toBe(403);
-      expect(JSON.parse(res.body).message).toBe('You do not have access to this report');
+      expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
     });
 
     test('200: returns report for user with project access', async () => {
@@ -712,9 +728,14 @@ describe('GET /reports/{id} unit tests', () => {
       expect(json.body.title).toBe('Test Report');
     });
 
-    test('checkProjectAccess is called with the report\'s own project_id', async () => {
-      await handler(idEvent('GET', '5'));
-      expect(mockCheckProjectAccess).toHaveBeenCalledWith(1, 2, true);
+    // Replaces an assertion on the removed checkProjectAccess helper: reading a
+    // report is gated by `reports:view` on the route, which no non-admin passes
+    // regardless of which project the report belongs to.
+    test('403: a non-admin cannot read a report on any project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+      mockMemberships.push({ project_id: 2, role: 'Director' });
+      const res = await handler(idEvent('GET', '5'));
+      expect(res.statusCode).toBe(403);
     });
   });
 });
@@ -758,7 +779,6 @@ describe('DELETE /reports/{id} unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
-    mockCheckProjectAccess.mockReturnValue(true as any);
     setupReportMock(fakeReport);
     setupDeleteMock(1n);
   });
@@ -793,12 +813,12 @@ describe('DELETE /reports/{id} unit tests', () => {
       expect(mockDb.deleteFrom).not.toHaveBeenCalled();
     });
 
-    test('403: user has no project access', async () => {
-      mockCheckProjectAccess.mockReturnValue(false as any);
+    test('403: a non-admin cannot delete a report', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
       const res = await handler(idEvent('DELETE', '5'));
 
       expect(res.statusCode).toBe(403);
-      expect(JSON.parse(res.body).message).toBe('You do not have access to delete this report');
+      expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
       expect(mockDb.deleteFrom).not.toHaveBeenCalled();
     });
 
@@ -818,9 +838,11 @@ describe('DELETE /reports/{id} unit tests', () => {
       expect(json.pathParams).toEqual({ id: '5' });
     });
 
-    test('checkProjectAccess is called with the report\'s own project_id', async () => {
-      await handler(idEvent('DELETE', '5'));
-      expect(mockCheckProjectAccess).toHaveBeenCalledWith(1, 2, true);
+    test('403: a non-admin cannot delete a report on any project', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+      mockMemberships.push({ project_id: 2, role: 'Director' });
+      const res = await handler(idEvent('DELETE', '5'));
+      expect(res.statusCode).toBe(403);
     });
 
     describe('the generated file goes with the row', () => {

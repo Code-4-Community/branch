@@ -29,7 +29,7 @@ export const routes: Route[] = [
   { method: 'POST', pattern: '/auth/login', access: 'public', handler: ({ event }) => handleLogin(event) },
   { method: 'POST', pattern: '/auth/respond-challenge', access: 'public', handler: ({ event }) => handleRespondChallenge(event) },
   { method: 'POST', pattern: '/auth/refresh', access: 'public', handler: ({ event }) => handleRefresh(event) },
-  { method: 'GET', pattern: '/auth/me', access: 'authenticated', handler: ({ event }) => handleMe(event) },
+  { method: 'GET', pattern: '/auth/me', access: 'authenticated', handler: handleMe },
   { method: 'POST', pattern: '/auth/verify-email', access: 'public', handler: ({ event }) => handleVerifyEmail(event) },
   { method: 'POST', pattern: '/auth/resend-code', access: 'public', handler: ({ event }) => handleResendCode(event) },
   // Public because it must still clear a session whose access token has already

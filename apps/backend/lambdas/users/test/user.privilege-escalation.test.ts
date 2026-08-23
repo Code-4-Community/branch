@@ -33,28 +33,12 @@ jest.mock('../auth', () => {
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<
   typeof authenticateRequest
 >;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<
-  typeof checkAuthorization
->;
-
-// Mirrors the real checkAuthorization for the levels this route uses.
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return { allowed: false, reason: 'Authentication required' };
-  }
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed =
-      (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
-  }
-  return { allowed: true };
-});
 
 const mockSet = jest.fn();
 
@@ -116,7 +100,7 @@ describe('PATCH /users/{userId} — isAdmin is a privilege grant', () => {
     const res = await handler(patchEvent(2, { isAdmin: true }));
 
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Only an admin can change isAdmin');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
     expect(mockSet).not.toHaveBeenCalled();
   });
 

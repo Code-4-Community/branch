@@ -39,40 +39,12 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 import { before } from 'node:test';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (requiredAccess === 'PUBLIC') {
-    return { allowed: true };
-  }
-  
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return { allowed: false, reason: 'Authentication required' };
-  }
-  
-  if (requiredAccess === 'ADMIN') {
-    const isAdmin = authContext.user.isAdmin ?? false;
-    return { 
-      allowed: isAdmin, 
-      reason: isAdmin ? undefined : 'Only administrators can do this' 
-    };
-  }
-  
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { 
-      allowed, 
-      reason: allowed ? undefined : 'Admin access or resource ownership required' 
-    };
-  }
-  
-  return { allowed: false, reason: 'Unknown access level' };
-});
 
 
 // Helper function to create a POST event

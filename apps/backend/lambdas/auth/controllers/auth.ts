@@ -8,8 +8,8 @@ import {
   ChallengeNameType,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, parseBody } from '@branch/lambda-http';
+import type { RouteHandler } from '@branch/lambda-http';
 import { authenticateRequest } from '../auth';
-import { loadRbacSubject } from '@branch/lambda-auth';
 import db from '../db';
 import {
   cognitoClient,
@@ -192,15 +192,18 @@ export async function handleRefresh(event: any): Promise<APIGatewayProxyResult> 
  * pre-token-generation trigger, so it is not a JWT claim. This endpoint is the
  * only way the frontend can learn whether the caller is an admin.
  */
-export async function handleMe(event: any): Promise<APIGatewayProxyResult> {
-  const authContext = await authenticateRequest(event);
-  if (!authContext.isAuthenticated || !authContext.user) {
+export const handleMe: RouteHandler = async ({ auth }) => {
+  // `access: 'authenticated'` on the route means dispatch has already verified
+  // the session and loaded the subject; re-doing either here would be a second
+  // token verification and a second memberships query per request.
+  const user = auth.context.user;
+  if (!user) {
     return json(401, { message: 'Authentication required' });
   }
 
   const me = await db
     .selectFrom('branch.users')
-    .where('cognito_sub', '=', authContext.user.cognitoSub)
+    .where('cognito_sub', '=', user.cognitoSub)
     .select(['user_id', 'cognito_sub', 'email', 'name', 'is_admin', 'profile_image'])
     .executeTakeFirst();
 
@@ -213,12 +216,6 @@ export async function handleMe(event: any): Promise<APIGatewayProxyResult> {
     return json(401, { message: 'Authentication required' });
   }
 
-  // The RBAC subject travels with identity so the browser evaluates the same
-  // policy against the same facts the lambdas used. Without it the frontend
-  // would have to re-derive "is a director" and "which projects am I on" from
-  // separate endpoints, which is exactly the drift @branch/rbac exists to stop.
-  const rbac = await loadRbacSubject(db, authContext);
-
   return json(200, {
     userId: me.user_id,
     cognitoSub: me.cognito_sub,
@@ -226,9 +223,13 @@ export async function handleMe(event: any): Promise<APIGatewayProxyResult> {
     name: me.name,
     isAdmin: me.is_admin === true,
     profileImage: me.profile_image,
-    rbac,
+    // The RBAC subject travels with identity so the browser evaluates the same
+    // policy against the same facts the lambdas used. Without it the frontend
+    // would have to re-derive "is a director" and "which projects am I on"
+    // from separate endpoints -- exactly the drift @branch/rbac exists to stop.
+    rbac: auth.subject,
   });
-}
+};
 
 /** POST /logout -- revokes every token issued to the caller's Cognito session. */
 export async function handleLogout(event: any): Promise<APIGatewayProxyResult> {

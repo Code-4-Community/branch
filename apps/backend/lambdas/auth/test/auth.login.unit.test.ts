@@ -17,8 +17,16 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 });
 
 const mockAuthenticateRequest = jest.fn();
+// dispatch() resolves the caller through resolveAuth before the controller
+// runs, so the mock has to supply it too. GET /auth/me returns whatever subject
+// this hands back, which is what the browser then authorizes against.
+const mockSubject = { userId: 1, isAdmin: false, memberProjectIds: [] as number[], directorProjectIds: [] as number[] };
 jest.mock('../auth', () => ({
   authenticateRequest: (...args: unknown[]) => mockAuthenticateRequest(...args),
+  resolveAuth: async (...args: unknown[]) => ({
+    context: await mockAuthenticateRequest(...args),
+    subject: mockSubject,
+  }),
 }));
 
 const mockExecuteTakeFirst = jest.fn();
@@ -451,6 +459,9 @@ describe('GET /me', () => {
       name: 'Ada',
       isAdmin: true,
       profileImage: null,
+      // The authorization subject rides along with identity so the browser can
+      // evaluate @branch/rbac without a second round trip.
+      rbac: mockSubject,
     });
   });
 
