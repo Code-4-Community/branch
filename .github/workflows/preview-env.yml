@@ -32,7 +32,6 @@ on:
 # DynamoDB state lock (which serializes any overlapping terraform) keep cleanup
 # reliable regardless of event ordering.
 env:
-  LABEL: test-environment
   AWS_REGION: us-east-2
   ROLE_ARN: arn:aws:iam::489881683177:role/branch-ci-preview
   TF_VERSION: 1.13.0
@@ -126,9 +125,14 @@ jobs:
       # Prod config is the single source of truth, DB_HOST included. Never re-derive
       # it from `DBInstances[0]` -- this account hosts other C4C databases and that
       # picked an unreachable one. Reserved / credential keys are dropped; the module
-      # adds NODE_ENV. Only needed when creating the stack.
+      # adds NODE_ENV.
+      #
+      # Runs on every event, not just label-add. Gating this on create meant a
+      # stack kept whatever env it was born with: when the RDS instance was given
+      # an explicit identifier its endpoint changed, and every existing preview
+      # kept the old `terraform-*` hostname, so all six lambdas 500'd on any
+      # request that touched the database while prod was fine.
       - name: Resolve preview lambda env
-        if: steps.mode.outputs.create == 'true'
         run: |
           set -euo pipefail
           AUTH_ENV=$(aws lambda get-function-configuration --function-name branch-auth --query 'Environment.Variables' --output json)
@@ -149,8 +153,9 @@ jobs:
           # Stash for the terraform step (multiline-safe).
           printf 'LAMBDA_ENV<<EOF\n%s\nEOF\n' "$ENV_JSON" >> "$GITHUB_ENV"
 
-      - name: Terraform apply (create/ensure preview stack)
-        if: steps.mode.outputs.create == 'true'
+      # Also every run: an apply is how the resolved env above actually reaches
+      # the functions. Cheap when nothing changed -- the plan is empty.
+      - name: Terraform apply (create/reconcile preview stack)
         working-directory: infrastructure/preview
         run: |
           cat > preview.auto.tfvars.json <<EOF
@@ -165,25 +170,11 @@ jobs:
         working-directory: infrastructure/preview
         run: |
           set -euo pipefail
-          if [ "${{ steps.mode.outputs.create }}" = "true" ]; then
-            API_URL=$(terraform output -raw api_gateway_url)
-          else
-            API_ID=$(aws apigateway get-rest-apis \
-              --query "items[?name=='branch-api-pr${PR}'].id | [0]" --output text)
-            if [ -z "$API_ID" ] || [ "$API_ID" = "None" ]; then
-              echo "::error::No preview API for PR #${PR}. Re-add the ${LABEL} label to (re)create it."
-              exit 1
-            fi
-            # The API existing is not enough. A stack whose apply died partway has
-            # the resources but no stage, and every call to it 403s without CORS
-            # headers, so the browser blames CORS. Fail here rather than posting a
-            # green "updated in place" on an environment that cannot serve a request.
-            if ! aws apigateway get-stage --rest-api-id "$API_ID" --stage-name prod >/dev/null 2>&1; then
-              echo "::error::Preview API ${API_ID} for PR #${PR} has no 'prod' stage — the stack is incomplete. Remove and re-add the ${LABEL} label to rebuild it."
-              exit 1
-            fi
-            API_URL="https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod"
-          fi
+          # Straight from the apply above, in both modes. The old else-branch
+          # looked the API up by name and told the reader to re-add the label if
+          # it was missing or half-built; the apply now repairs that itself, or
+          # fails loudly and stops the job before this step.
+          API_URL=$(terraform output -raw api_gateway_url)
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
 
       # On create → all lambdas + frontend. On update → only what changed in the PR.
