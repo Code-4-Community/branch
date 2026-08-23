@@ -1,10 +1,8 @@
 /**
  * Route access policy.
  *
- * Deliberately protected-by-default: any new page under `src/app/` is gated
- * without anyone remembering to opt in. That is the property that keeps the
- * "anonymous visitor sees the admin shell" bug from recurring — the previous
- * design had no guard at all, so every page was implicitly public.
+ * Protected-by-default: any new page under `src/app/` is gated without anyone
+ * remembering to opt in.
  */
 
 import {
@@ -20,9 +18,7 @@ export const LOGIN_PATH = '/login';
 
 /**
  * Landing route when nothing more specific applies. Must stay reachable by every
- * role — it was `/dashboard`, which dropped non-admins on the no-access panel
- * once that page became admin-only. Prefer `landingPathFor()` when the subject
- * is known.
+ * role. Prefer `landingPathFor()` when the subject is known.
  */
 export const DEFAULT_LANDING_PATH = '/projects';
 export const ADMIN_LANDING_PATH = '/dashboard';
@@ -31,10 +27,8 @@ export const ADMIN_LANDING_PATH = '/dashboard';
  * Asks the policy rather than reading `isAdmin`, so widening `dashboard:view`
  * later moves the landing page with it instead of leaving this behind.
  */
-export function landingPathFor(subject: RbacSubject | boolean): string {
-  const allowed =
-    typeof subject === 'boolean' ? subject : can(subject, 'dashboard:view');
-  return allowed ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
+export function landingPathFor(subject: RbacSubject): string {
+  return can(subject, 'dashboard:view') ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
 }
 
 /**
@@ -88,10 +82,8 @@ export function classifyRoute(pathname: string): RouteAccess {
 /**
  * The permission a page requires, or `undefined` when a session is enough.
  *
- * The table lives in `@branch/rbac` rather than here so the navbar, the route
- * guard and the lambdas all answer from one place. This used to be a hardcoded
- * `ADMIN_PREFIXES` list, which had no way to express "/donors is admin *and*
- * director" and would have needed a second, divergent rule to gain one.
+ * The table lives in `@branch/rbac` so the navbar, the route guard and the
+ * lambdas all answer from one place.
  */
 export function pagePermission(pathname: string): Action | undefined {
   return policyPagePermission(normalizePath(pathname));

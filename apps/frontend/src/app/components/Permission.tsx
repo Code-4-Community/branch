@@ -39,10 +39,8 @@ export function Can<A extends Action>({
 /**
  * A `Button` that disables itself when the policy says no and explains why.
  *
- * Disabled rather than hidden on purpose: for an action the user can see the
- * subject of — an expense in front of them, a project they are on — hiding the
- * control reads as a bug, while "Approved expenses can only be edited by an
- * administrator" tells them what happened.
+ * Disabled rather than hidden when the user can see what the action applies to:
+ * an absent control reads as a bug, where the reason tells them what happened.
  */
 export function GatedButton<A extends Action>({
   action,

@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'apps/frontend/**'
+      # The authorization policy is compiled into the browser bundle, so a
+      # change to shared/rbac has to redeploy the frontend or the two sides
+      # stop agreeing.
+      - 'shared/rbac/**'
   workflow_dispatch:
 
 # Requires the OIDC apply role (branch-ci-apply) from infrastructure/aws/oidc.tf.
@@ -28,6 +32,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      # apps/frontend consumes @branch/rbac as a file: dependency and its dist
+      # is gitignored, so npm ci cannot resolve it until this has run. npm does
+      # not run `prepare` for a file: directory dep -- it symlinks -- so the
+      # build has to be explicit. The job's defaults.run working-directory does
+      # not reach a composite action's steps, so this runs from the repo root.
+      - name: Build shared packages
+        uses: ./.github/actions/build-shared-packages
 
       - name: Configure AWS credentials (write apply role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4

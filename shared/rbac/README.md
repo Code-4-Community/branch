@@ -23,7 +23,9 @@ everything else is derived from `branch.project_memberships.role`.
 | **Member** | holds any membership, on the projects they hold it for |
 
 "Director" is therefore a derived property, not a stored one — see
-`buildSubject` in `src/subject.ts`.
+`buildSubject` in `src/subject.ts`, which also owns `PROJECT_ROLES`. The role
+vocabulary lives beside the derivation that reads it so a new role cannot be
+added in one place and silently produce a non-director in the other.
 
 ## The matrix
 
@@ -40,8 +42,8 @@ a member of (enforced in SQL, so out-of-scope rows never leave the database).
 | **Expenses** | View list | ✅ | **scoped** | **scoped** | ❌ |
 | | View one | ✅ | own projects, or authored | own projects, or authored | ❌ |
 | | Create | ✅ | own projects | own projects | ❌ |
-| | Edit / delete own, pending | ✅ | ✅ | ✅ | ❌ |
-| | Edit / delete own, **approved** | ✅ | ❌ | ❌ | ❌ |
+| | Edit / delete own, pending or needs-info | ✅ | ✅ | ✅ | ❌ |
+| | Edit / delete own, **approved or denied** | ✅ | ❌ | ❌ | ❌ |
 | | Edit / delete someone else's | ✅ | ❌ | ❌ | ❌ |
 | | Approve / deny, admin notes | ✅ | ❌ | ❌ | ❌ |
 | | Read admin notes | ✅ | ❌ | ❌ | ❌ |
@@ -60,10 +62,11 @@ Notes on the rows that are easy to misread:
   (donations) or by their own author (expenses). "Scoped" lists are filtered in
   SQL and the pagination count is filtered with them, so a total the caller may
   not read is never returned.
-- **An approved expense is frozen.** The author may revise their own submission
-  right up until an admin approves it; after that only an admin can touch it.
-  This is the one rule with two distinct denial messages, and the UI shows
-  whichever applies.
+- **A decided expense is frozen.** The author may revise their own submission
+  right up until an admin approves or denies it; after that only an admin can
+  touch it. `needs_more_info` deliberately stays open, because its whole purpose
+  is to send the expense back for a correction. The UI shows whichever denial
+  message applies — "Approved expenses…" or "Denied expenses…".
 - **Directors lost project editing.** They may read the projects they direct and
   the donor roster; every project mutation is admin-only.
 - **An author keeps access to what they filed** even after leaving the project,
@@ -82,7 +85,9 @@ authorize(subject, 'project:view', { projectId }).reason;
 Resource-scoped actions are listed in `ResourceMap`; the variadic signature
 makes a forgotten resource a **compile error**, and a resource that arrives
 `undefined` at runtime is a hard deny rather than a rule evaluated against
-nothing.
+nothing. `RESOURCE_MAP_IS_COMPLETE` pins that hand-written map to the table
+itself, so a `scoped` entry cannot go missing from it and quietly widen into a
+`GlobalAction` that denies every request to its route.
 
 ### Backend
 

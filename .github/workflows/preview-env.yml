@@ -207,13 +207,20 @@ jobs:
               lambdas="$lambdas $svc"
             fi
           done
+          # A shared/ change rebuilds the frontend too: @branch/rbac is compiled
+          # into the browser bundle, so a policy edit that only touched shared/
+          # would otherwise leave the preview frontend on the old rules.
           frontend=false
-          echo "$CHANGED" | grep -q '^apps/frontend/' && frontend=true
+          if [ "$shared_changed" = true ] || echo "$CHANGED" | grep -q '^apps/frontend/'; then
+            frontend=true
+          fi
           echo "lambdas=$(echo $lambdas | xargs)" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
 
+      # Needed by the frontend build as well as the lambdas: apps/frontend
+      # resolves @branch/rbac through a gitignored dist.
       - name: Build shared packages
-        if: steps.detect.outputs.lambdas != ''
+        if: steps.detect.outputs.lambdas != '' || steps.detect.outputs.frontend == 'true'
         uses: ./.github/actions/build-shared-packages
 
       - name: Build + deploy lambdas

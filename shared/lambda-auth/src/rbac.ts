@@ -8,16 +8,12 @@ interface QueryableDb {
 }
 
 /**
- * Build the authorization subject for an authenticated request.
+ * Build the authorization subject for an authenticated request: one query at the
+ * edge, because nearly every rule needs the caller's memberships. The result is
+ * also what `GET /auth/me` ships to the browser.
  *
- * One query, at the edge of the request, because almost every rule in the
- * policy needs the caller's memberships and re-reading them per rule would put
- * a round trip behind every button. The result is also what `GET /auth/me`
- * ships to the browser, so the frontend evaluates the identical policy against
- * the identical facts.
- *
- * The assembly itself lives in `buildSubject` in @branch/rbac — this function
- * is only the "read it from Postgres" half.
+ * The assembly lives in `buildSubject` in @branch/rbac; this is the "read it
+ * from Postgres" half.
  */
 export async function loadRbacSubject(
   db: QueryableDb,

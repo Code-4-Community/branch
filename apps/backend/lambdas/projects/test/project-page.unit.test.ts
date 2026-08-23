@@ -167,7 +167,9 @@ test('overview returns the project, stats, members and expenditures together', a
   expect(body.stats.totalBudget).toBe(1000);
   expect(body.stats.totalSpent).toBe(0);
   expect(body.stats.totalRemaining).toBe(1000);
-  expect(body.canEdit).toBe(true);
+  // No `canEdit`: the client asks the shared policy rather than trusting a flag
+  // the payload computed for it.
+  expect(body.canEdit).toBeUndefined();
   expect(body.isActive).toBe(true);
 });
 

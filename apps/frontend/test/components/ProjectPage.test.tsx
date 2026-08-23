@@ -74,7 +74,6 @@ const overview: ProjectOverview = {
     members: [1, 2, 3, 4, 5].map(makeMember),
     expenditures: [1, 2, 3, 4, 5].map(makeExpenditure),
     isActive: true,
-    canEdit: true,
 };
 
 let resolvers: Array<() => void> = [];
@@ -139,8 +138,7 @@ describe('Project Page', () => {
     });
 
     // Editing a project is admin-only, so a member of it still gets a read-only
-    // page. The overview payload still carries `canEdit`; the button now asks
-    // the shared policy instead, so the two can never disagree.
+    // page. The button asks the shared policy rather than the payload.
     it('hides Edit Project from a non-admin member of the project', async () => {
         render(<ProjectPage />, { subject: memberSubject([1]) });
         act(() => resolvers.forEach(r => r()));

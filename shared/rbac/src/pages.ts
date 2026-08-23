@@ -1,4 +1,4 @@
-import { Action } from './policy';
+import { GlobalAction } from './policy';
 
 /**
  * Which permission each page of the SPA requires.
@@ -7,8 +7,12 @@ import { Action } from './policy';
  * navbar and the backend's own notion of "who may reach this area" all read one
  * table. Keys are normalised paths (lowercase, no trailing slash); a page
  * matches its own path and any descendant segment.
+ *
+ * `GlobalAction` and not `Action`: the guard evaluates these with no resource in
+ * hand, so a record-scoped permission here would hard-deny the page for
+ * everyone, admins included.
  */
-export const PAGE_PERMISSIONS: Record<string, Action> = {
+export const PAGE_PERMISSIONS: Record<string, GlobalAction> = {
   '/dashboard': 'dashboard:view',
   '/donors': 'donors:view',
   '/donations': 'donations:view',
@@ -25,8 +29,8 @@ export const PAGE_PERMISSIONS: Record<string, Action> = {
  * Longest prefix wins, so `/projects/settings` could later require something
  * stricter than `/projects` without reordering the table.
  */
-export function pagePermission(pathname: string): Action | undefined {
-  let best: { prefix: string; action: Action } | undefined;
+export function pagePermission(pathname: string): GlobalAction | undefined {
+  let best: { prefix: string; action: GlobalAction } | undefined;
   for (const [prefix, action] of Object.entries(PAGE_PERMISSIONS)) {
     const matches = pathname === prefix || pathname.startsWith(`${prefix}/`);
     if (!matches) continue;

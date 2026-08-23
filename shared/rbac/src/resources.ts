@@ -28,7 +28,23 @@ export interface UserResource {
   userId: number;
 }
 
-/** An approved expense is frozen for everyone except an admin. */
+/** Statuses that freeze a row for everyone except an admin. */
+const FROZEN_STATUSES: readonly string[] = ['approved', 'denied'];
+
+/**
+ * A decided expense is the record of that decision, not a draft: once an admin
+ * has approved or denied it, only an admin may change it. `pending` and
+ * `needs_more_info` stay editable so the author can answer a reviewer.
+ */
 export function isFrozen(expense: ExpenseResource): boolean {
-  return expense.status === 'approved';
+  return FROZEN_STATUSES.includes(expense.status);
+}
+
+/** Why a frozen row was refused, worded for the status that froze it. */
+export function frozenReason(
+  expense: ExpenseResource,
+  verb: 'edited' | 'deleted',
+): string {
+  const state = expense.status === 'denied' ? 'Denied' : 'Approved';
+  return `${state} expenses can only be ${verb} by an administrator`;
 }

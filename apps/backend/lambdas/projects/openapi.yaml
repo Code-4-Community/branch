@@ -185,11 +185,6 @@ paths:
                       type: object
                   isActive:
                     type: boolean
-                  canEdit:
-                    type: boolean
-                    description: >-
-                      Whether the caller may edit — admin, or a Director on this
-                      project. Returned so the client need not re-derive it.
         '400':
           description: Project id must be a valid number
         '403':

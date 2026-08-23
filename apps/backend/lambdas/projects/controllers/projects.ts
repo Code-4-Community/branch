@@ -1,4 +1,4 @@
-import { json, parseBody, RouteHandler } from '@branch/lambda-http';
+import { json, parseBody, requirePermission, RouteHandler } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
 import db from '../db';
 import { ProjectValidationUtils } from '../validation-utils';
@@ -58,7 +58,7 @@ export const getProject: RouteHandler = async (ctx) => {
 };
 
 // PUT /projects/{id} — admin-only via `project:update` on the route.
-export const updateProject: RouteHandler = async ({ event, params }) => {
+export const updateProject: RouteHandler = async ({ event, params, auth }) => {
   const id = params.id;
   if (!id) return json(400, { message: 'id is required' });
   if (!/^\d+$/.test(id)) return json(400, { message: 'Project id must be a valid number' });
@@ -73,6 +73,15 @@ export const updateProject: RouteHandler = async ({ event, params }) => {
   const membersResult = ProjectValidationUtils.validateMembers(body.members);
   if (!membersResult.isValid) return json(400, { message: membersResult.error });
   const members = membersResult.value;
+
+  // Editing the roster is its own permission, checked only when the request
+  // actually carries one. `project:update` on the route is admin-only today, so
+  // this changes nothing yet; it means the matrix row is enforced rather than
+  // implied, and stays enforced if project editing ever widens.
+  if (members !== undefined) {
+    const denied = requirePermission(auth.subject, 'project:manageMembers');
+    if (denied) return denied;
+  }
 
   if (Object.keys(updateValues).length === 0 && members === undefined) {
     return json(400, { message: 'No valid fields provided' });
@@ -158,7 +167,7 @@ export const deleteProject: RouteHandler = async ({ params }) => {
 };
 
 // POST /projects — admin-only via `project:create` on the route.
-export const createProject: RouteHandler = async ({ event }) => {
+export const createProject: RouteHandler = async ({ event, auth }) => {
   const body = parseBody(event);
   if (body === null) return json(400, { message: 'Invalid JSON in request body' });
 
@@ -198,6 +207,11 @@ export const createProject: RouteHandler = async ({ event }) => {
   const membersResult = ProjectValidationUtils.validateMembers(body.members);
   if (!membersResult.isValid) return json(400, { message: membersResult.error });
   const members = membersResult.value ?? [];
+
+  if (members.length > 0) {
+    const denied = requirePermission(auth.subject, 'project:manageMembers');
+    if (denied) return denied;
+  }
 
   const unknownIds = await findUnknownUserIds(members);
   if (unknownIds.length > 0) {

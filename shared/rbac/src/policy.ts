@@ -10,6 +10,7 @@ import {
   ExpenseResource,
   ProjectResource,
   UserResource,
+  frozenReason,
   isFrozen,
 } from './resources';
 
@@ -62,7 +63,6 @@ interface PolicyEntry<R> {
  */
 export interface ResourceMap {
   'project:view': ProjectResource;
-  'project:viewFinancials': ProjectResource;
   'donation:view': DonationResource;
   'expense:view': ExpenseResource;
   'expense:create': ProjectResource;
@@ -98,11 +98,17 @@ const ADMIN_OR_DIRECTOR = 'Only administrators and project directors can do this
 const MEMBER_ONLY = 'You are not a member of this project';
 const SIGN_IN = 'You must be signed in';
 
-function unscoped(reason: string, rule: Rule<void>): PolicyEntry<void> {
+function unscoped(
+  reason: string,
+  rule: Rule<void>,
+): PolicyEntry<void> & { needsResource: false } {
   return { reason, needsResource: false, rule };
 }
 
-function scoped<R>(reason: string, rule: Rule<R>): PolicyEntry<R> {
+function scoped<R>(
+  reason: string,
+  rule: Rule<R>,
+): PolicyEntry<R> & { needsResource: true } {
   return { reason, needsResource: true, rule };
 }
 
@@ -146,15 +152,15 @@ export const POLICY = {
   ),
   'expense:create': scoped<ProjectResource>(MEMBER_ONLY, adminOrMember),
   'expense:uploadReceipt': scoped<ProjectResource>(MEMBER_ONLY, adminOrMember),
-  // The author may revise their own expense until an admin approves it. After
-  // that the row is financial record, not a draft.
+  // The author may revise their own expense until an admin decides it. Approved
+  // or denied, the row is the record of that decision and only an admin may
+  // touch it; `needs_more_info` stays open so they can answer the reviewer.
   'expense:update': scoped<ExpenseResource>(
     'You can only edit expenses you submitted',
     (s, r) => {
       if (s.isAdmin) return true;
       if (!isAuthor(s, r)) return false;
-      if (isFrozen(r))
-        return deny('Approved expenses can only be edited by an administrator');
+      if (isFrozen(r)) return deny(frozenReason(r, 'edited'));
       return true;
     },
   ),
@@ -163,8 +169,7 @@ export const POLICY = {
     (s, r) => {
       if (s.isAdmin) return true;
       if (!isAuthor(s, r)) return false;
-      if (isFrozen(r))
-        return deny('Approved expenses can only be deleted by an administrator');
+      if (isFrozen(r)) return deny(frozenReason(r, 'deleted'));
       return true;
     },
   ),
@@ -189,11 +194,9 @@ export const POLICY = {
 
   // -- Projects -------------------------------------------------------------
   // Listing is open; the rows are scoped to membership. Every mutation is
-  // admin-only, directors included: they lost project editing when the RBAC
-  // matrix was tightened.
+  // admin-only, directors included.
   'projects:view': unscoped(SIGN_IN, authenticated),
   'project:view': scoped<ProjectResource>(MEMBER_ONLY, adminOrMember),
-  'project:viewFinancials': scoped<ProjectResource>(MEMBER_ONLY, adminOrMember),
   'project:create': unscoped(ADMIN_ONLY, admin),
   'project:update': unscoped(ADMIN_ONLY, admin),
   'project:delete': unscoped(ADMIN_ONLY, admin),
@@ -218,12 +221,28 @@ export type Action = keyof typeof POLICY;
 
 export const ACTIONS = Object.keys(POLICY) as Action[];
 
+/** Actions whose own entry declares that its rule reads a resource. */
+export type ScopedAction = {
+  [K in Action]: (typeof POLICY)[K]['needsResource'] extends true ? K : never;
+}[Action];
+
 /**
  * Actions that need no resource. Route tables may only declare one of these:
  * a resource-scoped permission has nothing to evaluate against at the routing
  * layer and would fail closed on every request.
  */
-export type GlobalAction = Exclude<Action, keyof ResourceMap>;
+export type GlobalAction = Exclude<Action, ScopedAction>;
+
+type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+
+/**
+ * `ResourceMap` is hand-written, so this pins it to the table it describes. A
+ * `scoped` entry missing from the map would otherwise widen into a
+ * `GlobalAction`, become legal in a route table, and then deny every single
+ * request to that route — fail-closed, but silently.
+ */
+export const RESOURCE_MAP_IS_COMPLETE: Exactly<ScopedAction, keyof ResourceMap> =
+  true;
 
 /** The resource an action needs, or `void` when it is global. */
 export type ResourceOf<A extends Action> = A extends keyof ResourceMap

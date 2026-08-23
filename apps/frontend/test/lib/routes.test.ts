@@ -110,14 +110,16 @@ describe('pagePermission', () => {
 
 describe('landingPathFor', () => {
   it('sends an admin to the dashboard', () => {
-    expect(landingPathFor(true)).toBe(ADMIN_LANDING_PATH);
+    expect(landingPathFor(adminSubject())).toBe(ADMIN_LANDING_PATH);
   });
 
   it('sends everyone else somewhere they can actually load', () => {
     // Regression guard: the landing route was /dashboard for every role, so
     // making the dashboard admin-only dropped non-admins on the no-access panel
     // the instant they signed in.
-    expect(landingPathFor(false)).toBe(DEFAULT_LANDING_PATH);
+    for (const subject of [directorSubject(), memberSubject(), anonymousSubject]) {
+      expect(landingPathFor(subject)).toBe(DEFAULT_LANDING_PATH);
+    }
     expect(reaches(memberSubject(), DEFAULT_LANDING_PATH)).toBe(true);
   });
 });

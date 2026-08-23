@@ -1,6 +1,5 @@
 import { sql } from 'kysely';
 import { json, RouteHandler } from '@branch/lambda-http';
-import { can } from '@branch/rbac';
 import db from '../db';
 import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
 import { isProjectActive } from '../services/projects';
@@ -215,10 +214,6 @@ export const getOverview: RouteHandler = async (ctx) => {
       .executeTakeFirst(),
   ]);
 
-  // Still returned so the detail page does not re-derive the rule, but it is
-  // now the shared policy answering rather than a second implementation of it.
-  const canEdit = can(ctx.auth.subject, 'project:update');
-
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
   // The table below lists every expenditure, including the ones still in
   // review; the stats beside it count only what was approved.
@@ -242,6 +237,5 @@ export const getOverview: RouteHandler = async (ctx) => {
     members,
     expenditures,
     isActive: isProjectActive(project.end_date),
-    canEdit,
   });
 };

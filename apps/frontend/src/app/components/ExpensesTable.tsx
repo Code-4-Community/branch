@@ -146,9 +146,8 @@ export default function ExpensesTable({
             width: '56px',
             align: 'center' as const,
             // Disabled with the policy's own wording rather than hidden: the
-            // row is right there, so an absent trash icon reads as a bug while
-            // "Approved expenses can only be deleted by an administrator"
-            // explains itself. It is the same sentence the API would return.
+            // row is right there, so an absent trash icon reads as a bug. The
+            // tooltip is the same sentence the API would return.
             cell: (e: Expenditure) => {
               const reason = why('expense:delete', {
                 projectId: e.project_id,

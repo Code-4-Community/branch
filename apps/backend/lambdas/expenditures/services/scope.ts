@@ -18,14 +18,11 @@ export function expenditureScope(subject: RbacSubject): ExpenditureScope {
 }
 
 /**
- * Apply the scope in SQL.
+ * Apply the scope in SQL, not in a `.filter()` afterwards: the pagination count
+ * has to see the same predicate as the page, or a non-admin gets short pages and
+ * a total that counts rows they may not read.
  *
- * In SQL and not in a `.filter()` afterwards, on purpose: the pagination count
- * has to see the same predicate as the page, or a non-admin gets short pages
- * and a total that counts rows they may not read.
- *
- * Typed structurally over `where` rather than against a Kysely builder type, so
- * one function serves both the count query and the page query.
+ * Typed structurally over `where` so one function serves both queries.
  */
 export function applyExpenditureScope<Q extends { where(cb: any): Q }>(
   query: Q,

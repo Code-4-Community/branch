@@ -212,6 +212,75 @@ describe('Authorization', () => {
     const res = await handler(putEvent('/projects/2', { name: 'X' }));
     expect(res.statusCode).toBe(403);
   });
+
+  /**
+   * The staff picker submits bare user ids, and "Director" is derived from these
+   * rows, so defaulting an unspecified role to Student made every ordinary
+   * project edit strip the project's directors of their role -- and with it the
+   * donor roster -- with no UI to put it back.
+   */
+  test('an edit that does not mention roles leaves the existing ones alone', async () => {
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+
+    const client = await pool.connect();
+    let directorId: number;
+    try {
+      const { rows } = await client.query(
+        `SELECT user_id FROM branch.users WHERE email = 'directormember@branch.org'`,
+      );
+      directorId = rows[0].user_id;
+    } finally {
+      client.release();
+    }
+
+    const res = await handler(
+      putEvent('/projects/1', { name: 'Renamed by admin', members: [directorId] }),
+    );
+    expect(res.statusCode).toBe(200);
+
+    const after = await pool.connect();
+    try {
+      const { rows } = await after.query(
+        `SELECT role FROM branch.project_memberships WHERE project_id = 1 AND user_id = $1`,
+        [directorId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].role).toBe('Director');
+    } finally {
+      after.release();
+    }
+  });
+
+  test('an explicit role in the payload still wins', async () => {
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+
+    const client = await pool.connect();
+    let directorId: number;
+    try {
+      const { rows } = await client.query(
+        `SELECT user_id FROM branch.users WHERE email = 'directormember@branch.org'`,
+      );
+      directorId = rows[0].user_id;
+    } finally {
+      client.release();
+    }
+
+    const res = await handler(
+      putEvent('/projects/1', { members: [{ user_id: directorId, role: 'Student' }] }),
+    );
+    expect(res.statusCode).toBe(200);
+
+    const after = await pool.connect();
+    try {
+      const { rows } = await after.query(
+        `SELECT role FROM branch.project_memberships WHERE project_id = 1 AND user_id = $1`,
+        [directorId],
+      );
+      expect(rows[0].role).toBe('Student');
+    } finally {
+      after.release();
+    }
+  });
 });
 
 describe('POST /projects (e2e)', () => {

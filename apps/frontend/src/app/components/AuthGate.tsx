@@ -15,14 +15,10 @@ import {
 import FullPageSpinner from './FullPageSpinner';
 
 /**
- * The app's only route guard.
- *
- * Mounted once in `providers.tsx` rather than per page. A `useRequireAuth()`
- * hook or a per-page `<ProtectedRoute>` wrapper would both have to be remembered
- * on every new page — the same class of omission that left the entire app
- * unguarded in the first place — and neither can stop protected UI from painting
- * for a frame. `middleware.ts` is not an option: `output: 'export'` means there
- * is no server to run it.
+ * The app's only route guard, mounted once in `providers.tsx`. A per-page
+ * wrapper has to be remembered on every new page and cannot stop protected UI
+ * from painting for a frame; `middleware.ts` is unavailable under
+ * `output: 'export'`.
  *
  * Two mechanisms, on purpose:
  *   1. an effect that navigates, and
@@ -62,12 +58,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   if (access === 'protected' && !isAuthenticated) return <FullPageSpinner />;
   if (access === 'public' && isAuthenticated) return <FullPageSpinner />;
 
-  // Denied users get an explanation in place rather than a redirect: bouncing
-  // them can loop if their role changes mid-session, and "page not found" would
-  // be a lie. This is also what makes the Navbar's filtering more than cosmetic
-  // — hiding a link never stopped anyone typing the URL. The backend enforces
-  // the same permission on every route the page would have called, so this is
-  // the courtesy layer, not the control.
+  // An explanation in place rather than a redirect: bouncing can loop if the
+  // role changes mid-session. The backend enforces the same permission on every
+  // route the page would have called, so this is the courtesy layer.
   if (access === 'protected' && required) {
     const decision = authorizeAny(rbacSubject, required);
     if (!decision.allowed) return <NoAccessPanel reason={decision.reason} />;

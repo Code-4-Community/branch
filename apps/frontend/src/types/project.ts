@@ -56,7 +56,6 @@ export interface ProjectOverview {
    * rule is "admin **or** a Director on this project" — not something the
    * client can work out from the session alone.
    */
-  canEdit: boolean;
 }
 
 /** A user who can be assigned to a project, from `GET /projects/assignable-staff`. */

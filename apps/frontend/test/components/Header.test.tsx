@@ -8,12 +8,15 @@ import Header from '../../src/app/components/Header';
 import { STORAGE_KEYS } from '@/lib/authTokens';
 import { __resetRefreshStateForTests } from '@/lib/authClient';
 
+// `rbac` is not optional: AuthProvider rejects a /auth/me payload without a
+// subject rather than signing the user in and then denying them everything.
 const ME = {
   userId: 7,
   cognitoSub: 'sub-123',
   email: 'jane@example.com',
   name: 'Jane Doe',
   isAdmin: false,
+  rbac: { userId: 7, isAdmin: false, memberProjectIds: [1], directorProjectIds: [] },
 };
 
 function makeToken(claims: Record<string, unknown>) {

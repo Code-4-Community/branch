@@ -37,6 +37,8 @@ const OTHER_PROJECT = { projectId: 3 };
 
 const pendingOwn = { projectId: 2, enteredBy: 3, status: 'pending' };
 const approvedOwn = { projectId: 2, enteredBy: 3, status: 'approved' };
+const deniedOwn = { projectId: 2, enteredBy: 3, status: 'denied' };
+const needsInfoOwn = { projectId: 2, enteredBy: 3, status: 'needs_more_info' };
 const pendingOther = { projectId: 2, enteredBy: 99, status: 'pending' };
 
 describe('subject helpers', () => {
@@ -122,12 +124,26 @@ describe('expenses', () => {
     expect(can(STUDENT, 'expense:update', pendingOwn)).toBe(true);
   });
 
-  it('freezes an approved expense for everyone but an admin', () => {
-    const denied = authorize(STUDENT, 'expense:update', approvedOwn);
-    expect(denied.allowed).toBe(false);
-    expect(denied.reason).toMatch(/Approved expenses/);
+  it('freezes a decided expense for everyone but an admin', () => {
+    const refused = authorize(STUDENT, 'expense:update', approvedOwn);
+    expect(refused.allowed).toBe(false);
+    expect(refused.reason).toMatch(/Approved expenses/);
     expect(can(ADMIN, 'expense:update', approvedOwn)).toBe(true);
     expect(can(STUDENT, 'expense:delete', approvedOwn)).toBe(false);
+  });
+
+  it('freezes a denied expense too, and says so', () => {
+    const refused = authorize(STUDENT, 'expense:update', deniedOwn);
+    expect(refused.allowed).toBe(false);
+    expect(refused.reason).toMatch(/Denied expenses/);
+    expect(authorize(STUDENT, 'expense:delete', deniedOwn).reason).toMatch(
+      /Denied expenses can only be deleted/,
+    );
+    expect(can(ADMIN, 'expense:update', deniedOwn)).toBe(true);
+  });
+
+  it('leaves needs_more_info open so the author can answer the reviewer', () => {
+    expect(can(STUDENT, 'expense:update', needsInfoOwn)).toBe(true);
   });
 
   it('does not let a member edit someone else expense', () => {

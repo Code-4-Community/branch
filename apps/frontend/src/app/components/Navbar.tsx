@@ -28,11 +28,8 @@ interface NavItem {
 
 // Every href here must resolve to a real route. "Log Out" is an action rather
 // than a route — keying the special case on `action` means a future /logout
-// page couldn't silently turn the button back into a dead link.
-//
-// No `roles` field any more: which links a user sees comes from the same
-// PAGE_PERMISSIONS table AuthGate guards with, so a link can never appear for a
-// page that would then refuse to render.
+// page couldn't silently turn the button back into a dead link. Visibility
+// comes from PAGE_PERMISSIONS, the table AuthGate guards with.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Projects", href: "/projects", submenu: "projects" },
@@ -150,14 +147,9 @@ function ProjectsSubmenu({
 }
 
 /**
- * `subjectOverride` exists for tests only — it is named that way so nobody
- * mistakes it for the source of truth again. It replaced a `roleOverride` enum
- * of "admin" | "standard" | "limited", which was a second, coarser role model
- * living beside the real one: it could not express "director", so it could not
- * describe who sees the Donors link.
- *
- * Hiding a link was never a security control — AuthGate refuses the page and
- * every lambda refuses the request.
+ * `subjectOverride` is for tests only, and named so nobody mistakes it for the
+ * source of truth. Hiding a link is not a security control — AuthGate refuses
+ * the page and every lambda refuses the request.
  */
 export const NavBar: React.FC<{
   subjectOverride?: RbacSubject;
@@ -200,8 +192,8 @@ export const NavBar: React.FC<{
   const hasLoadedProjects = useRef(false);
   const submenuRef = useRef<HTMLLIElement | null>(null);
 
-  // One filter, reading the same PAGE_PERMISSIONS table AuthGate guards with,
-  // so a link can never appear for a page that would then refuse to render.
+  // Same table AuthGate guards with, so a link cannot appear for a page that
+  // would then refuse to render.
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!item.href) return true;
     const required = pagePermission(item.href);

@@ -29,9 +29,7 @@ type FileType = typeof ALLOWED_EXTENSIONS[number];
 type ReportType = typeof REPORT_TYPES[number];
 
 // Reports are admin-only end to end: every route carries a `reports:*`
-// permission and dispatch enforces it before these run. The per-project access
-// check these handlers used to make is gone with it -- an admin passes it by
-// definition, and nobody else reaches the handler.
+// permission and dispatch enforces it before these run.
 
 // Numeric-only id, mirroring the old REPORT_ID_ROUTE/REPORT_DOWNLOAD_ROUTE regexes
 // so a non-numeric :id falls through to the same 404 as an unmatched route.

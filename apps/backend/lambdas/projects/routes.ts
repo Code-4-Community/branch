@@ -15,9 +15,9 @@ import { getProjectExpenditures } from './controllers/expenditures';
 export const routes: Route[] = [
   { method: 'GET', pattern: '/projects/dashboard', permission: 'dashboard:view', handler: getDashboard },
   { method: 'GET', pattern: '/projects/:id/members', access: 'authenticated', handler: getMembers },
-  // Declared before /projects/:id: that pattern now requires a numeric
-  // segment, but keeping the literal path first also documents that
-  // "assignable-staff" is not a project id.
+  // Must stay above /projects/:id. `matchPattern` has no numeric constraint on
+  // `:param`, so declaration order is the only thing keeping this literal path
+  // from being read as a project id.
   { method: 'GET', pattern: '/projects/assignable-staff', permission: 'staff:list', handler: getAssignableStaff },
   // The list itself is open to any session; the rows are scoped to membership.
   { method: 'GET', pattern: '/projects', permission: 'projects:view', handler: listProjects },

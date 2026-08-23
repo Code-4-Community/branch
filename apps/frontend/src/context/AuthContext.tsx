@@ -49,11 +49,10 @@ export interface AuthUser {
    * authorize with. It is the only reason the browser can answer "may they?"
    * without a second round trip, and the reason it answers it identically.
    *
-   * Optional in the type so an older cached payload cannot crash the app; the
-   * fallback is ANONYMOUS, which denies everything, so a missing subject fails
-   * closed rather than opening the UI up.
+   * Required: `isValidUser` rejects a payload without it rather than degrading
+   * into a signed-in session that is denied everything.
    */
-  rbac?: RbacSubject;
+  rbac: RbacSubject;
 }
 
 export type ChallengeName =
@@ -141,12 +140,27 @@ const MIN_REFRESH_DELAY_MS = 5_000;
 // Context
 // ---------------------------------------------------------------------------
 
-/** Guards against a malformed or empty /auth/me payload being treated as a session. */
+/**
+ * Guards against a malformed or empty /auth/me payload being treated as a session.
+ *
+ * `rbac` is required, not optional. Without it the session would still look
+ * signed in while every permission evaluated against ANONYMOUS -- an empty
+ * navbar and the no-access panel on every page, indistinguishable from an
+ * account that had been stripped. That is a reachable state, because the
+ * frontend and the auth lambda deploy from separate workflows and the browser
+ * can be newer than the API. Failing the bootstrap sends the user to /login,
+ * which is at least honest about the session being unusable.
+ */
 function isValidUser(candidate: unknown): candidate is AuthUser {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const user = candidate as AuthUser;
+  if (typeof user.cognitoSub !== 'string') return false;
+  const rbac = user.rbac;
   return (
-    typeof candidate === 'object' &&
-    candidate !== null &&
-    typeof (candidate as AuthUser).cognitoSub === 'string'
+    typeof rbac === 'object' &&
+    rbac !== null &&
+    Array.isArray(rbac.memberProjectIds) &&
+    Array.isArray(rbac.directorProjectIds)
   );
 }
 

@@ -85,8 +85,6 @@ export default function ProjectDetailView({ id }: { id: string }) {
   if (!overview) return shell(<p>Project not found.</p>);
 
   const { project, stats, members, expenditures } = overview;
-  // The overview payload still carries `canEdit`; the local policy is asked
-  // instead so this control and the navbar cannot answer differently.
   const canEdit = can('project:update');
   const visibleStaff = showAllStaff ? members : members.slice(0, PREVIEW_STAFF);
   const visibleExpenses = showAllExpenses

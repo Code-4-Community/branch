@@ -1,4 +1,5 @@
 import { json, RouteHandler } from '@branch/lambda-http';
+import { can } from '@branch/rbac';
 import db from '../db';
 import { requireVisibleProject } from './project-guard';
 
@@ -24,8 +25,12 @@ export const getProjectDonors: RouteHandler = async (ctx) => {
     return json(404, { message: 'Project not found' });
   }
 
-  // Reachable by any member of the project, unlike the global donor roster
-  // behind `donors:view` — a member may see who funds their own work.
+  // Reachable by any member of the project — a member may see who funds their
+  // own work. The contact details are the roster's, though, and that is
+  // `donors:view` (admin and director), so they are selected only for a caller
+  // who could have read them from GET /donors anyway.
+  const seesContactDetails = can(ctx.auth.subject, 'donors:view');
+
   const donors = await db
     .selectFrom('branch.projects as p')
     .where('p.project_id', '=', projectId)
@@ -34,12 +39,11 @@ export const getProjectDonors: RouteHandler = async (ctx) => {
     .select([
       'bd.donor_id',
       'bd.organization',
-      'bd.contact_name',
-      'bd.contact_email',
       'bpd.donation_id',
       'bpd.amount',
       'bpd.donated_at',
     ])
+    .$if(seesContactDetails, (qb) => qb.select(['bd.contact_name', 'bd.contact_email']))
     .execute();
 
   return json(200, { donors });

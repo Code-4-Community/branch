@@ -2,21 +2,25 @@
 
 import { EXPENDITURE_STATUS_LABELS, type ExpenditureStatus } from '@/types';
 
-const STATUS_COLORS: Record<ExpenditureStatus, string> = {
+// Keyed by string, not ExpenditureStatus: `denied` is a status the API writes
+// and the policy treats as final, but the decision picker does not offer it, so
+// it is absent from EXPENDITURE_STATUSES while still arriving on rows.
+const STATUS_COLORS: Record<string, string> = {
   approved: 'var(--color-accent-light-green)',
   pending: 'var(--color-status-pending)',
   needs_more_info: 'var(--color-error-light-red)',
+  denied: 'var(--color-error-red)',
 };
 
-/**
- * The DB check constraint still permits the legacy `denied` value, so rows
- * written before this flow existed must render as something rather than an
- * empty pill.
- */
+const EXTRA_STATUS_LABELS: Record<string, string> = { denied: 'Denied' };
+
 function describe(status: ExpenditureStatus) {
   return {
     color: STATUS_COLORS[status] ?? 'var(--color-black-200)',
-    label: EXPENDITURE_STATUS_LABELS[status] ?? String(status).replace(/_/g, ' '),
+    label:
+      EXPENDITURE_STATUS_LABELS[status] ??
+      EXTRA_STATUS_LABELS[status] ??
+      String(status).replace(/_/g, ' '),
   };
 }
 

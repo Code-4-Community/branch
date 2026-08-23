@@ -1,8 +1,8 @@
 /**
  * The authorization subject: everything the policy is allowed to know about the
- * caller. Deliberately a plain serialisable object with no DB or HTTP types, so
- * the identical value can be built server-side from Postgres and shipped to the
- * browser in `GET /auth/me`. That is what lets both sides run the same policy.
+ * caller. A plain serialisable object with no DB or HTTP types, so the identical
+ * value can be built server-side from Postgres and shipped to the browser in
+ * `GET /auth/me`.
  */
 export interface RbacSubject {
   userId: number | null;
@@ -11,14 +11,26 @@ export interface RbacSubject {
   memberProjectIds: number[];
   /**
    * Projects where the membership role grants direction. Its non-emptiness is
-   * the whole definition of "is a director" — there is no global director flag
-   * on `branch.users`, and adding one was rejected in favour of deriving it.
+   * the whole definition of "is a director"; there is no global director flag.
    */
   directorProjectIds: number[];
 }
 
+/**
+ * Every role a `branch.project_memberships` row may hold.
+ *
+ * Here rather than in the projects lambda because the director derivation below
+ * reads it: two copies of the list means adding a role can silently produce a
+ * non-director.
+ */
+export const PROJECT_ROLES = ['Admin', 'Director', 'Student'] as const;
+export type ProjectRole = (typeof PROJECT_ROLES)[number];
+
+/** Assigned when the staff picker does not ask for a role. */
+export const DEFAULT_PROJECT_ROLE: ProjectRole = 'Student';
+
 /** Membership roles that make someone a director of a project. */
-export const DIRECTOR_ROLES = ['Director', 'Admin'] as const;
+export const DIRECTOR_ROLES: readonly ProjectRole[] = ['Admin', 'Director'];
 
 export const ANONYMOUS: RbacSubject = {
   userId: null,
@@ -36,9 +48,9 @@ export interface MembershipRow {
 /**
  * Assemble a subject from an identity and its membership rows.
  *
- * Pure and storage-agnostic so the DB-backed loader in `@branch/lambda-auth`,
- * a unit test with no database, and any future caller all produce the same
- * shape — there is one definition of "director", and it lives here.
+ * Pure and storage-agnostic, so the DB-backed loader in `@branch/lambda-auth`
+ * and a test with no database produce the same shape from one definition of
+ * "director".
  */
 export function buildSubject(
   user: { userId?: number | null; isAdmin?: boolean | null } | null | undefined,
@@ -80,12 +92,9 @@ export function isAuthenticated(subject: RbacSubject): boolean {
 }
 
 /**
- * Which projects a list query may return rows for.
- *
- * `'all'` rather than "every id in the table" on purpose: an admin's scope must
- * not become a giant `IN (...)` that silently goes stale between the membership
- * read and the query, and callers need to distinguish "unrestricted" from
- * "restricted to nothing".
+ * Which projects a list query may return rows for. `'all'` rather than every id
+ * in the table, so callers can tell "unrestricted" from "restricted to nothing"
+ * without materialising a scope that goes stale.
  */
 export function visibleProjectIds(subject: RbacSubject): number[] | 'all' {
   return subject.isAdmin ? 'all' : subject.memberProjectIds;
