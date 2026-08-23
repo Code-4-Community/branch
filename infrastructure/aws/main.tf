@@ -26,6 +26,15 @@ resource "aws_db_instance" "branch_rds" {
   # so pinning one guesses against the other. Pin both or neither.
   backup_retention_period = 7
 
+  # Per-statement timing, so a slow endpoint can be diagnosed from data instead
+  # of inferred from source. 7 days is the free retention tier and is free on
+  # every class -- db.t3.micro included, despite the older docs implying t3 is
+  # excluded (describe-orderable-db-instance-options reports
+  # SupportsPerformanceInsights = true for postgres here). Longer retention is
+  # the paid tier, so 7 is deliberate, not a default.
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+
   # The lambdas in lambda.tf have no vpc_config, so they run outside any VPC and
   # had no route to this instance while it was private -- every DB-backed request
   # hung until the 30s lambda timeout. Putting them in the VPC instead is the
