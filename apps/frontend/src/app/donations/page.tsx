@@ -38,7 +38,7 @@ export default function DonationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showFilter, setShowFilter] = useState(false);
-  const [selectedDonor, setSelectedDonor] = useState<string>('');
+  const [selectedDonors, setSelectedDonors] = useState<string[]>([]);
   const [showSort, setShowSort] = useState(false);
   const [selectedSort, setSelectedSort] = useState<string>('');
 
@@ -98,9 +98,9 @@ export default function DonationsPage() {
         )
       : rows;
 
-    if (selectedDonor) {
-      matching = matching.filter((row) => String(row.donor_id) === selectedDonor);
-    }
+      if (selectedDonors.length > 0) {
+        matching = matching.filter((row) => selectedDonors.includes(String(row.donor_id)));
+      }
 
     if (selectedSort === 'Amount') {
       return [...matching].sort((a, b) => Number(b.amount) - Number(a.amount));
@@ -111,7 +111,7 @@ export default function DonationsPage() {
       );
     }
     return matching;
-  }, [rows, search, selectedDonor, selectedSort]);
+  }, [rows, search, selectedDonors, selectedSort]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
   const page = Math.min(currentPage, totalPages);
@@ -129,28 +129,21 @@ export default function DonationsPage() {
       skeleton: { width: '70%' },
     },
     {
-      key: 'donor',
-      header: 'Donor ID',
-      width: '15%',
-      cell: (donation) => `#${String(donation.donor_id).padStart(6, '0')}`,
-      skeleton: { width: '80%' },
-    },
-    {
       key: 'donor_name',
-      header: 'Donor',
-      width: '20%',
+      header: 'Donor Name',
+      width: '30%',
       cell: (donation) => donation.donor_name,
     },
     {
       key: 'project',
       header: 'Project Name',
-      width: '25%',
+      width: '30%',
       cell: (donation) => donation.project_name,
     },
     {
       key: 'amount',
       header: 'Amount',
-      width: '15%',
+      width: '20%',
       cell: (donation) => formatCurrencyPrecise(donation.amount),
       skeleton: { width: '55%' },
     },
@@ -198,7 +191,6 @@ export default function DonationsPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      // Previously this only closed the dialog, so nothing was ever persisted.
       await api.post('/donors/donations', {
         donor_id: Number(newDonor),
         project_id: Number(newProject),
@@ -255,15 +247,17 @@ export default function DonationsPage() {
                   onClick={() => setShowFilter((prev) => !prev)}
                 >
                   Filter By Donor
+                  {selectedDonors.length > 0 && ` (${selectedDonors.length})`}
                 </Button>
                 {showFilter && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                     <DropdownSelector
                       options={donorOptions}
                       placeholder="Filter by donor..."
-                      value={selectedDonor}
+                      multiSelect={true}
+                      value={selectedDonors}
                       onChange={(val: string | string[]) => {
-                        setSelectedDonor(val as string);
+                        setSelectedDonors(val as string[]);
                         setCurrentPage(1);
                       }}
                     />

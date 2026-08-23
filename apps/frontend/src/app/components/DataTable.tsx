@@ -89,7 +89,7 @@ export default function DataTable<T>({
   ];
 
   return (
-    <Table.Root variant={variant} width="100%">
+    <Table.Root variant={variant} width="100%" tableLayout={hasWidths ? 'fixed' : undefined}>
       {hasWidths && (
         <Table.ColumnGroup>
           {selection && <Table.Column width="48px" />}
@@ -182,7 +182,13 @@ export default function DataTable<T>({
                 </Table.Cell>
               )}
               {columns.map((column) => (
-                <Table.Cell key={column.key} textAlign={column.align}>
+                <Table.Cell
+                  key={column.key}
+                  textAlign={column.align}
+                  overflow="hidden"
+                  whiteSpace="nowrap"
+                  textOverflow="ellipsis"
+                >
                   {column.cell(row)}
                 </Table.Cell>
               ))}
