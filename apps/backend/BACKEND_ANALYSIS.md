@@ -339,24 +339,15 @@ kysely's `Migrator` and tracked in `branch.kysely_migration`. Locally:
 gates (`migrations-fresh`, `migrations-guard`) reject destructive statements, edits to
 already-merged migrations, and stale generated types. See `db/README.md`.
 
-### 21. Missing Database Indexes — RESOLVED
+### 21. Missing Database Indexes
 
-The schema had eleven indexes, every one of them from a primary key or a unique
-constraint and not one on a foreign key, so every lookup by `project_id`, every list
-ordered by a date, and every `ON DELETE CASCADE` was a sequential scan.
+The schema only has indexes from primary keys and unique constraints. Common query patterns like filtering expenditures by `project_id` or looking up users by `email` would benefit from explicit indexes:
 
-**Resolved:** `db/migrations/20260812022651_add_access_pattern_indexes.sql` added seven
-indexes covering the foreign keys and the date sorts — including the three this section
-originally recommended, as composites where the query also sorts:
-`expenditures (project_id, spent_on)`, `project_memberships (user_id)` and
-`project_donations (project_id)`. A follow-up,
-`20260823054531_add_followup_indexes.sql`, covers the sorts and the `status` filter that
-migration left behind: `users (name)`, `expenditures (status, spent_on)` and
-`project_donations (project_id, donation_id)` — the last of which supersedes and replaces
-the single-column `project_donations (project_id)`.
-
-Each index carries a comment naming the query it serves. Note `CREATE INDEX
-CONCURRENTLY` cannot be used here: the migrator wraps the whole run in one transaction.
+```sql
+CREATE INDEX idx_expenditures_project_id ON expenditures(project_id);
+CREATE INDEX idx_project_memberships_user_id ON project_memberships(user_id);
+CREATE INDEX idx_project_donations_project_id ON project_donations(project_id);
+```
 
 (The `email` column on `users` already has a unique constraint which creates an implicit index.)
 
