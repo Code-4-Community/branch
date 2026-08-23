@@ -204,6 +204,17 @@ describe("Donor API with data", () => {
     expect(body.data.length).toBe(3);
   });
 
+  test("GET /donors/donations reaches the donations controller, not the /donors/:id route", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('GET', '/donors/donations'));
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data.length).toBe(3);
+    expect(body.data[0]).toHaveProperty('donation_id');
+  });
+
   test("GET /donations with page and limit returns paginated response", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { page: '1', limit: '1' }));

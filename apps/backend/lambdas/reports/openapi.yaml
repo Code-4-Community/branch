@@ -3,12 +3,12 @@ info:
   title: reports (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3005/reports
-  - url: http://localhost:3000/reports
+  - url: http://localhost:3005
+  - url: http://localhost:3000
 security:
   - BearerAuth: []
 paths:
-  /health:
+  /reports/health:
     get:
       summary: Health check
       security: []

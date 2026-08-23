@@ -90,9 +90,9 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
   # Prevent accidental deletion
   deletion_protection = "ACTIVE"
 
+  # Project comes from the provider's default_tags (infrastructure/modules/tags).
   tags = {
     Environment = "development"
-    Project     = "branch"
     ManagedBy   = "terraform"
   }
 }

@@ -13,23 +13,14 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return { allowed: false, reason: 'Authentication required' };
-  }
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed =
-      (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
-  }
-  return { allowed: true };
-});
+// Only `authenticateRequest` is mocked: the route guards call the real
+// `checkAuthorization` out of @branch/lambda-auth, so ADMIN_OR_SELF is exercised
+// for real against the identity these tests supply.
 
 function getEvent(path: string, queryStringParameters?: Record<string, string>) {
   return {

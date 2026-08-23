@@ -3,6 +3,7 @@
 import React, { Suspense, useState } from 'react';
 import TextInputField from '../components/TextInputField';
 import SetPasswordForm from '../components/SetPasswordForm';
+import ShowPasswordCheckbox from '../components/ShowPasswordCheckbox';
 import Link from 'next/link';
 import { Button } from '@chakra-ui/react';
 import { useAuth, type LoginResult } from '@/context/AuthContext';
@@ -30,6 +31,7 @@ function LoginPageContent() {
     const [passwordError, setPasswordError] = useState('');
     const [formError, setFormError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     // 'credentials' -> optionally 'newPassword' or 'mfaCode'. The context
     // already returns the challenge and chains further ones, so a NEW_PASSWORD
@@ -113,6 +115,13 @@ function LoginPageContent() {
         } finally {
             setIsLoading(false);
         }
+    }
+
+    // Submitting a real form — rather than clicking a bare button — is what lets
+    // the browser offer to save the credentials.
+    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        await handleLogin();
     }
 
     async function handleNewPassword(newPassword: string) {
@@ -206,7 +215,7 @@ function LoginPageContent() {
 
     return (
         <div className="flex min-h-screen items-center justify-center px-4">
-        <div className="flex flex-col items-center text-center w-80">
+        <form onSubmit={handleSubmit} className="flex flex-col items-center text-center w-80">
             <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">Login</h1>
             <h5 className="![font-family:var(--font-body)] !text-[16px] !font-bold !mb-6">BRANCH Accounting Platform</h5>
             {formError && (
@@ -222,6 +231,9 @@ function LoginPageContent() {
                     isError={!!emailError}
                     value={email}
                     onChange={(value) => setEmail(value)}
+                    type="email"
+                    name="email"
+                    autoComplete="username"
                 />
                 <TextInputField
                     label="Password *"
@@ -230,11 +242,15 @@ function LoginPageContent() {
                     isError={!!passwordError}
                     value={password}
                     onChange={(value) => setPasswordValue(value)}
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    autoComplete="current-password"
                 />
+                <ShowPasswordCheckbox checked={showPassword} onChange={setShowPassword} />
             </div>
             <Button
+                type="submit"
                 className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10"
-                onClick={handleLogin}
                 loading={isLoading}
             >
                 Login
@@ -242,7 +258,7 @@ function LoginPageContent() {
             <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
             </Link>
-        </div>
+        </form>
         </div>
     );
 }

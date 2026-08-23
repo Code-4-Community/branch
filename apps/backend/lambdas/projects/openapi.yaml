@@ -5,7 +5,7 @@ info:
 servers:
   - url: http://localhost:3000
 paths:
-  /health:
+  /projects/health:
     get:
       summary: Health check
       responses:
@@ -286,9 +286,9 @@ paths:
                 items:
                   type: object
 
-  /dashboard:
+  /projects/dashboard:
     get:
-      summary: GET /dashboard
+      summary: GET /projects/dashboard
       description: >-
         Admin-only roll-up: this year's totals, the per-project breakdown and
         the monthly expense series. Every spend figure counts approved

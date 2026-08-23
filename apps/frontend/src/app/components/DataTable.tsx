@@ -89,7 +89,7 @@ export default function DataTable<T>({
   ];
 
   return (
-    <Table.Root variant={variant} width="100%">
+    <Table.Root variant={variant} width="100%" tableLayout={hasWidths ? 'fixed' : undefined}>
       {hasWidths && (
         <Table.ColumnGroup>
           {selection && <Table.Column width="48px" />}
@@ -99,34 +99,34 @@ export default function DataTable<T>({
         </Table.ColumnGroup>
       )}
 
-      <Table.Header>
-        <Table.Row backgroundColor="var(--color-primary-800)">
-          {selection && (
-            <Table.ColumnHeader width="48px" paddingY="12px">
-              <Checkbox.Root
-                checked={
-                  selection.allSelected ? true : selection.someSelected ? 'indeterminate' : false
-                }
-                onCheckedChange={selection.onToggleAll}
-                disabled={selection.disabled}
-                aria-label={selection.label ?? 'Select all rows'}
-              >
-                <Checkbox.HiddenInput />
-                <Checkbox.Control borderRadius="md" css={CHECKBOX_CONTROL_CSS} />
-              </Checkbox.Root>
-            </Table.ColumnHeader>
-          )}
-          {columns.map((column) => (
-            <Table.ColumnHeader
-              key={column.key}
-              color="var(--color-core-white)"
-              textAlign={column.align}
+    <Table.Header>
+      <Table.Row backgroundColor="var(--color-primary-800)">
+        {selection && (
+          <Table.ColumnHeader width="48px" paddingY="12px">
+            <Checkbox.Root
+              checked={
+                selection.allSelected ? true : selection.someSelected ? 'indeterminate' : false
+              }
+              onCheckedChange={selection.onToggleAll}
+              disabled={selection.disabled}
+              aria-label={selection.label ?? 'Select all rows'}
             >
-              <h5>{column.header}</h5>
-            </Table.ColumnHeader>
-          ))}
-        </Table.Row>
-      </Table.Header>
+              <Checkbox.HiddenInput />
+              <Checkbox.Control borderRadius="md" css={CHECKBOX_CONTROL_CSS} />
+            </Checkbox.Root>
+          </Table.ColumnHeader>
+        )}
+        {columns.map((column) => (
+          <Table.ColumnHeader
+            key={column.key}
+            color="var(--color-core-white)"
+            textAlign={column.align}
+          >
+            <h5>{column.header}</h5>
+          </Table.ColumnHeader>
+        ))}
+      </Table.Row>
+    </Table.Header>
 
       <Table.Body>
         {isLoading ? (
@@ -182,7 +182,13 @@ export default function DataTable<T>({
                 </Table.Cell>
               )}
               {columns.map((column) => (
-                <Table.Cell key={column.key} textAlign={column.align}>
+                <Table.Cell
+                  key={column.key}
+                  textAlign={column.align}
+                  overflow="hidden"
+                  whiteSpace="nowrap"
+                  textOverflow="ellipsis"
+                >
                   {column.cell(row)}
                 </Table.Cell>
               ))}

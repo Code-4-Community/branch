@@ -62,6 +62,41 @@ describe('Login Page Component', () => {
             expect(screen.getByPlaceholderText('Enter password')).toBeInTheDocument();
         });
 
+        it('masks the password and labels both fields for password managers', () => {
+            // Without type=password plus these autocomplete hints the browser
+            // neither hides the value nor offers to save the credentials.
+            render(<LoginPage />);
+            const email = screen.getByPlaceholderText('Enter email address');
+            const password = screen.getByPlaceholderText('Enter password');
+
+            expect(password).toHaveAttribute('type', 'password');
+            expect(password).toHaveAttribute('autocomplete', 'current-password');
+            expect(email).toHaveAttribute('autocomplete', 'username');
+        });
+
+        it('submits a real form, which is what triggers the save-password prompt', () => {
+            render(<LoginPage />);
+            expect(
+                screen.getByPlaceholderText('Enter password').closest('form'),
+            ).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Login' })).toHaveAttribute(
+                'type',
+                'submit',
+            );
+        });
+
+        it('unmasks the password while "Show password" is checked', async () => {
+            render(<LoginPage />);
+            const password = screen.getByPlaceholderText('Enter password');
+            const toggle = screen.getByRole('checkbox', { name: /show password/i });
+
+            await userEvent.click(toggle);
+            expect(password).toHaveAttribute('type', 'text');
+
+            await userEvent.click(toggle);
+            expect(password).toHaveAttribute('type', 'password');
+        });
+
         it('renders the login button', () => {
             render(<LoginPage />);
             expect(screen.getByRole('button', { name: 'Login' })).toBeInTheDocument();

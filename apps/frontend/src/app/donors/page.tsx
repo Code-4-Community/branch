@@ -8,6 +8,7 @@ import Button from '../components/Button';
 import { CiFilter } from 'react-icons/ci';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
+import { MdOutlineMail } from 'react-icons/md';
 import DropdownSelector from '../components/DropdownSelector';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import RowDeleteButton from '../components/RowDeleteButton';
@@ -43,7 +44,7 @@ export default function DonorsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState('');
   const [showFilter, setShowFilter] = useState(false);
-  const [selectedDonor, setSelectedDonor] = useState<string>('');
+  const [selectedDonors, setSelectedDonors] = useState<string[]>([]);
   const [showSort, setShowSort] = useState(false);
   const [selectedSort, setSelectedSort] = useState<string>('');
 
@@ -116,8 +117,8 @@ export default function DonorsPage() {
         )
       : rows;
 
-    if (selectedDonor) {
-      matching = matching.filter((row) => String(row.donor_id) === selectedDonor);
+    if (selectedDonors.length > 0) {
+      matching = matching.filter((row) => selectedDonors.includes(String(row.donor_id)));
     }
 
     if (selectedSort === '# of Projects') {
@@ -129,7 +130,7 @@ export default function DonorsPage() {
       );
     }
     return matching;
-  }, [rows, search, selectedDonor, selectedSort]);
+  }, [rows, search, selectedDonors, selectedSort]);
 
   const donorOptions = donors.map((d) => ({
     label: d.organization,
@@ -215,7 +216,6 @@ export default function DonorsPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      // Previously this only closed the dialog, so nothing was ever persisted.
       await api.post('/donors', {
         organization: newOrganization.trim(),
         contact_name: newContactName.trim(),
@@ -262,15 +262,17 @@ export default function DonorsPage() {
                   onClick={() => setShowFilter((prev) => !prev)}
                 >
                   Filter By
+                  {selectedDonors.length > 0 && ` (${selectedDonors.length})`}
                 </Button>
                 {showFilter && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10 }}>
                     <DropdownSelector
                       options={donorOptions}
                       placeholder="Filter by donor..."
-                      value={selectedDonor}
+                      multiSelect={true}
+                      value={selectedDonors}
                       onChange={(val: string | string[]) => {
-                        setSelectedDonor(val as string);
+                        setSelectedDonors(val as string[]);
                         setCurrentPage(1);
                       }}
                     />
@@ -354,6 +356,7 @@ export default function DonorsPage() {
                       <TextInputField
                         label="Contact Email*"
                         placeholder="Contact email"
+                        icon={<MdOutlineMail />}
                         value={newContactEmail}
                         onChange={(val) => {
                           setNewContactEmail(val);

@@ -88,6 +88,14 @@ test('/projects/assignable-staff is not parsed as a project id', async () => {
   expect(Object.keys(staff[0]).sort()).toEqual(['email', 'name', 'profile_image', 'user_id']);
 });
 
+test('/projects/dashboard is not parsed as a project id', async () => {
+  const res = await handler(event('/dashboard', 'GET'));
+  expect(res.statusCode).toBe(200);
+  // The dashboard controller's shape, not a single project's — misrouting to
+  // `GET /projects/{id}` with id="dashboard" would 400 instead.
+  expect(parse(res).summary).toBeDefined();
+});
+
 test('400 rather than 403 for a non-numeric project id', async () => {
   const res = await handler(event('/not-a-number', 'GET'));
   expect(res.statusCode).toBe(400);

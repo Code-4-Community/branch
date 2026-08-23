@@ -3,9 +3,9 @@ info:
   title: users (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000/users
+  - url: http://localhost:3000
 paths:
-  /health:
+  /users/health:
     get:
       summary: Health check
       responses:
@@ -58,7 +58,7 @@ paths:
           description: Bad Request
         '500':
           description: Internal Server Error
-  /{userId}:
+  /users/{userId}:
     get:
       summary: GET /users/{userId}
       parameters:
@@ -75,7 +75,7 @@ paths:
         '404':
           description: User not found
     patch:
-      summary: PATCH /{userId}
+      summary: PATCH /users/{userId}
       parameters:
         - in: path
           name: userId
