@@ -28,10 +28,14 @@
 |------|------|
 | [aws_api_gateway_deployment.branch_deployment](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_deployment) | resource |
 | [aws_api_gateway_gateway_response.cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_gateway_response) | resource |
+| [aws_api_gateway_integration.cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
 | [aws_api_gateway_integration.lambda_integrations](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
 | [aws_api_gateway_integration.lambda_proxy_integrations](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
+| [aws_api_gateway_integration_response.cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration_response) | resource |
+| [aws_api_gateway_method.cors_proxy_options](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
 | [aws_api_gateway_method.lambda_methods](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
 | [aws_api_gateway_method.lambda_proxy_any](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method) | resource |
+| [aws_api_gateway_method_response.cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_method_response) | resource |
 | [aws_api_gateway_resource.lambda_proxy](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_resource) | resource |
 | [aws_api_gateway_resource.lambda_resources](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_resource) | resource |
 | [aws_api_gateway_rest_api.branch_api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_rest_api) | resource |
