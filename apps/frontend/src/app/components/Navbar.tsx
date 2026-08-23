@@ -26,10 +26,9 @@ interface NavItem {
   submenu?: "projects";
 }
 
-// Every href here must resolve to a real route. "Profile" was removed because
-// no /profile page exists, and "Log Out" is an action rather than a route —
-// keying the special case on `action` means a future /logout page couldn't
-// silently turn the button back into a dead link.
+// Every href here must resolve to a real route. "Log Out" is an action rather
+// than a route — keying the special case on `action` means a future /logout
+// page couldn't silently turn the button back into a dead link.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", roles: ["admin"] },
   { label: "Projects", href: "/projects", submenu: "projects" },
@@ -38,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Expenses", href: "/expenses" },
   { label: "Reports", href: "/reports", roles: ["admin"] },
   { label: "Accounts", href: "/accounts", roles: ["admin"] },
+  { label: "Profile", href: "/profile" },
   { label: "Log Out", action: "logout" },
 ];
 
