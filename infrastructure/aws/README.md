@@ -19,6 +19,7 @@
 
 | Name | Source | Version |
 |------|--------|---------|
+| <a name="module_sentry"></a> [sentry](#module\_sentry) | ../modules/sentry | n/a |
 | <a name="module_tags"></a> [tags](#module\_tags) | ../modules/tags | n/a |
 
 ## Resources
