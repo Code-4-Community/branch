@@ -19,6 +19,18 @@ const db = new Kysely<DB>({
       // Without this a blackholed SYN hangs until the 30s lambda timeout instead
       // of erroring, which is how the unreachable-database bug presented.
       connectionTimeoutMillis: 5000,
+
+      // A lambda container serves one request at a time, so pg's default of 10
+      // just multiplies idle sockets against db.t3.micro's ~112 max_connections.
+      max: 1,
+
+      // Lambda freezes the container between invocations, so the idle timer fires
+      // late and the pool can hand back a socket the server already dropped.
+      idleTimeoutMillis: 0,
+      keepAlive: true,
+
+      // Bound a runaway query well under the 30s lambda timeout.
+      statement_timeout: 10000,
     }),
   }),
 })

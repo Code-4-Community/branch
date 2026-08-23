@@ -3,7 +3,6 @@ import Image from "next/image";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { PT_Sans } from "next/font/google";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useAuth } from "@/context/AuthContext";
 import { useApi } from "@/hooks/useApi";
@@ -13,8 +12,6 @@ import { assetPath } from "@/lib/asset";
 import { normalizePath, pagePermission, projectPath } from "@/lib/routes";
 import type { ProjectSummary } from "@/types";
 import LoadingState from "./LoadingState";
-
-const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400", "700"] });
 
 // ─── Types & Definitions ──────────────────────────────────────────────────────
 
@@ -271,7 +268,7 @@ export const NavBar: React.FC<{
         backgroundColor: COLORS.brandGreen,
         display: "flex",
         flexDirection: "column",
-        fontFamily: ptSans.style.fontFamily,
+        fontFamily: "var(--font-body)",
         position: "relative",
         // `visible` so the projects flyout can escape the rail; the background
         // image is clipped by its own wrapper instead.
@@ -281,7 +278,7 @@ export const NavBar: React.FC<{
       {/* Background Image Layer */}
       <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
         <Image
-          src={assetPath("/leaves-bg.png")}
+          src={assetPath("/leaves-bg.webp")}
           alt=""
           fill
           style={{ objectFit: "cover" }}
