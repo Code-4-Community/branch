@@ -3,8 +3,10 @@ import {
   ACTIONS,
   ANONYMOUS,
   Action,
+  PROJECT_ROLES,
   RbacSubject,
   authorize,
+  buildSubject,
   can,
   isDirector,
   pagePermission,
@@ -52,6 +54,23 @@ describe('subject helpers', () => {
     expect(visibleProjectIds(ADMIN)).toBe('all');
     expect(visibleProjectIds(STUDENT)).toEqual([2]);
     expect(visibleProjectIds(ANONYMOUS)).toEqual([]);
+  });
+
+  it('has no admin in the membership vocabulary', () => {
+    expect(PROJECT_ROLES).toEqual(['Director', 'Student']);
+  });
+
+  // Admin is users.is_admin and nothing else, so a membership row can never
+  // raise a caller's privileges -- not even one left over from the old
+  // vocabulary, which 20260825023851_drop_project_admin_role.sql rewrote.
+  it('never derives admin from a membership row', () => {
+    const stale = buildSubject(
+      { userId: 4, isAdmin: false },
+      [{ project_id: 1, role: 'Admin' }],
+    );
+    expect(stale.isAdmin).toBe(false);
+    expect(isDirector(stale)).toBe(false);
+    expect(stale.memberProjectIds).toEqual([1]);
   });
 });
 
