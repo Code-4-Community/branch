@@ -1,7 +1,5 @@
-# Published to Actions as `vars.AWS_ACCOUNT_ID`. Changing this and applying is
-# the whole switchover for CI when the infrastructure moves accounts.
 variable "aws_account_id" {
-  description = "AWS account hosting the BRANCH infrastructure"
+  description = "AWS account hosting the BRANCH infrastructure; published as vars.AWS_ACCOUNT_ID"
   type        = string
   default     = "489881683177"
 }

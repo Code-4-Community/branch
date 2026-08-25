@@ -89,10 +89,12 @@ jobs:
 
       - name: Install terraform-docs
         run: |
-          curl -sSLo ./terraform-docs.tar.gz https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
-          tar -xzf terraform-docs.tar.gz
-          chmod +x terraform-docs
-          sudo mv terraform-docs /usr/local/bin/
+          # Extract to a temp dir: the release tarball ships its own README.md and
+          # LICENSE, which land on (and clobber) the repo's when unpacked in place.
+          curl -sSLo "$RUNNER_TEMP/terraform-docs.tar.gz" https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
+          tar -xzf "$RUNNER_TEMP/terraform-docs.tar.gz" -C "$RUNNER_TEMP" terraform-docs
+          chmod +x "$RUNNER_TEMP/terraform-docs"
+          sudo mv "$RUNNER_TEMP/terraform-docs" /usr/local/bin/
 
       - name: Process each directory
         run: |
