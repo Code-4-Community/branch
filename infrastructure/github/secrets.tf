@@ -63,6 +63,17 @@ resource "github_actions_secret" "slack_bot_token" {
   plaintext_value = data.infisical_secrets.slack_folder.secrets["slack-bot-token"].value
 }
 
+# ── AWS ──────────────────────────────────────────────────────
+
+# A variable, not a secret: account IDs aren't sensitive, and the workflows need
+# it in plain `arn:aws:iam::...` strings. The point is that the six role ARNs in
+# .github/workflows now have exactly one place to change when the account moves.
+resource "github_actions_variable" "aws_account_id" {
+  repository    = github_repository.branch.name
+  variable_name = "AWS_ACCOUNT_ID"
+  value         = var.aws_account_id
+}
+
 
 
 variable "infisical_client_id" {

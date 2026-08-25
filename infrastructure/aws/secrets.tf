@@ -23,9 +23,3 @@ data "infisical_secrets" "grafana_folder" {
   workspace_id = var.infisical_workspace_id
   folder_path  = "/grafana"
 }
-
-data "infisical_secrets" "github_folder" {
-  env_slug     = "dev"
-  workspace_id = var.infisical_workspace_id
-  folder_path  = "/github"
-}
