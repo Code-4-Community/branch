@@ -8,7 +8,7 @@ import {
   ConfirmSignUpCommandInput,
   ResendConfirmationCodeCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json } from '@branch/lambda-http';
+import { json, reportError, serverError } from '@branch/lambda-http';
 import db from '../db';
 import { cognitoClient, USER_POOL_CLIENT_ID, USER_POOL_ID, validatePassword } from '../services/cognito';
 
@@ -143,6 +143,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
             }
           } catch (linkError) {
             console.warn('Could not auto-link existing Cognito user:', linkError);
+            reportError(linkError, { email: (email as string).toLowerCase() });
           }
         }
         return json(409, {
@@ -157,6 +158,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
         return json(400, { message: error.message || 'Invalid parameters provided' });
       }
 
+      reportError(error);
       return json(500, { message: 'Failed to register user in authentication service' });
     }
 
@@ -170,7 +172,9 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
         );
         console.log('Rolled back Cognito user after database failure');
       } catch (rollbackError) {
+        // The Cognito user is now orphaned: no DB row, no way to sign up again.
         console.error('Failed to rollback Cognito user:', rollbackError);
+        reportError(rollbackError, { email: email.toLowerCase() });
       }
     };
 
@@ -206,6 +210,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
       // Rollback: Delete user from Cognito if database insert fails
       await rollbackCognitoUser();
 
+      reportError(dbError);
       return json(500, { message: 'Failed to create user account' });
     }
 
@@ -219,8 +224,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
       claimed: true,
     });
   } catch (error: any) {
-    console.error('Registration error:', error);
-    return json(500, { message: 'Internal server error during registration' });
+    return serverError(error, 'Internal server error during registration');
   }
 }
 
@@ -251,6 +255,7 @@ export async function handleVerifyEmail(event: any): Promise<APIGatewayProxyResu
     if (error.name === 'LimitExceededException') {
       return json(429, { message: 'Too many attempts, please try again later' });
     }
+    reportError(error);
     return json(500, { message: 'Failed to verify email' });
   }
   return json(200, { message: `Email verified successfully for ${email}` });
@@ -278,7 +283,6 @@ export async function handleResendCode(event: any): Promise<APIGatewayProxyResul
     if (error.name === 'LimitExceededException') {
       return json(429, { message: 'Too many attempts, please try again later' });
     }
-    console.error('Resend code error:', error);
-    return json(500, { message: 'Failed to resend verification code' });
+    return serverError(error, 'Failed to resend verification code');
   }
 }

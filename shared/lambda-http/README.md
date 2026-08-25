@@ -51,6 +51,12 @@ the row is loaded.
   `resolveAuth`. A controller that runs has already cleared its route's gate.
 - OPTIONS preflight, `GET /<prefix>/health`, 404, and 500.
 - CORS headers on every response, via `json`.
+- **Sentry reporting for the 500 path.** The Sentry Lambda layer wraps the
+  handler and records *uncaught throws* only. Every lambda catches instead, so
+  API Gateway gets a JSON 500 rather than a 502 — which means an error that is
+  never handed to `reportError` is an error Sentry never sees. `dispatch`
+  reports what reaches its own catch; a controller that returns its own 500
+  must use `serverError`.
 
 ## Exports
 
@@ -62,6 +68,8 @@ the row is loaded.
 | `requirePermission(subject, action, resource?)` | 403 carrying the policy's own reason, or `undefined` when allowed. |
 | `createAuthResolver(authenticate, loadSubject)` | Bind a service's db-scoped auth into the `resolveAuth` dispatch expects. |
 | `matchPattern(pattern, path)` | Params on match, `null` otherwise. |
+| `serverError(err, message, body?)` | Log, report to Sentry, return a 500. Use instead of a bare `json(500, ...)` in a catch. |
+| `reportError(err, context?)` | Report to Sentry without producing a response. No-op when the layer is absent (local, tests). |
 
 ## Build
 

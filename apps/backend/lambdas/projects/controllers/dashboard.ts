@@ -1,5 +1,5 @@
 import { sql } from 'kysely';
-import { json, RouteHandler } from '@branch/lambda-http';
+import { json, RouteHandler, serverError } from '@branch/lambda-http';
 import db from '../db';
 import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
 import { isProjectActive } from '../services/projects';
@@ -163,8 +163,7 @@ export const getDashboard: RouteHandler = async () => {
       expensesByMonth,
     });
   } catch (err) {
-    console.error('Dashboard query failed:', err);
-    return json(500, { message: 'Failed to load dashboard' });
+    return serverError(err, 'Failed to load dashboard');
   }
 };
 

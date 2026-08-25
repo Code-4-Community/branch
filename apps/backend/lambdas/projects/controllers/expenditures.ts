@@ -1,4 +1,4 @@
-import { json, RouteHandler } from '@branch/lambda-http';
+import { json, RouteHandler, serverError } from '@branch/lambda-http';
 import { can } from '@branch/rbac';
 import db from '../db';
 import { requireVisibleProject } from './project-guard';
@@ -34,9 +34,7 @@ export const getProjectExpenditures: RouteHandler = async (ctx) => {
       expenditures.map(({ admin_notes: _adminNotes, ...rest }) => rest),
     );
   } catch (err) {
-    console.error('Database error:', err);
-    return json(500, {
-      message: 'Failed to fetch expenditures',
+    return serverError(err, 'Failed to fetch expenditures', {
       error: err instanceof Error ? err.message : 'Unknown error',
     });
   }

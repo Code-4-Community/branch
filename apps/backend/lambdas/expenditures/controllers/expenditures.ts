@@ -1,5 +1,5 @@
 import type { RouteHandler } from '@branch/lambda-http';
-import { json, requirePermission } from '@branch/lambda-http';
+import { json, requirePermission, serverError } from '@branch/lambda-http';
 import { can } from '@branch/rbac';
 import type { ExpenseResource } from '@branch/rbac';
 import { ExpenditureValidationUtils } from '../validation-utils';
@@ -122,8 +122,7 @@ export const createExpenditure: RouteHandler = async ({ event, auth }) => {
       spent_on: spentOn ? new Date(spentOn) : new Date(),
     });
   } catch (err) {
-    console.error('Database insert error:', err);
-    return json(500, { message: 'Failed to create expenditure' });
+    return serverError(err, 'Failed to create expenditure');
   }
 
   return json(201, {

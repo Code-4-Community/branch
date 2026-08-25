@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { reportError } from '@branch/lambda-http';
 
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
@@ -27,7 +28,10 @@ export async function resolveProfileImage(
     return await getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: stored }), {
       expiresIn: 900,
     });
-  } catch {
+  } catch (err) {
+    // Degrading to a broken <img> is deliberate, but a bucket or IAM problem
+    // that breaks every avatar should still be visible somewhere.
+    reportError(err, { key: stored });
     return stored;
   }
 }
