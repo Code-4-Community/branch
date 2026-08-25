@@ -151,10 +151,22 @@ describe('PATCH /users/{userId} profileImage', () => {
         }),
       }),
     });
+    // patchUser settles the update, the 404 and the response body in one
+    // statement, so the chain ends in returningAll().executeTakeFirst() rather
+    // than execute() followed by a re-read.
     mockDb.updateTable.mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
-          execute: (jest.fn() as any).mockResolvedValue(undefined),
+          returningAll: jest.fn().mockReturnValue({
+            executeTakeFirst: (jest.fn() as any).mockResolvedValue({
+              user_id: userId,
+              name: 'Ada Lovelace',
+              email: 'ada@example.com',
+              is_admin: false,
+              profile_image: null,
+              created_at: null,
+            }),
+          }),
         }),
       }),
     });

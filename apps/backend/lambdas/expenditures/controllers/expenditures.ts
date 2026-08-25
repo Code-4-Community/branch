@@ -57,9 +57,13 @@ export const getExpenditures: RouteHandler = async ({ event, auth }) => {
 
   if (page && limit) {
     const offset = (page - 1) * limit;
-    const totalItems = await expendituresService.countExpenditures(projectId, scope);
+    // Both carry the same scope and projectId predicate, and neither depends on
+    // the other, so they go out together.
+    const [totalItems, expenditures] = await Promise.all([
+      expendituresService.countExpenditures(projectId, scope),
+      expendituresService.queryExpenditures(projectId, scope, { limit, offset }),
+    ]);
     const totalPages = Math.ceil(totalItems / limit);
-    const expenditures = await expendituresService.queryExpenditures(projectId, scope, { limit, offset });
 
     return json(200, {
       data: redactAdminNotes(expenditures, auth.subject),
@@ -205,18 +209,13 @@ export const getExpenditureById: RouteHandler = async ({ params, auth }) => {
     return json(400, { message: 'id must be a positive integer' });
   }
 
-  const expenditure = await expendituresService.findExpenditureById(Number(id));
+  // The row and the two names "Submitted By" needs come back together, rather
+  // than the row followed by a lookup per name.
+  const expenditure = await expendituresService.findExpenditureWithNames(Number(id));
   if (!expenditure) return json(404, { message: 'Expenditure not found' });
 
   const denied = requirePermission(auth.subject, 'expense:view', resourceOf(expenditure));
   if (denied) return denied;
-
-  // "Submitted By" in the review modal needs a name, not an id.
-  const submitter = expenditure.entered_by
-    ? await expendituresService.findUserName(expenditure.entered_by)
-    : undefined;
-
-  const projectName = await expendituresService.findProjectName(expenditure.project_id);
 
   return json(200, {
     ok: true,
@@ -225,9 +224,9 @@ export const getExpenditureById: RouteHandler = async ({ params, auth }) => {
     body: {
       expenditureId: expenditure.expenditure_id,
       projectId: expenditure.project_id,
-      projectName: projectName ?? null,
+      projectName: expenditure.project_name ?? null,
       enteredBy: expenditure.entered_by,
-      submittedByName: submitter ?? null,
+      submittedByName: expenditure.submitted_by_name ?? null,
       amount: expenditure.amount,
       category: expenditure.category,
       description: expenditure.description,
@@ -268,29 +267,30 @@ export const updateExpenditure: RouteHandler = async ({ event, params, auth }) =
     return json(400, { message: update.message });
   }
 
-  await expendituresService.updateExpenditure(Number(id), {
+  // RETURNING hands back the row the re-read used to fetch. An empty patch
+  // writes nothing, so the row already in hand is the current one.
+  const written = await expendituresService.updateExpenditure(Number(id), {
     ...(update.amount !== undefined ? { amount: update.amount } : {}),
     ...(update.category !== undefined ? { category: update.category } : {}),
     ...(update.description !== undefined ? { description: update.description } : {}),
     ...(update.receiptUrl !== undefined ? { receipt_url: update.receiptUrl } : {}),
     ...(update.spentOn !== undefined ? { spent_on: new Date(update.spentOn) } : {}),
   });
-
-  const updated = await expendituresService.findExpenditureById(Number(id));
+  const updated = written ?? expenditure;
 
   return json(200, {
     ok: true,
     route: 'PATCH /expenditures/{id}',
     pathParams: { id },
     body: {
-      expenditureId: updated!.expenditure_id,
-      projectId: updated!.project_id,
-      amount: updated!.amount,
-      category: updated!.category,
-      description: updated!.description,
-      status: updated!.status,
-      receiptUrl: updated!.receipt_url,
-      spent_on: updated!.spent_on,
+      expenditureId: updated.expenditure_id,
+      projectId: updated.project_id,
+      amount: updated.amount,
+      category: updated.category,
+      description: updated.description,
+      status: updated.status,
+      receiptUrl: updated.receipt_url,
+      spent_on: updated.spent_on,
     },
   });
 };
@@ -345,22 +345,27 @@ export const patchExpenditureStatus: RouteHandler = async ({ event, params }) =>
     return json(400, { message: adminNotesResult.message });
   }
 
-  const expenditure = await expendituresService.findExpenditureById(Number(id));
-  if (!expenditure) {
+  // No record-level gate here — `expense:review` on the route settles it — so
+  // the UPDATE's own RETURNING covers both the 404 and the response body, and
+  // neither the read before nor the read after is needed. An UPDATE matching no
+  // row is a no-op, so a missing id still 404s with the same message.
+  const updated = await expendituresService.updateExpenditureStatus(
+    Number(id),
+    statusResult,
+    adminNotesResult,
+  );
+  if (!updated) {
     return json(404, { message: 'Expenditure not found' });
   }
-
-  await expendituresService.updateExpenditureStatus(Number(id), statusResult, adminNotesResult);
-  const updated = await expendituresService.findExpenditureById(Number(id));
 
   return json(200, {
     ok: true,
     route: 'PATCH /expenditures/{id}/status',
     pathParams: { id },
     body: {
-      expenditureId: updated!.expenditure_id,
-      status: updated!.status,
-      adminNotes: updated!.admin_notes,
+      expenditureId: updated.expenditure_id,
+      status: updated.status,
+      adminNotes: updated.admin_notes,
     },
   });
 };

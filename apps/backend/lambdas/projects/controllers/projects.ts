@@ -1,5 +1,6 @@
 import { json, parseBody, requirePermission, RouteHandler } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
+import { sql, type SqlBool } from 'kysely';
 import db from '../db';
 import { ProjectValidationUtils } from '../validation-utils';
 import { requireVisibleProject } from './project-guard';
@@ -21,10 +22,12 @@ import {
 export const listProjects: RouteHandler = async ({ auth }) => {
   // Scoped in SQL rather than by fetching everything and filtering: a non-admin
   // must never receive a row for a project they are not on, not even to drop it.
+  // `= ANY($1)` and not `IN ($1, ..., $n)`: one bound array is one entry in the
+  // plan cache whatever the caller's project count.
   const scope = projectScopeIds(auth.subject);
 
   let query = db.selectFrom('branch.projects').selectAll().orderBy('project_id', 'asc');
-  if (scope) query = query.where('project_id', 'in', scope);
+  if (scope) query = query.where(sql<SqlBool>`project_id = ANY(${scope})`);
   const projects = await query.execute();
 
   // The list cards render "spent / budget", a member count and an
