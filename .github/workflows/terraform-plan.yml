@@ -89,10 +89,12 @@ jobs:
 
       - name: Install terraform-docs
         run: |
-          curl -sSLo ./terraform-docs.tar.gz https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
-          tar -xzf terraform-docs.tar.gz
-          chmod +x terraform-docs
-          sudo mv terraform-docs /usr/local/bin/
+          # Extract to a temp dir: the release tarball ships its own README.md and
+          # LICENSE, which land on (and clobber) the repo's when unpacked in place.
+          curl -sSLo "$RUNNER_TEMP/terraform-docs.tar.gz" https://terraform-docs.io/dl/v0.17.0/terraform-docs-v0.17.0-$(uname)-amd64.tar.gz
+          tar -xzf "$RUNNER_TEMP/terraform-docs.tar.gz" -C "$RUNNER_TEMP" terraform-docs
+          chmod +x "$RUNNER_TEMP/terraform-docs"
+          sudo mv "$RUNNER_TEMP/terraform-docs" /usr/local/bin/
 
       - name: Process each directory
         run: |
@@ -194,7 +196,7 @@ jobs:
       - name: Configure AWS credentials (read-only plan role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-plan
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/branch-ci-plan
           aws-region: us-east-2
 
       - name: Terraform Init
@@ -359,6 +361,21 @@ jobs:
           fi
           if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
             echo "No Terraform changes detected"
-          else
-            echo "Terraform plan completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
+            exit 0
           fi
+
+          # This is the only terraform context in branch protection, so it has to
+          # fail when the plan fails -- `if: always()` alone would let a PR whose
+          # plan errored merge on a green check.
+          for job in "terraform-fmt-docs:${{ needs.terraform-fmt-docs.result }}" \
+                     "terraform-plan:${{ needs.terraform-plan.result }}"; do
+            name=${job%%:*}
+            result=${job#*:}
+            case "$result" in
+              success|skipped) echo "$name: $result" ;;
+              *) echo "::error::$name did not succeed ($result)"; failed=1 ;;
+            esac
+          done
+          [ -z "$failed" ] || exit 1
+
+          echo "Terraform plan completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"

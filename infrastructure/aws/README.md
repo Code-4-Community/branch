@@ -6,6 +6,7 @@
 | Name | Version |
 |------|---------|
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | 6.14.1 |
+| <a name="requirement_infisical"></a> [infisical](#requirement\_infisical) | 0.17.0 |
 
 ## Providers
 
@@ -13,7 +14,7 @@
 |------|---------|
 | <a name="provider_archive"></a> [archive](#provider\_archive) | n/a |
 | <a name="provider_aws"></a> [aws](#provider\_aws) | 6.14.1 |
-| <a name="provider_infisical"></a> [infisical](#provider\_infisical) | n/a |
+| <a name="provider_infisical"></a> [infisical](#provider\_infisical) | 0.17.0 |
 
 ## Modules
 
@@ -82,10 +83,9 @@
 | [aws_iam_policy_document.ci_preview_assume](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.frontend_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
-| [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
-| [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
-| [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
-| [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
+| [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
+| [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
+| [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
 
 ## Inputs
 

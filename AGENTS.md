@@ -2,7 +2,7 @@
 
 BRANCH is a non-profit accounting platform (projects, donors, donations, expenditures, reports, users). Nx-managed monorepo: Next.js frontend + AWS Lambda backend microservices + Terraform infra + custom tooling + GitHub Actions automation.
 
-> **Ignore two README.md files when learning the repo.** The root `README.md` is upstream `terraform-docs` boilerplate (not about BRANCH). `apps/frontend/README.md` is `create-next-app` boilerplate. Neither describes this project. AGENTS.md files are the source of truth.
+> **Ignore `apps/frontend/README.md`** — it is `create-next-app` boilerplate and does not describe this project. The root `README.md` is real but intentionally shallow (orientation + quick start); AGENTS.md files remain the source of truth.
 
 > **Keep these docs current.** If a change alters architecture or an established convention — new/removed service or shared package, changed auth/data-access/routing pattern, new build/deploy/CI flow, renamed or moved key paths — update the relevant `AGENTS.md` in the **same PR**. These files are the source of truth for both humans and AI agents; stale docs are worse than none. Pure feature work that follows existing patterns does not need a doc change.
 
@@ -18,7 +18,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 | `shared/rbac/` | `@branch/rbac` — **the** authorization policy, shared by lambdas + frontend | `shared/rbac/README.md` |
 | `shared/lambda-auth/` | `@branch/lambda-auth` — runtime Cognito auth/authz pkg | see backend doc |
 | `shared/lambda-http/` | `@branch/lambda-http` — route table, dispatch, permission enforcement | see backend doc |
-| `infrastructure/` | Terraform: `aws/`, `github/`, `test/` | `infrastructure/AGENTS.md` |
+| `infrastructure/` | Terraform: `aws/`, `github/`, `preview/`, `preview-shared/`, `test/` | `infrastructure/AGENTS.md` |
 | `.github/workflows/` | CI/CD + PR review bot | `.github/AGENTS.md` |
 
 ## Stack

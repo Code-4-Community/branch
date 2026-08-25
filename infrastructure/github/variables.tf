@@ -1,3 +1,9 @@
+variable "aws_account_id" {
+  description = "AWS account hosting the BRANCH infrastructure; published as vars.AWS_ACCOUNT_ID"
+  type        = string
+  default     = "489881683177"
+}
+
 variable "repository_collaborators" {
   description = "List of GitHub users to add as collaborators"
   type = list(object({
