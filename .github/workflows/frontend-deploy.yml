@@ -58,9 +58,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve backend API base URL
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: |
-          API_ID=$(aws apigateway get-rest-apis --query "items[?name=='branch-api'].id | [0]" --output text)
-          echo "NEXT_PUBLIC_API_BASE_URL=https://$API_ID.execute-api.us-east-2.amazonaws.com/prod" >> "$GITHUB_ENV"
+          # Set vars.API_BASE_URL once the API's custom domain is live; until then
+          # fall back to the generated execute-api URL.
+          if [ -n "$API_BASE_URL" ]; then
+            echo "NEXT_PUBLIC_API_BASE_URL=$API_BASE_URL" >> "$GITHUB_ENV"
+          else
+            API_ID=$(aws apigateway get-rest-apis --query "items[?name=='branch-api'].id | [0]" --output text)
+            echo "NEXT_PUBLIC_API_BASE_URL=https://$API_ID.execute-api.us-east-2.amazonaws.com/prod" >> "$GITHUB_ENV"
+          fi
 
       # ── Step 1: build ────────────────────────────────────────────
       - name: Build static export
