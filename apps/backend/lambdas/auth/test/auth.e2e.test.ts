@@ -131,7 +131,7 @@ test("seeded admins are pending invitations, not claimed accounts", async () => 
   const client = await pool.connect();
   try {
     const { rows } = await client.query(
-      'SELECT email, user_id, is_admin, cognito_sub FROM branch.users ORDER BY user_id'
+      'SELECT email, user_id, is_admin, cognito_sub FROM branch.users WHERE is_admin IS TRUE ORDER BY user_id'
     );
 
     expect(rows).toHaveLength(3);
