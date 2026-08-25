@@ -1,6 +1,7 @@
 import { Insertable, Updateable } from 'kysely';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
 import db from '../db';
 import type { ExpenditureStatus } from '../validation-utils';
@@ -44,6 +45,7 @@ export async function deleteReceiptObject(receiptUrl: string | null): Promise<bo
     return true;
   } catch (err) {
     console.error('Failed to delete receipt object', key, err);
+    reportError(err, { key });
     return false;
   }
 }

@@ -3,7 +3,7 @@ import {
   AdminCreateUserCommand,
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json, requirePermission, type RouteHandler } from '@branch/lambda-http';
+import { json, reportError, requirePermission, type RouteHandler } from '@branch/lambda-http';
 import db from '../db';
 import { UserValidationUtils } from '../validation-utils';
 import {
@@ -238,7 +238,10 @@ export const deleteUser: RouteHandler = async ({ params }) => {
       await cognitoClient.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: user.email }));
     } catch (err: any) {
       if (err?.name !== 'UserNotFoundException') {
+        // The row is gone but the identity is not, so the email cannot be
+        // re-invited. The 200 says so; nothing else would.
         console.error('Cognito delete error:', err);
+        reportError(err, { email: user.email });
         cognitoDeleted = false;
       }
     }
@@ -307,6 +310,7 @@ export const createUser: RouteHandler = async ({ event }) => {
     if (err.name === 'UsernameExistsException') {
       return json(409, { message: 'User with this email already exists' });
     }
+    reportError(err);
     return json(500, { message: 'Failed to create user in authentication service' });
   }
 
@@ -326,8 +330,11 @@ export const createUser: RouteHandler = async ({ event }) => {
       }));
       console.log('Rolled back Cognito user after database failure');
     } catch (rollbackErr) {
+      // Orphaned Cognito user: no DB row, and the email is now unusable.
       console.error('Failed to rollback Cognito user:', rollbackErr);
+      reportError(rollbackErr, { email });
     }
+    reportError(err);
     return json(500, { message: 'Failed to create user' });
   }
 

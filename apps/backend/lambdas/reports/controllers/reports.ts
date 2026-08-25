@@ -1,6 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { json, parseBody } from '@branch/lambda-http';
+import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import db from '../db';
 import {
@@ -58,6 +58,7 @@ async function deleteReportObject(objectUrl: string | null): Promise<boolean> {
     return true;
   } catch (err) {
     console.error('Failed to delete report object', key, err);
+    reportError(err, { key });
     return false;
   }
 }
@@ -96,16 +97,14 @@ export const generateReport: RouteHandler = async ({ event }) => {
   try {
     fileBuffer = fileType === 'docx' ? await generateDocx(reportData) : await generatePdf(reportData);
   } catch (err) {
-    console.error('Report generation error:', err);
-    return json(500, { message: 'Failed to generate report' });
+    return serverError(err, 'Failed to generate report');
   }
 
   let objectUrl: string;
   try {
     objectUrl = await uploadToS3(fileBuffer, projectId, fileType);
   } catch (err) {
-    console.error('S3 upload error:', err);
-    return json(500, { message: 'Failed to upload report' });
+    return serverError(err, 'Failed to upload report');
   }
 
   const title = `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;

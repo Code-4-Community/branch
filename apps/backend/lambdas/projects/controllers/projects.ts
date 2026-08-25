@@ -1,4 +1,4 @@
-import { json, parseBody, requirePermission, RouteHandler } from '@branch/lambda-http';
+import { json, parseBody, requirePermission, RouteHandler, serverError } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
 import { sql, type SqlBool } from 'kysely';
 import db from '../db';
@@ -143,8 +143,7 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
     if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
     return json(200, updatedProject);
   } catch (e) {
-    console.error('Project update failed', e);
-    return json(500, { message: 'Failed to update project' });
+    return serverError(e, 'Failed to update project');
   }
 };
 
@@ -238,7 +237,6 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
 
     return json(201, inserted);
   } catch (e) {
-    console.error('DB insert failed', e);
-    return json(500, { message: 'Failed to create project' });
+    return serverError(e, 'Failed to create project');
   }
 };

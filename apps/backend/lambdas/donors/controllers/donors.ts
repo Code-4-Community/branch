@@ -1,5 +1,5 @@
 import type { RouteCtx } from '@branch/lambda-http';
-import { json } from '@branch/lambda-http';
+import { json, serverError } from '@branch/lambda-http';
 import db from '../db';
 import { DonorValidationUtils } from '../validation-utils';
 
@@ -76,8 +76,7 @@ export async function createDonor({ event }: RouteCtx) {
       })
       .executeTakeFirst();
   } catch (err) {
-    console.error('Database insert error:', err);
-    return json(500, { message: 'Failed to create donor' });
+    return serverError(err, 'Failed to create donor');
   }
 
   return json(201, {

@@ -7,7 +7,7 @@ import {
   GlobalSignOutCommandInput,
   ChallengeNameType,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json, parseBody } from '@branch/lambda-http';
+import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import { resolveProfileImage } from '../photos';
 import {
@@ -76,7 +76,10 @@ export async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
       return challengeResponse(response);
     }
 
-    return json(500, { message: 'Unexpected response from authentication service' });
+    return serverError(
+      new Error('Cognito returned neither AuthenticationResult nor a challenge'),
+      'Unexpected response from authentication service',
+    );
   } catch (error: any) {
     return mapCognitoAuthError(error, 'login');
   }
@@ -140,7 +143,10 @@ export async function handleRespondChallenge(event: any): Promise<APIGatewayProx
     if (response.ChallengeName) {
       return challengeResponse(response);
     }
-    return json(500, { message: 'Unexpected response from authentication service' });
+    return serverError(
+      new Error('Cognito returned neither AuthenticationResult nor a challenge'),
+      'Unexpected response from authentication service',
+    );
   } catch (error: any) {
     return mapCognitoAuthError(error, 'challenge');
   }
@@ -251,6 +257,7 @@ export async function handleLogout(event: any): Promise<APIGatewayProxyResult> {
       return json(401, { message: 'Invalid or expired token' });
     }
 
+    reportError(error);
     return json(500, { message: 'Failed to logout' });
   }
 }

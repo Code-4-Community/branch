@@ -4,6 +4,7 @@ import {
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
+import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
 import db from '../db';
 import { APPROVED_EXPENDITURE_STATUS, DEFAULT_PROJECT_ROLE, MemberAssignment } from '../validation-utils';
@@ -66,6 +67,7 @@ export async function deleteProjectObjects(projectId: number): Promise<number | 
     return counts[0] + counts[1];
   } catch (err) {
     console.error('Failed to delete objects for project', projectId, err);
+    reportError(err, { projectId });
     return null;
   }
 }
