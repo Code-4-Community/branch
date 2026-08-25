@@ -1,6 +1,8 @@
 import {
+  ADMIN_MEMBER_ROLE,
   DEFAULT_PROJECT_ROLE,
   PROJECT_ROLES,
+  type MemberDisplayRole,
   type ProjectRole,
 } from '@branch/rbac';
 import type { Expenditure } from './expenditure';
@@ -16,13 +18,19 @@ export interface Project {
     created_at: string | null;
 };
 
-export { DEFAULT_PROJECT_ROLE, PROJECT_ROLES, type ProjectRole };
+export {
+  ADMIN_MEMBER_ROLE,
+  DEFAULT_PROJECT_ROLE,
+  PROJECT_ROLES,
+  type MemberDisplayRole,
+  type ProjectRole,
+};
 
 export interface Member {
   user_id: number;
   name: string;
   email: string;
-  role: ProjectRole;
+  role: MemberDisplayRole;
   profile_image?: string | null;
 }
 

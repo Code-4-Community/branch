@@ -36,6 +36,10 @@ export const DEFAULT_PROJECT_ROLE: ProjectRole = 'Student';
 /** Membership roles that make someone a director of a project. */
 export const DIRECTOR_ROLES: readonly ProjectRole[] = ['Director'];
 
+export const ADMIN_MEMBER_ROLE = 'Admin';
+
+export type MemberDisplayRole = ProjectRole | typeof ADMIN_MEMBER_ROLE;
+
 export const ANONYMOUS: RbacSubject = {
   userId: null,
   isAdmin: false,

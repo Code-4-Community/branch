@@ -2,7 +2,7 @@ import { sql } from 'kysely';
 import { json, RouteHandler } from '@branch/lambda-http';
 import db from '../db';
 import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
-import { isProjectActive } from '../services/projects';
+import { isProjectActive, listRoster, loadAdminHeadcount } from '../services/projects';
 import { requireVisibleProject } from './project-guard';
 
 // Authentication and each route's declared permission are enforced by dispatch
@@ -117,6 +117,10 @@ export const getDashboard: RouteHandler = async () => {
     const activeSpent = Number(activeSpentRow?.total ?? 0);
     const averageSpendPerProject = totalProjects > 0 ? activeSpent / totalProjects : 0;
 
+    const { admins, storedAdmins } = await loadAdminHeadcount(
+      projectRows.map((p) => p.project_id),
+    );
+
     const projects = projectRows.map((p) => {
       const budget = p.total_budget !== null ? Number(p.total_budget) : null;
       const spent = Number(p.spent ?? 0);
@@ -127,7 +131,8 @@ export const getDashboard: RouteHandler = async () => {
         total_budget: budget,
         currency: p.currency,
         spent,
-        staff_count: Number(p.staff_count ?? 0),
+        staff_count:
+          Number(p.staff_count ?? 0) - (storedAdmins.get(p.project_id) ?? 0) + admins,
         spent_percentage: Number(spentPercentage.toFixed(2)),
       };
     });
@@ -180,13 +185,7 @@ export const getOverview: RouteHandler = async (ctx) => {
   // once and the 404 is settled from the result rather than ahead of them.
   const [project, members, expenditures, donationRow] = await Promise.all([
     db.selectFrom('branch.projects').where('project_id', '=', id).selectAll().executeTakeFirst(),
-    db
-      .selectFrom('branch.project_memberships as pm')
-      .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
-      .select(['u.user_id', 'u.name', 'u.email', 'u.profile_image', 'pm.role'])
-      .where('pm.project_id', '=', id)
-      .orderBy('u.name', 'asc')
-      .execute(),
+    listRoster(id),
     db
       .selectFrom('branch.expenditures')
       .where('project_id', '=', id)

@@ -1,5 +1,6 @@
 import { json, RouteHandler } from '@branch/lambda-http';
 import db from '../db';
+import { listRoster } from '../services/projects';
 import { requireVisibleProject } from './project-guard';
 
 // Authentication and each route's declared permission are enforced by dispatch
@@ -10,12 +11,7 @@ export const getMembers: RouteHandler = async (ctx) => {
   const { projectId, response } = requireVisibleProject(ctx);
   if (response) return response;
 
-  const users = await db
-    .selectFrom('branch.project_memberships as pm')
-    .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
-    .select(['u.user_id', 'u.name', 'u.email', 'pm.role'])
-    .where('pm.project_id', '=', projectId)
-    .execute();
+  const users = await listRoster(projectId);
 
   return json(200, {
     ok: true,
@@ -33,6 +29,7 @@ export const getAssignableStaff: RouteHandler = async () => {
   const staff = await db
     .selectFrom('branch.users')
     .select(['user_id', 'name', 'email', 'profile_image'])
+    .where('is_admin', 'is not', true)
     .orderBy('name', 'asc')
     .execute();
   return json(200, { staff });
