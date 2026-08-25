@@ -30,21 +30,20 @@ export async function getDonors({ event }: RouteCtx) {
   if (page && limit) {
     const offset = (page - 1) * limit;
 
-    const totalCount = await db
-      .selectFrom('branch.donors')
-      .select(db.fn.count('donor_id').as('count'))
-      .executeTakeFirst();
+    // The count does not depend on the page, so both go out at once.
+    const [totalCount, donors] = await Promise.all([
+      db.selectFrom('branch.donors').select(db.fn.count('donor_id').as('count')).executeTakeFirst(),
+      db
+        .selectFrom('branch.donors')
+        .selectAll()
+        .orderBy('donor_id', 'asc')
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+    ]);
 
     const totalItems = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalItems / limit);
-
-    const donors = await db
-      .selectFrom('branch.donors')
-      .selectAll()
-      .orderBy('donor_id', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
 
     return json(200, {
       data: donors,

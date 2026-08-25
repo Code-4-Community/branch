@@ -49,6 +49,19 @@ export async function deleteReceiptObject(receiptUrl: string | null): Promise<bo
 }
 
 export async function countExpenditures(projectId: number | null, scope: ExpenditureScope): Promise<number> {
+  // Only the unscoped count can come from the rollup. A scoped one is
+  // `project_id IN (...) OR entered_by = me`, and entered_by is not in the
+  // grain, so summing buckets would double-count rows matching both arms.
+  if (scope.projectIds === null) {
+    let rollup = db
+      .selectFrom('branch.expenditure_rollup')
+      .select(db.fn.sum('expenditure_count').as('count'));
+    if (projectId !== null) rollup = rollup.where('project_id', '=', projectId);
+    const rolledUp = await rollup.executeTakeFirst();
+
+    return Number(rolledUp?.count || 0);
+  }
+
   let query = db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count'));
   if (projectId !== null) query = query.where('project_id', '=', projectId);
   const totalCount = await applyExpenditureScope(query, scope).executeTakeFirst();
@@ -81,14 +94,22 @@ export async function findProjectById(projectId: number) {
   return db.selectFrom('branch.projects').where('project_id', '=', projectId).selectAll().executeTakeFirst();
 }
 
-export async function findProjectName(projectId: number): Promise<string | undefined> {
-  const row = await db.selectFrom('branch.projects').where('project_id', '=', projectId).select(['name']).executeTakeFirst();
-  return row?.name;
-}
-
-export async function findUserName(userId: number): Promise<string | undefined> {
-  const row = await db.selectFrom('branch.users').where('user_id', '=', userId).select(['name']).executeTakeFirst();
-  return row?.name;
+/**
+ * The row plus the two names the detail view renders, in one round trip.
+ *
+ * `projects` is an inner join because `project_id` is NOT NULL behind a foreign
+ * key, so it can never drop the row; `users` is a left join because
+ * `entered_by` is nullable.
+ */
+export async function findExpenditureWithNames(id: number) {
+  return db
+    .selectFrom('branch.expenditures as e')
+    .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
+    .leftJoin('branch.users as u', 'u.user_id', 'e.entered_by')
+    .where('e.expenditure_id', '=', id)
+    .selectAll('e')
+    .select(['p.name as project_name', 'u.name as submitted_by_name'])
+    .executeTakeFirst();
 }
 
 export async function insertExpenditure(values: Insertable<DB['branch.expenditures']>): Promise<void> {
@@ -115,21 +136,33 @@ export type ExpenditureEdit = Pick<
   'amount' | 'category' | 'description' | 'receipt_url' | 'spent_on'
 >;
 
-export async function updateExpenditure(id: number, values: ExpenditureEdit): Promise<void> {
-  if (Object.keys(values).length === 0) return;
-  await db.updateTable('branch.expenditures').set(values).where('expenditure_id', '=', id).execute();
+/**
+ * Returns the row as it now stands, so the caller does not have to read it back.
+ * `undefined` when there was nothing to set (the caller already holds the row)
+ * or when no row matched the id.
+ */
+export async function updateExpenditure(id: number, values: ExpenditureEdit) {
+  if (Object.keys(values).length === 0) return undefined;
+  return db
+    .updateTable('branch.expenditures')
+    .set(values)
+    .where('expenditure_id', '=', id)
+    .returningAll()
+    .executeTakeFirst();
 }
 
+/** Returns the updated row, or `undefined` when no row carries that id. */
 export async function updateExpenditureStatus(
   id: number,
   status: ExpenditureStatus,
   adminNotes: string | undefined,
-): Promise<void> {
-  await db
+) {
+  return db
     .updateTable('branch.expenditures')
     .set(adminNotes === undefined ? { status } : { status, admin_notes: adminNotes })
     .where('expenditure_id', '=', id)
-    .execute();
+    .returningAll()
+    .executeTakeFirst();
 }
 
 export async function presignUploadUrl(projectId: number, fileName: string): Promise<{ uploadUrl: string; objectUrl: string }> {

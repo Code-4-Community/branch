@@ -49,21 +49,20 @@ export const listUsers: RouteHandler = async ({ event }) => {
   if (page && limit) {
     const offset = (page - 1) * limit;
 
-    const totalCount = await db
-      .selectFrom('branch.users')
-      .select(db.fn.count('user_id').as('count'))
-      .executeTakeFirst();
+    // The count does not depend on the page, so both go out at once.
+    const [totalCount, users] = await Promise.all([
+      db.selectFrom('branch.users').select(db.fn.count('user_id').as('count')).executeTakeFirst(),
+      db
+        .selectFrom('branch.users')
+        .selectAll()
+        .orderBy('user_id', 'asc')
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+    ]);
 
     const totalUsers = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalUsers / limit);
-
-    const users = await db
-      .selectFrom('branch.users')
-      .selectAll()
-      .orderBy('user_id', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
     return json(200, {
       users: await withResolvedPhotos(users),
       pagination: {
@@ -155,10 +154,6 @@ export const patchUser: RouteHandler = async ({ event, params, auth }) => {
   if (denied) return denied;
   const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
 
-  // make sure user exists
-  let user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
-  if (!user) return json(404, { message: 'User not found' });
-
   const updates: { name?: string; is_admin?: boolean; profile_image?: string } = {};
 
   // email is the Cognito username and nothing here syncs it, so it is immutable
@@ -203,16 +198,21 @@ export const patchUser: RouteHandler = async ({ event, params, auth }) => {
     return json(400, { message: 'No valid fields provided to update' });
   }
 
-  // update
-  await db.updateTable('branch.users')
-           .set(updates)
-           .where('user_id', '=', Number(userId))
-           .execute();
+  // One statement does all three jobs: it applies the change, reports whether
+  // the row existed at all, and hands back the updated columns. So there is no
+  // SELECT ahead of it and none behind it. The cost is that a malformed body is
+  // now answered before a bad id — a 400 rather than a 404 — which is the same
+  // precedence every other validated route here already has.
+  const updatedUser = await db
+    .updateTable('branch.users')
+    .set(updates)
+    .where('user_id', '=', Number(userId))
+    .returningAll()
+    .executeTakeFirst();
 
-  // get updated user
-  let updatedUser = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+  if (!updatedUser) return json(404, { message: 'User not found' });
 
-  return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser!.email, name: updatedUser!.name, isAdmin: updatedUser!.is_admin, profileImage: await resolveProfileImage(updatedUser!.profile_image), created_at: updatedUser!.created_at } });
+  return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser.email, name: updatedUser.name, isAdmin: updatedUser.is_admin, profileImage: await resolveProfileImage(updatedUser.profile_image), created_at: updatedUser.created_at } });
 };
 
 export const deleteUser: RouteHandler = async ({ params }) => {

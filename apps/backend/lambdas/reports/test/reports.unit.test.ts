@@ -193,9 +193,10 @@ describe('GET /reports unit tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
-    // db.fn is used by pagination count queries
+    // db.fn is used by pagination count queries; sum() reads project_rollup.
     mockDb.fn = {
       count: jest.fn().mockReturnValue({ as: jest.fn().mockReturnValue('count') }),
+      sum: jest.fn().mockReturnValue({ as: jest.fn().mockReturnValue('count') }),
     };
   });
 

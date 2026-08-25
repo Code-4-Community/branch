@@ -226,12 +226,14 @@ test("patch user profile_image test 🌞", async () => {
 test("patch user 404 test 🌞", async () => {
   mockAdminAuth();
   
+  // Body has to be one the handler would otherwise accept: patchUser validates
+  // before it writes, and `email` is immutable, so leaving it in would assert a
+  // 400 under the name of a 404.
   const event = createEvent({
     method: 'PATCH',
     path: '/4',
     body: {
-      name: "John Doe",
-      email: "john.doe@example.com"
+      name: "John Doe"
     },
   });
   
