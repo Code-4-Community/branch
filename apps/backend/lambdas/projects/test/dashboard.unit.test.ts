@@ -123,6 +123,8 @@ describe('GET /dashboard unit tests', () => {
         { month: '2025-02', category: 'Travel', total: '5000.00' },
         { month: '2025-03', category: 'Travel Foreign', total: '4200.00' },
       ]));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '1' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
     });
 
     test('200: summary aggregates returned values', async () => {
@@ -154,12 +156,12 @@ describe('GET /dashboard unit tests', () => {
         name: 'P1',
         total_budget: 500000,
         spent: 9200,
-        staff_count: 2,
+        staff_count: 3,
       });
       expect(body.projects[0].spent_percentage).toBeCloseTo(1.84, 2);
 
-      // project with no membership row -> staff_count 0
-      expect(body.projects[2].staff_count).toBe(0);
+      // project with no membership row -> just the implicit admin
+      expect(body.projects[2].staff_count).toBe(1);
       // project with null budget -> 0%
       expect(body.projects[2].total_budget).toBeNull();
       expect(body.projects[2].spent_percentage).toBe(0);
@@ -190,6 +192,8 @@ describe('GET /dashboard unit tests', () => {
       mockDb.selectFrom.mockReturnValueOnce(chain({ total: null }));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '0' }));
+      mockDb.selectFrom.mockReturnValueOnce(chain([]));
 
       const res = await handler(getEvent());
       expect(res.statusCode).toBe(200);
@@ -211,6 +215,8 @@ describe('GET /dashboard unit tests', () => {
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
 
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '0' }));
+
       const res = await handler(getEvent());
       const body = JSON.parse(res.body);
       expect(body.summary.topExpenseCategory.percentage).toBe(0);
@@ -228,6 +234,8 @@ describe('GET /dashboard unit tests', () => {
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
 
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '0' }));
+
       const body = JSON.parse((await handler(getEvent())).body);
       // 12000/4, not 18000/4: the 6000 belonging to projects that have already
       // ended is out of the numerator, matching the denominator.
@@ -244,6 +252,8 @@ describe('GET /dashboard unit tests', () => {
       mockDb.selectFrom.mockReturnValueOnce(chain({ total: null }));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
       mockDb.selectFrom.mockReturnValueOnce(chain([]));
+
+      mockDb.selectFrom.mockReturnValueOnce(chain({ count: '0' }));
 
       const body = JSON.parse((await handler(getEvent())).body);
       expect(body.summary.averageSpendPerProject).toBe(0);

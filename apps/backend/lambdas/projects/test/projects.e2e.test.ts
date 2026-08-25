@@ -63,8 +63,8 @@ beforeAll(async () => {
 });
 
 
-// Non-admin users inserted by the Authorization block after each reseed.
-// The seed creates users 1-3, so these deterministically become 4 and 5.
+// Non-admin users inserted by the Authorization block after each reseed, which
+// fills in their ids -- the seed's own user count is not fixed.
 const nonMemberUser = {
   isAuthenticated: true as const,
   user: { cognitoSub: 'nonmember-sub', userId: 4, email: 'nonmember@branch.org', isAdmin: false },
@@ -133,11 +133,16 @@ describe('Authorization', () => {
   beforeEach(async () => {
     const client = await pool.connect();
     try {
-      await client.query(
+      const { rows } = await client.query(
         `INSERT INTO branch.users (name, email, is_admin) VALUES
            ('Non Member', 'nonmember@branch.org', FALSE),
-           ('Director Member', 'directormember@branch.org', FALSE)`,
+           ('Director Member', 'directormember@branch.org', FALSE)
+         RETURNING user_id, email`,
       );
+      const idFor = (email: string) =>
+        rows.find((r: { email: string }) => r.email === email).user_id;
+      nonMemberUser.user.userId = idFor('nonmember@branch.org');
+      directorMemberUser.user.userId = idFor('directormember@branch.org');
       await client.query(
         `INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours)
          SELECT 1, user_id, 'Director', '2025-01-01', 10 FROM branch.users WHERE email = 'directormember@branch.org'`,
@@ -469,7 +474,7 @@ describe('GET /dashboard (e2e)', () => {
     expect(p1.name).toContain('Clinician Communication Study');
     expect(p1.total_budget).toBe(500000);
     expect(p1.spent).toBe(9200);
-    expect(p1.staff_count).toBe(2);
+    expect(p1.staff_count).toBe(5);
     expect(p1.spent_percentage).toBeCloseTo(1.84, 2);
   });
 
@@ -479,7 +484,7 @@ describe('GET /dashboard (e2e)', () => {
     const projB = body.projects.find((p: any) => p.name === 'Proj B');
     expect(projB).toBeDefined();
     expect(projB.spent).toBe(0);
-    expect(projB.staff_count).toBe(0);
+    expect(projB.staff_count).toBe(3);
   });
 
   test('expensesByMonth rows are chronological with numeric amounts 🌞', async () => {

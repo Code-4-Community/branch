@@ -231,7 +231,7 @@ test("patch user 404 test 🌞", async () => {
   // 400 under the name of a 404.
   const event = createEvent({
     method: 'PATCH',
-    path: '/4',
+    path: '/99999',
     body: {
       name: "John Doe"
     },
@@ -256,7 +256,7 @@ test("get users test", async () => {
   console.log(body);
   expect(body.users).toBeDefined();
   expect(Array.isArray(body.users)).toBe(true);
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 
   const firstUser = body.users[0];
   expect(firstUser.email).toBe("ashley@branch.org");
@@ -295,8 +295,8 @@ test("get users with correct pagnation", async () => {
   expect(body.pagination).toBeDefined();
   expect(body.pagination.page).toBe(1);
   expect(body.pagination.limit).toBe(1);
-  expect(body.pagination.totalUsers).toBe(3);
-  expect(body.pagination.totalPages).toBe(3);
+  expect(body.pagination.totalUsers).toBe(6);
+  expect(body.pagination.totalPages).toBe(6);
 
   expect(body.users).toBeDefined();
   expect(body.users.length).toBe(1);
@@ -327,7 +327,7 @@ test("get users with only page", async () => {
   expect(body.pagination).toBeUndefined();
 
   expect(body.users).toBeDefined();
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 });
 
 
@@ -349,7 +349,7 @@ test("get users with only limit", async () => {
   expect(body.pagination).toBeUndefined();
 
   expect(body.users).toBeDefined();
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 });
 
 test("get users with limit above total user", async () => {
@@ -369,11 +369,11 @@ test("get users with limit above total user", async () => {
   expect(body.pagination).toBeDefined();
   expect(body.pagination.page).toBe(1);
   expect(body.pagination.limit).toBe(100);
-  expect(body.pagination.totalUsers).toBe(3);
+  expect(body.pagination.totalUsers).toBe(6);
   expect(body.pagination.totalPages).toBe(1);
 
   expect(body.users).toBeDefined();
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 });
 
 // Wrong path

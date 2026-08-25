@@ -7,6 +7,7 @@ import {
 import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
 import db from '../db';
+import { ADMIN_MEMBER_ROLE, type MemberDisplayRole } from '@branch/rbac';
 import { APPROVED_EXPENDITURE_STATUS, DEFAULT_PROJECT_ROLE, MemberAssignment } from '../validation-utils';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
@@ -141,6 +142,69 @@ export function isProjectActive(endDate: unknown, today = new Date()): boolean {
   return iso >= today.toISOString().slice(0, 10);
 }
 
+export interface RosterMember {
+  user_id: number;
+  name: string;
+  email: string;
+  profile_image: string | null;
+  role: MemberDisplayRole;
+}
+
+export async function listRoster(projectId: number): Promise<RosterMember[]> {
+  const [admins, stored] = await Promise.all([
+    db
+      .selectFrom('branch.users')
+      .select(['user_id', 'name', 'email', 'profile_image'])
+      .where('is_admin', 'is', true)
+      .orderBy('name', 'asc')
+      .execute(),
+    db
+      .selectFrom('branch.project_memberships as pm')
+      .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
+      .select(['u.user_id', 'u.name', 'u.email', 'u.profile_image', 'pm.role'])
+      .where('pm.project_id', '=', projectId)
+      .orderBy('u.name', 'asc')
+      .execute(),
+  ]);
+
+  const adminIds = new Set(admins.map((a) => a.user_id));
+
+  return [
+    ...admins.map((a) => ({ ...a, role: ADMIN_MEMBER_ROLE as MemberDisplayRole })),
+    ...stored
+      .filter((m) => !adminIds.has(m.user_id))
+      .map((m) => ({ ...m, role: m.role as MemberDisplayRole })),
+  ];
+}
+
+export async function loadAdminHeadcount(projectIds: number[]): Promise<{
+  admins: number;
+  storedAdmins: Map<number, number>;
+}> {
+  const [totalRow, storedRows] = await Promise.all([
+    db
+      .selectFrom('branch.users')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('is_admin', 'is', true)
+      .executeTakeFirst(),
+    projectIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .selectFrom('branch.project_memberships as pm')
+          .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
+          .select(['pm.project_id', (eb) => eb.fn.countAll<string>().as('count')])
+          .where('u.is_admin', 'is', true)
+          .where('pm.project_id', 'in', projectIds)
+          .groupBy('pm.project_id')
+          .execute(),
+  ]);
+
+  return {
+    admins: Number(totalRow?.count ?? 0),
+    storedAdmins: indexByProject(storedRows, (r) => Number(r.count ?? 0)),
+  };
+}
+
 /**
  * Replaces a project's roster with `members` inside the caller's transaction.
  *
@@ -182,6 +246,24 @@ export async function syncMemberships(
       })),
     )
     .execute();
+}
+
+export const ADMIN_ASSIGNMENT_MESSAGE =
+  'Admins are on every project and cannot be assigned to one.';
+
+export async function findAdminUserIds(members: MemberAssignment[]): Promise<number[]> {
+  if (members.length === 0) return [];
+  const admins = await db
+    .selectFrom('branch.users')
+    .select('user_id')
+    .where('is_admin', 'is', true)
+    .where(
+      'user_id',
+      'in',
+      members.map((m) => m.user_id),
+    )
+    .execute();
+  return admins.map((row) => row.user_id);
 }
 
 /** Rejects member ids that are not real users, so FK errors never reach the client as a 500. */

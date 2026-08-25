@@ -55,20 +55,20 @@ const authenticatedUser = {
   isAuthenticated: true,
   user: {
     cognitoSub: 'staff-sub',
-    userId: 1,
-    email: 'person@branch.org',
+    userId: 4,
+    email: 'sam@branch.org',
     isAdmin: false,
   },
 }
 
-// Seed user 3 is a Student on project 2 only -- no memberships on projects 1 or
+// Seed user 6 is a Student on project 2 only -- no memberships on projects 1 or
 // 3, and not a director anywhere.
 const studentUser = {
   isAuthenticated: true,
   user: {
     cognitoSub: 'student-sub',
-    userId: 3,
-    email: 'nour@branch.org',
+    userId: 6,
+    email: 'diego@branch.org',
     isAdmin: false,
   },
 }

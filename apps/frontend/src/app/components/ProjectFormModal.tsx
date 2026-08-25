@@ -7,6 +7,7 @@ import TextInputField from './TextInputField';
 import DatePickerField from './DatePickerField';
 import StaffPicker from './StaffPicker';
 import { useApi } from '@/hooks/useApi';
+import { ADMIN_MEMBER_ROLE } from '@/types';
 import type {
   AssignableStaff,
   Member,
@@ -141,10 +142,11 @@ export default function ProjectFormModal({
             startDate: project.start_date?.slice(0, 10) ?? '',
             endDate: project.end_date?.slice(0, 10) ?? '',
             inProgress: !project.end_date,
-            members: members.map((m) => ({
-              user_id: m.user_id,
-              role: m.role,
-            })),
+            members: members.flatMap((m) =>
+              m.role === ADMIN_MEMBER_ROLE
+                ? []
+                : [{ user_id: m.user_id, role: m.role }],
+            ),
           }
         : EMPTY_VALUES,
     );

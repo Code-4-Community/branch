@@ -5,9 +5,12 @@ import db from '../db';
 import { ProjectValidationUtils } from '../validation-utils';
 import { requireVisibleProject } from './project-guard';
 import {
+  ADMIN_ASSIGNMENT_MESSAGE,
   deleteProjectObjects,
+  findAdminUserIds,
   findUnknownUserIds,
   isProjectActive,
+  loadAdminHeadcount,
   loadProjectAggregates,
   syncMemberships,
   toIsoDate,
@@ -33,14 +36,19 @@ export const listProjects: RouteHandler = async ({ auth }) => {
   // The list cards render "spent / budget", a member count and an
   // active-vs-archived split. Serving those aggregates here keeps the page
   // to one request instead of three per project.
-  const { spent, members } = await loadProjectAggregates(projects.map((p) => p.project_id));
+  const projectIds = projects.map((p) => p.project_id);
+  const [{ spent, members }, { admins, storedAdmins }] = await Promise.all([
+    loadProjectAggregates(projectIds),
+    loadAdminHeadcount(projectIds),
+  ]);
 
   return json(
     200,
     projects.map((p) => ({
       ...p,
       total_spent: spent.get(p.project_id) ?? 0,
-      member_count: members.get(p.project_id) ?? 0,
+      member_count:
+        (members.get(p.project_id) ?? 0) - (storedAdmins.get(p.project_id) ?? 0) + admins,
       is_active: isProjectActive(p.end_date),
     })),
   );
@@ -115,6 +123,10 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
     const unknownIds = await findUnknownUserIds(members);
     if (unknownIds.length > 0) {
       return json(400, { message: `Unknown user ids: ${unknownIds.join(', ')}` });
+    }
+    const adminIds = await findAdminUserIds(members);
+    if (adminIds.length > 0) {
+      return json(400, { message: ADMIN_ASSIGNMENT_MESSAGE });
     }
   }
 
@@ -218,6 +230,10 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
   const unknownIds = await findUnknownUserIds(members);
   if (unknownIds.length > 0) {
     return json(400, { message: `Unknown user ids: ${unknownIds.join(', ')}` });
+  }
+  const adminIds = await findAdminUserIds(members);
+  if (adminIds.length > 0) {
+    return json(400, { message: ADMIN_ASSIGNMENT_MESSAGE });
   }
 
   try {
