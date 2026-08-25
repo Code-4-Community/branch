@@ -185,6 +185,7 @@ export default function ProjectDetailView({ id }: { id: string }) {
                       key={member.user_id}
                       compact
                       name={member.name}
+                      title={member.role}
                       email={member.email}
                       image={member.profile_image ?? undefined}
                     />
