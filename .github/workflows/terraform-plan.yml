@@ -361,6 +361,21 @@ jobs:
           fi
           if [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "" ] || [ "${{ needs.detect-changes.outputs.terraform-dirs }}" == "[]" ]; then
             echo "No Terraform changes detected"
-          else
-            echo "Terraform plan completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
+            exit 0
           fi
+
+          # This is the only terraform context in branch protection, so it has to
+          # fail when the plan fails -- `if: always()` alone would let a PR whose
+          # plan errored merge on a green check.
+          for job in "terraform-fmt-docs:${{ needs.terraform-fmt-docs.result }}" \
+                     "terraform-plan:${{ needs.terraform-plan.result }}"; do
+            name=${job%%:*}
+            result=${job#*:}
+            case "$result" in
+              success|skipped) echo "$name: $result" ;;
+              *) echo "::error::$name did not succeed ($result)"; failed=1 ;;
+            esac
+          done
+          [ -z "$failed" ] || exit 1
+
+          echo "Terraform plan completed for directories: ${{ needs.detect-changes.outputs.terraform-dirs }}"
