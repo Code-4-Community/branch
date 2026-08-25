@@ -351,8 +351,10 @@ describe('project_rollup trigger', () => {
     `);
     await auditRollups(client);
 
-    const projects = await get('/');
-    expect(projects.find((p: any) => p.project_id === 1).member_count).toBe(2);
+    const { rows } = await client.query(
+      'SELECT member_count FROM branch.project_rollup WHERE project_id = 1',
+    );
+    expect(rows[0].member_count).toBe(2);
   });
 
   test('moving a donation between projects debits one and credits the other', async () => {
@@ -376,9 +378,12 @@ describe('project_rollup trigger', () => {
     `);
     await auditRollups(client);
 
-    const projects = await get('/');
-    expect(projects.find((p: any) => p.project_id === 1).member_count).toBe(0);
-    expect(projects.find((p: any) => p.project_id === 2).member_count).toBe(1);
+    const { rows } = await client.query(
+      'SELECT project_id, member_count FROM branch.project_rollup WHERE project_id IN (1, 2)',
+    );
+    const byProject = new Map(rows.map((r: any) => [r.project_id, r.member_count]));
+    expect(byProject.get(1)).toBe(0);
+    expect(byProject.get(2)).toBe(1);
   });
 
   test('TRUNCATE of donations, memberships and reports zeroes their counters', async () => {
