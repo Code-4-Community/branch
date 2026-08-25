@@ -249,7 +249,7 @@ describe('authenticateRequest', () => {
     const { db } = makeDb([
       userRow({ project_id: 1, role: 'Director' }),
       userRow({ project_id: 2, role: 'Student' }),
-      userRow({ project_id: 3, role: 'Admin' }),
+      userRow({ project_id: 3, role: 'Director' }),
     ]);
 
     const ctx = await authenticateRequest(db, bearerEvent('good'));
@@ -258,7 +258,7 @@ describe('authenticateRequest', () => {
     expect(ctx.user?.memberships).toEqual([
       { project_id: 1, role: 'Director' },
       { project_id: 2, role: 'Student' },
-      { project_id: 3, role: 'Admin' },
+      { project_id: 3, role: 'Director' },
     ]);
   });
 
