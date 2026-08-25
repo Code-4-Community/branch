@@ -51,6 +51,7 @@ export const getDonor: RouteHandler = async ({ params }) => {
 };
 ```
 - `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health`, 404 and 500 centrally — routes.ts only lists real endpoints.
+- **A caught error is an error Sentry cannot see.** The Sentry layer wraps the handler and records uncaught throws only, and we always catch so API Gateway returns a JSON 500 instead of a 502. `dispatch()` reports what reaches its catch; a controller that returns its own 500 must use `serverError(err, 'Failed to …')` from `@branch/lambda-http` rather than `console.error` + `json(500, …)`. Same status to the caller, one less invisible failure.
 - **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
 - Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
 - Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requirePermission`, `createAuthResolver`, `matchPattern`).

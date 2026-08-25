@@ -1,6 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { json, parseBody } from '@branch/lambda-http';
+import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import db from '../db';
 import {
@@ -58,6 +58,7 @@ async function deleteReportObject(objectUrl: string | null): Promise<boolean> {
     return true;
   } catch (err) {
     console.error('Failed to delete report object', key, err);
+    reportError(err, { key });
     return false;
   }
 }
@@ -96,16 +97,14 @@ export const generateReport: RouteHandler = async ({ event }) => {
   try {
     fileBuffer = fileType === 'docx' ? await generateDocx(reportData) : await generatePdf(reportData);
   } catch (err) {
-    console.error('Report generation error:', err);
-    return json(500, { message: 'Failed to generate report' });
+    return serverError(err, 'Failed to generate report');
   }
 
   let objectUrl: string;
   try {
     objectUrl = await uploadToS3(fileBuffer, projectId, fileType);
   } catch (err) {
-    console.error('S3 upload error:', err);
-    return json(500, { message: 'Failed to upload report' });
+    return serverError(err, 'Failed to upload report');
   }
 
   const title = `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
@@ -151,18 +150,22 @@ export const listReports: RouteHandler = async ({ event }) => {
   if (page && limit) {
     const offset = (page - 1) * limit;
 
-    // From the rollup, not a scan of `reports`. No reports reads 0, and an
+    // Count from the rollup, not a scan of `reports`. No reports reads 0, and an
     // unknown project has no row — both yield 0, as COUNT(*) did.
-    const totalCount = projectId !== null
-      ? await db.selectFrom('branch.project_rollup').where('project_id', '=', projectId).select('report_count as count').executeTakeFirst()
-      : await db.selectFrom('branch.project_rollup').select(db.fn.sum('report_count').as('count')).executeTakeFirst();
+    const countPromise = projectId !== null
+      ? db.selectFrom('branch.project_rollup').where('project_id', '=', projectId).select('report_count as count').executeTakeFirst()
+      : db.selectFrom('branch.project_rollup').select(db.fn.sum('report_count').as('count')).executeTakeFirst();
+
+    let pageQuery = db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc');
+    if (projectId !== null) pageQuery = pageQuery.where('project_id', '=', projectId);
+
+    const [totalCount, reports] = await Promise.all([
+      countPromise,
+      pageQuery.limit(limit).offset(offset).execute(),
+    ]);
 
     const totalItems = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalItems / limit);
-
-    const reports = projectId !== null
-      ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute()
-      : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
 
     return json(200, {
       data: reports,

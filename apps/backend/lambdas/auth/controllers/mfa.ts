@@ -5,7 +5,7 @@ import {
   SetUserMFAPreferenceCommand,
   GetUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json, parseBody } from '@branch/lambda-http';
+import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import db from '../db';
 import { cognitoClient } from '../services/cognito';
@@ -43,6 +43,7 @@ function mapMfaError(error: any): APIGatewayProxyResult {
     case 'LimitExceededException':
       return json(429, { message: 'Too many attempts, please try again later', code });
     default:
+      reportError(error, { code });
       return json(500, { message: 'MFA request failed', error: error?.message, code });
   }
 }
@@ -80,7 +81,10 @@ export const handleMfaSetup: RouteHandler = async ({ event, auth }) => {
 
     const secretCode = response.SecretCode;
     if (!secretCode) {
-      return json(500, { message: 'Failed to generate MFA secret' });
+      return serverError(
+        new Error('AssociateSoftwareToken returned no SecretCode'),
+        'Failed to generate MFA secret',
+      );
     }
 
     const label = encodeURIComponent(`BRANCH:${me?.email ?? user.cognitoSub}`);

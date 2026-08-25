@@ -8,9 +8,28 @@ interface QueryableDb {
 }
 
 /**
- * Build the authorization subject for an authenticated request: one query at the
- * edge, because nearly every rule needs the caller's memberships. The result is
- * also what `GET /auth/me` ships to the browser.
+ * The subject for a caller whose memberships `authenticateRequest` already
+ * joined in, or `null` when they were not loaded and somebody has to query.
+ *
+ * `null` and "member of nothing" are different answers, which is why this reads
+ * the presence of the array rather than its length: a hand-built context (every
+ * lambda's tests build one) must still fall through to `loadRbacSubject`.
+ */
+export function preloadedSubject(authContext: AuthContext): RbacSubject | null {
+  if (!authContext.isAuthenticated || !authContext.user?.userId) return null;
+  const memberships = authContext.user.memberships;
+  if (!memberships) return null;
+  return buildSubject(authContext.user, memberships);
+}
+
+/**
+ * Build the authorization subject for an authenticated request by reading the
+ * memberships from Postgres, because nearly every rule needs them. The result
+ * is also what `GET /auth/me` ships to the browser.
+ *
+ * `authenticateRequest` now fetches the same rows in the query that resolves the
+ * identity, so the request path takes `preloadedSubject` and never gets here.
+ * This remains the loader for a context that arrived without them.
  *
  * The assembly lives in `buildSubject` in @branch/rbac; this is the "read it
  * from Postgres" half.
@@ -21,6 +40,9 @@ export async function loadRbacSubject(
 ): Promise<RbacSubject> {
   const userId = authContext.user?.userId;
   if (!authContext.isAuthenticated || !userId) return ANONYMOUS;
+
+  const preloaded = preloadedSubject(authContext);
+  if (preloaded) return preloaded;
 
   const memberships: MembershipRow[] = await db
     .selectFrom('branch.project_memberships')

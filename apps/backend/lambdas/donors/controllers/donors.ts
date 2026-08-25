@@ -1,5 +1,5 @@
 import type { RouteCtx } from '@branch/lambda-http';
-import { json } from '@branch/lambda-http';
+import { json, serverError } from '@branch/lambda-http';
 import db from '../db';
 import { DonorValidationUtils } from '../validation-utils';
 
@@ -30,21 +30,20 @@ export async function getDonors({ event }: RouteCtx) {
   if (page && limit) {
     const offset = (page - 1) * limit;
 
-    const totalCount = await db
-      .selectFrom('branch.donors')
-      .select(db.fn.count('donor_id').as('count'))
-      .executeTakeFirst();
+    // The count does not depend on the page, so both go out at once.
+    const [totalCount, donors] = await Promise.all([
+      db.selectFrom('branch.donors').select(db.fn.count('donor_id').as('count')).executeTakeFirst(),
+      db
+        .selectFrom('branch.donors')
+        .selectAll()
+        .orderBy('donor_id', 'asc')
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+    ]);
 
     const totalItems = Number(totalCount?.count || 0);
     const totalPages = Math.ceil(totalItems / limit);
-
-    const donors = await db
-      .selectFrom('branch.donors')
-      .selectAll()
-      .orderBy('donor_id', 'asc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
 
     return json(200, {
       data: donors,
@@ -77,8 +76,7 @@ export async function createDonor({ event }: RouteCtx) {
       })
       .executeTakeFirst();
   } catch (err) {
-    console.error('Database insert error:', err);
-    return json(500, { message: 'Failed to create donor' });
+    return serverError(err, 'Failed to create donor');
   }
 
   return json(201, {

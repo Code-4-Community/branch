@@ -3,6 +3,13 @@ import { dispatch } from '../src/dispatch';
 import { json } from '../src/response';
 import type { RequestAuth, Route } from '../src/types';
 
+jest.mock('@sentry/aws-serverless', () => ({ captureException: jest.fn() }), {
+  virtual: true,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Sentry = require('@sentry/aws-serverless') as { captureException: jest.Mock };
+
 const ok = (label: string): Route['handler'] => async (ctx) =>
   json(200, { label, params: ctx.params, path: ctx.path, subject: ctx.auth.subject });
 
@@ -111,7 +118,8 @@ describe('dispatch routing', () => {
     expect(body(res)).toMatchObject({ message: 'Not Found', path: '/projects/7/nope' });
   });
 
-  it('500s when a handler throws, without leaking the error', async () => {
+  it('500s when a handler throws, reports it, and does not leak the error', async () => {
+    Sentry.captureException.mockClear();
     const boom: Route[] = [
       {
         method: 'GET',
@@ -130,6 +138,14 @@ describe('dispatch routing', () => {
     });
     expect(res.statusCode).toBe(500);
     expect(res.body).not.toContain('secret detail');
+    // The Sentry layer only records uncaught throws; this one was caught.
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException.mock.calls[0][0]).toMatchObject({
+      message: 'secret detail',
+    });
+    expect(Sentry.captureException.mock.calls[0][1]).toEqual({
+      extra: { method: 'GET', path: '/projects' },
+    });
     spy.mockRestore();
   });
 });

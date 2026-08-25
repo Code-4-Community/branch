@@ -3,18 +3,27 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LuSearch, LuX } from 'react-icons/lu';
-import type { AssignableStaff } from '@/types';
+import {
+  DEFAULT_PROJECT_ROLE,
+  PROJECT_ROLES,
+  type AssignableStaff,
+  type MemberAssignment,
+  type ProjectRole,
+} from '@/types';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
+import DropdownSelector from './DropdownSelector';
 import LoadingState from './LoadingState';
 
 const LISTBOX_MAX_HEIGHT = 220;
 
+const ROLE_OPTIONS: string[] = [...PROJECT_ROLES];
+
 interface StaffPickerProps {
   label: string;
   options: AssignableStaff[];
-  /** Selected user ids, in the order they were added. */
-  value: number[];
-  onChange: (value: number[]) => void;
+  /** Selected staff and the role each holds, in the order they were added. */
+  value: MemberAssignment[];
+  onChange: (value: MemberAssignment[]) => void;
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
@@ -25,7 +34,7 @@ interface StaffPickerProps {
 
 /**
  * Search-and-select list of staff, rendering the chosen people as removable
- * chips beneath the field.
+ * rows beneath the field, each with the project role they will hold.
  *
  * Filtering happens client-side against the full roster: the staff list is
  * organisation-sized (tens, not thousands), so a request per keystroke would
@@ -64,30 +73,45 @@ export default function StaffPicker({
   const selected = useMemo(
     () =>
       value
-        .map((id) => byId.get(id))
-        .filter((s): s is AssignableStaff => Boolean(s)),
+        .map((assignment) => {
+          const person = byId.get(assignment.user_id);
+          return person ? { person, role: assignment.role } : null;
+        })
+        .filter((entry) => entry !== null),
     [value, byId],
+  );
+
+  const selectedIds = useMemo(
+    () => new Set(value.map((assignment) => assignment.user_id)),
+    [value],
   );
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return options.filter((option) => {
-      if (value.includes(option.user_id)) return false;
+      if (selectedIds.has(option.user_id)) return false;
       if (!needle) return true;
       return (
         option.name.toLowerCase().includes(needle) ||
         option.email.toLowerCase().includes(needle)
       );
     });
-  }, [options, query, value]);
+  }, [options, query, selectedIds]);
 
   const add = (id: number) => {
-    onChange([...value, id]);
+    onChange([...value, { user_id: id, role: DEFAULT_PROJECT_ROLE }]);
     setQuery('');
   };
 
   const remove = (id: number) =>
-    onChange(value.filter((existing) => existing !== id));
+    onChange(value.filter((assignment) => assignment.user_id !== id));
+
+  const setRole = (id: number, role: ProjectRole) =>
+    onChange(
+      value.map((assignment) =>
+        assignment.user_id === id ? { ...assignment, role } : assignment,
+      ),
+    );
 
   const labelClass = isError ? '!text-error-red' : '!text-core-black';
   const boxClass = isError ? '!border-error-red' : '!border-black-400';
@@ -173,23 +197,42 @@ export default function StaffPicker({
       </div>
 
       {selected.length > 0 && (
-        <ul className="flex flex-wrap !gap-2" aria-label={`Selected ${label}`}>
-          {selected.map((person) => (
-            <li key={person.user_id}>
-              <span className="inline-flex items-center !gap-1.5 rounded-[18px] bg-black-300 !px-2.5 !py-1">
-                <small className="!font-bold !text-core-black">
+        <ul className="flex flex-col !gap-2" aria-label={`Selected ${label}`}>
+          {selected.map(({ person, role }) => (
+            <li
+              key={person.user_id}
+              className="flex items-center !gap-3 rounded-[4px] bg-black-300 !px-3 !py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <small className="block truncate !font-bold !text-core-black">
                   {person.name}
                 </small>
-                <button
-                  type="button"
+                <small className="block truncate !text-black-700">
+                  {person.email}
+                </small>
+              </div>
+
+              <div className="w-[130px] shrink-0">
+                <DropdownSelector
+                  options={ROLE_OPTIONS}
+                  value={role}
                   disabled={disabled}
-                  onClick={() => remove(person.user_id)}
-                  aria-label={`Remove ${person.name}`}
-                  className="flex cursor-pointer items-center justify-center text-core-black disabled:cursor-not-allowed"
-                >
-                  <LuX size={11} aria-hidden />
-                </button>
-              </span>
+                  ariaLabel={`Role for ${person.name}`}
+                  onChange={(next) =>
+                    setRole(person.user_id, next as ProjectRole)
+                  }
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => remove(person.user_id)}
+                aria-label={`Remove ${person.name}`}
+                className="flex shrink-0 cursor-pointer items-center justify-center text-core-black disabled:cursor-not-allowed"
+              >
+                <LuX size={14} aria-hidden />
+              </button>
             </li>
           ))}
         </ul>

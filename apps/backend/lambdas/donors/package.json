@@ -7,7 +7,7 @@
     "dev": "ts-node --transpile-only dev-server.ts",
     "build": "tsc",
     "test": "jest",
-    "package": "esbuild handler.ts --bundle --platform=node --target=node20 --minify '--external:@aws-sdk/*' --outfile=dist/handler.js && cd dist && zip -q ../lambda.zip handler.js"
+    "package": "esbuild handler.ts --bundle --platform=node --target=node20 --minify '--external:@aws-sdk/*' --external:@sentry/aws-serverless --outfile=dist/handler.js && cd dist && zip -q ../lambda.zip handler.js"
   },
   "devDependencies": {
     "@branch/types": "file:../../../../shared/types",

@@ -22,15 +22,19 @@ export interface RbacSubject {
  * Here rather than in the projects lambda because the director derivation below
  * reads it: two copies of the list means adding a role can silently produce a
  * non-director.
+ *
+ * Admin is deliberately absent. It is a user-level flag (`users.is_admin`) and
+ * is never read from a membership, so the project-scoped 'Admin' this list used
+ * to carry was only ever a second spelling of Director.
  */
-export const PROJECT_ROLES = ['Admin', 'Director', 'Student'] as const;
+export const PROJECT_ROLES = ['Director', 'Student'] as const;
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
 
 /** Assigned when the staff picker does not ask for a role. */
 export const DEFAULT_PROJECT_ROLE: ProjectRole = 'Student';
 
 /** Membership roles that make someone a director of a project. */
-export const DIRECTOR_ROLES: readonly ProjectRole[] = ['Admin', 'Director'];
+export const DIRECTOR_ROLES: readonly ProjectRole[] = ['Director'];
 
 export const ANONYMOUS: RbacSubject = {
   userId: null,

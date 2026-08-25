@@ -51,9 +51,11 @@ function patchEvent(userId: string | number, body: unknown) {
 }
 
 function mockDbForPatch() {
-  mockDb.selectFrom.mockReturnValue({
+  // patchUser is a single UPDATE ... RETURNING, so the row it answers with comes
+  // back from the write itself.
+  mockSet.mockReturnValue({
     where: jest.fn().mockReturnValue({
-      selectAll: jest.fn().mockReturnValue({
+      returningAll: jest.fn().mockReturnValue({
         executeTakeFirst: (jest.fn() as any).mockResolvedValue({
           user_id: 2,
           name: 'Regular User',
@@ -62,12 +64,6 @@ function mockDbForPatch() {
           profile_image: null,
         }),
       }),
-    }),
-  });
-
-  mockSet.mockReturnValue({
-    where: jest.fn().mockReturnValue({
-      execute: (jest.fn() as any).mockResolvedValue(undefined),
     }),
   });
   mockDb.updateTable.mockReturnValue({ set: mockSet });

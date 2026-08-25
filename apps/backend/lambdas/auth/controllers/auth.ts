@@ -7,10 +7,8 @@ import {
   GlobalSignOutCommandInput,
   ChallengeNameType,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json, parseBody } from '@branch/lambda-http';
+import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
-import { authenticateRequest } from '../auth';
-import db from '../db';
 import { resolveProfileImage } from '../photos';
 import {
   cognitoClient,
@@ -78,7 +76,10 @@ export async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
       return challengeResponse(response);
     }
 
-    return json(500, { message: 'Unexpected response from authentication service' });
+    return serverError(
+      new Error('Cognito returned neither AuthenticationResult nor a challenge'),
+      'Unexpected response from authentication service',
+    );
   } catch (error: any) {
     return mapCognitoAuthError(error, 'login');
   }
@@ -142,7 +143,10 @@ export async function handleRespondChallenge(event: any): Promise<APIGatewayProx
     if (response.ChallengeName) {
       return challengeResponse(response);
     }
-    return json(500, { message: 'Unexpected response from authentication service' });
+    return serverError(
+      new Error('Cognito returned neither AuthenticationResult nor a challenge'),
+      'Unexpected response from authentication service',
+    );
   } catch (error: any) {
     return mapCognitoAuthError(error, 'challenge');
   }
@@ -197,16 +201,7 @@ export const handleMe: RouteHandler = async ({ auth }) => {
   // `access: 'authenticated'` on the route means dispatch has already verified
   // the session and loaded the subject; re-doing either here would be a second
   // token verification and a second memberships query per request.
-  const user = auth.context.user;
-  if (!user) {
-    return json(401, { message: 'Authentication required' });
-  }
-
-  const me = await db
-    .selectFrom('branch.users')
-    .where('cognito_sub', '=', user.cognitoSub)
-    .select(['user_id', 'cognito_sub', 'email', 'name', 'is_admin', 'profile_image'])
-    .executeTakeFirst();
+  const me = auth.context.user?.dbUser;
 
   // Defensive: authenticateRequest already rejects a token whose sub has no row,
   // so this is unreachable today. Kept so a future refactor cannot turn a
@@ -218,12 +213,12 @@ export const handleMe: RouteHandler = async ({ auth }) => {
   }
 
   return json(200, {
-    userId: me.user_id,
-    cognitoSub: me.cognito_sub,
+    userId: me.userId,
+    cognitoSub: me.cognitoSub,
     email: me.email,
     name: me.name,
-    isAdmin: me.is_admin === true,
-    profileImage: await resolveProfileImage(me.profile_image),
+    isAdmin: me.isAdmin,
+    profileImage: await resolveProfileImage(me.profileImage),
     // The RBAC subject travels with identity so the browser evaluates the same
     // policy against the same facts the lambdas used. Without it the frontend
     // would have to re-derive "is a director" and "which projects am I on"
@@ -262,6 +257,7 @@ export async function handleLogout(event: any): Promise<APIGatewayProxyResult> {
       return json(401, { message: 'Invalid or expired token' });
     }
 
+    reportError(error);
     return json(500, { message: 'Failed to logout' });
   }
 }
