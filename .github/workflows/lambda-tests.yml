@@ -198,14 +198,10 @@ jobs:
           done
           exit $fail
 
-      - name: Build shared packages
+      - name: Build and test shared packages
         uses: ./.github/actions/build-shared-packages
-      - name: Run shared/rbac tests
-        run: npm test --prefix shared/rbac
-      - name: Run shared/lambda-auth tests
-        run: npm test --prefix shared/lambda-auth
-      - name: Run shared/lambda-http tests
-        run: npm test --prefix shared/lambda-http
+        with:
+          test: true
 
       - name: Install db tooling
         run: npm ci --prefix apps/backend/db --no-audit --no-fund

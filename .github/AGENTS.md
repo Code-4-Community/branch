@@ -44,5 +44,6 @@ bot — `main` branch protection still requires 1 approval.
 ## Editing notes
 
 - Adding a service: add it to the hardcoded matrix in `lambda-tests.yml` (lives under `lambdas/`, not `tools/`) and ensure an AWS function `branch-<name>` + API Gateway route exist (`infrastructure/aws`) for `lambda-deploy` to target.
+- Adding a shared package: drop `shared/<name>/package.json`. `.github/actions/build-shared-packages` globs `shared/*/`, builds in `@branch/*` dep order, and (when `test: true`) runs any `test` script. No new workflow step. Declare `@branch/*` deps in package.json so the order is right; a cycle fails the run.
 - Changing required checks requires a matching update in `infrastructure/github/main.tf` branch protection.
 - Bot logic edits: test against the `bot-state` `config.json` shape; never write `config.json` from a workflow (Terraform owns it).

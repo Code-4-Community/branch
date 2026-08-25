@@ -1,32 +1,32 @@
 name: Build shared lambda packages
 description: >
-  Install and build the shared packages the lambdas consume as file:
-  dependencies. Both compile to a gitignored dist/, so anything that typechecks,
-  tests, or bundles a lambda has to run this first or the file: path resolves to
-  a package with no dist.
+  Discover every shared/*/package.json, npm ci + build in @branch-dep
+  order (so a new shared package does not need a new step here), then
+  optionally run each package's test script.
+
+  dist/ is gitignored, so anything that typechecks, tests, or bundles a
+  lambda or the frontend has to run this first or the file: path
+  resolves to a package with no dist.
 
   Single source of truth on purpose: this logic lived in lambda-tests,
   lambda-deploy and preview-env separately, and adding @branch/lambda-http
   updated only the first two -- so preview deploys failed at esbuild with
   "Could not resolve @branch/lambda-http" while the other two were green.
 
-  @branch/rbac is also consumed by apps/frontend, so frontend-ci runs this
-  action too.
-
   Requires actions/checkout to have run.
+
+inputs:
+  test:
+    description: Also run npm test in each shared package that declares a test script
+    required: false
+    default: "false"
 
 runs:
   using: composite
   steps:
-    # Order matters: rbac has no @branch deps, lambda-auth declares rbac, and
-    # lambda-http declares both -- each compiles against the previous dist.
     - name: Build shared packages
       shell: bash
       run: |
-        set -euo pipefail
-        npm ci --prefix shared/rbac --no-audit --no-fund
-        npm run build --prefix shared/rbac
-        npm ci --prefix shared/lambda-auth --no-audit --no-fund
-        npm run build --prefix shared/lambda-auth
-        npm ci --prefix shared/lambda-http --no-audit --no-fund
-        npm run build --prefix shared/lambda-http
+        args=()
+        [ "${{ inputs.test }}" = "true" ] && args+=(test)
+        python3 "${GITHUB_ACTION_PATH}/run.py" "${args[@]}"
