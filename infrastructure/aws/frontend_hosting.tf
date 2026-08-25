@@ -93,8 +93,22 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
-  viewer_certificate {
-    cloudfront_default_certificate = true
+  aliases = local.attach_dns ? [var.app_domain] : []
+
+  dynamic "viewer_certificate" {
+    for_each = local.attach_dns ? [1] : []
+    content {
+      acm_certificate_arn      = aws_acm_certificate_validation.frontend[0].certificate_arn
+      ssl_support_method       = "sni-only"
+      minimum_protocol_version = "TLSv1.2_2021"
+    }
+  }
+
+  dynamic "viewer_certificate" {
+    for_each = local.attach_dns ? [] : [1]
+    content {
+      cloudfront_default_certificate = true
+    }
   }
 }
 
