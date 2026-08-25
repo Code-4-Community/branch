@@ -499,10 +499,6 @@ describe('GET /me', () => {
   });
 
   it('sources isAdmin from the database row', async () => {
-    // Regression guard: /auth/me is the only place the frontend can learn
-    // isAdmin, and it must reflect branch.users rather than any token claim.
-    // Production derives both fields below from the same column, so they cannot
-    // really disagree -- forcing them apart pins down which one is reported.
     mockAuthenticateRequest.mockResolvedValue({
       isAuthenticated: true,
       user: {

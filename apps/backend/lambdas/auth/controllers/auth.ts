@@ -190,21 +190,11 @@ export async function handleRefresh(event: any): Promise<APIGatewayProxyResult> 
  * nor name, and is_admin exists only in branch.users -- there is no
  * pre-token-generation trigger, so it is not a JWT claim. This endpoint is the
  * only way the frontend can learn whether the caller is an admin.
- *
- * Those Postgres columns arrive on the auth context: authentication reads them
- * in the same query that resolves the identity, so this handler adds no query of
- * its own. It used to cost three round trips (identity, memberships, then this
- * re-read of the identity row) and now costs one.
  */
 export const handleMe: RouteHandler = async ({ auth }) => {
   // `access: 'authenticated'` on the route means dispatch has already verified
   // the session and loaded the subject; re-doing either here would be a second
   // token verification and a second memberships query per request.
-  //
-  // `user.dbUser` is the branch.users row that authentication read, so this
-  // endpoint no longer re-reads it by the same key for a different column list.
-  // Note `dbUser.email` is the column, deliberately not `user.email`, which is
-  // the token claim and is absent from a Cognito access token.
   const me = auth.context.user?.dbUser;
 
   // Defensive: authenticateRequest already rejects a token whose sub has no row,
