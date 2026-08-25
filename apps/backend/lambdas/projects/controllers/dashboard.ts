@@ -18,7 +18,8 @@ export const getDashboard: RouteHandler = async () => {
     const now = new Date();
     const year = now.getUTCFullYear();
     const yearStart = `${year}-01-01`;
-    const yearEnd = `${year}-12-31`;
+    // Half-open: the rollup's month column is the first of the month.
+    const nextYearStart = `${year + 1}-01-01`;
     const today = now.toISOString().slice(0, 10);
 
     // Projects stay active until their end_date passes; a null end_date
@@ -27,11 +28,8 @@ export const getDashboard: RouteHandler = async () => {
     const isActive = (column: any) => (eb: any) =>
       eb.or([eb(column, 'is', null), eb(column, '>=', today as any)]);
 
-    // Postgres does the month bucketing. Selecting raw rows and grouping them
-    // in JS moved one row per expenditure into the lambda to produce at most
-    // 12 x categories of them, and read a DATE through the runtime's local
-    // timezone, which only lands on the right month because lambda runs UTC.
-    const monthExpr = sql<string>`to_char(date_trunc('month', spent_on), 'YYYY-MM')`;
+    // The rollup stores the month; this only formats it.
+    const monthExpr = sql<string>`to_char(month, 'YYYY-MM')`;
 
     const [
       totalSpentRow,
@@ -41,76 +39,68 @@ export const getDashboard: RouteHandler = async () => {
       projectRows,
       monthRows,
     ] = await Promise.all([
-      db.selectFrom('branch.expenditures')
-        .select(db.fn.sum('amount').as('total'))
+      db.selectFrom('branch.expenditure_rollup')
+        .select(db.fn.sum('total_amount').as('total'))
         .where('status', '=', APPROVED_EXPENDITURE_STATUS)
-        .where('spent_on', '>=', yearStart as any)
-        .where('spent_on', '<=', yearEnd as any)
+        .where('month', '>=', yearStart as any)
+        .where('month', '<', nextYearStart as any)
         .executeTakeFirst(),
+      // Not a rollup: "active" changes with the clock, not with a write.
       db.selectFrom('branch.projects')
         .select(db.fn.count('project_id').as('count'))
         .where(isActive('end_date'))
         .executeTakeFirst(),
-      db.selectFrom('branch.expenditures')
-        .select(['category', db.fn.sum('amount').as('total')])
+      db.selectFrom('branch.expenditure_rollup')
+        .select(['category', db.fn.sum('total_amount').as('total')])
         .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('category', 'is not', null)
-        .where('spent_on', '>=', yearStart as any)
-        .where('spent_on', '<=', yearEnd as any)
+        .where('month', '>=', yearStart as any)
+        .where('month', '<', nextYearStart as any)
         .groupBy('category')
-        .orderBy(db.fn.sum('amount'), 'desc')
+        .orderBy(db.fn.sum('total_amount'), 'desc')
         .limit(1)
         .executeTakeFirst(),
       // Numerator for the average: this year's spend on the very projects the
-      // denominator counts. expenditures.project_id is NOT NULL against a FK,
-      // so the join can never drop a row.
-      db.selectFrom('branch.expenditures as e')
-        .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
-        .select((eb) => eb.fn.sum('e.amount').as('total'))
-        .where('e.status', '=', APPROVED_EXPENDITURE_STATUS)
-        .where('e.spent_on', '>=', yearStart as any)
-        .where('e.spent_on', '<=', yearEnd as any)
+      // denominator counts.
+      db.selectFrom('branch.expenditure_rollup as er')
+        .innerJoin('branch.projects as p', 'p.project_id', 'er.project_id')
+        .select((eb) => eb.fn.sum('er.total_amount').as('total'))
+        .where('er.status', '=', APPROVED_EXPENDITURE_STATUS)
+        .where('er.month', '>=', yearStart as any)
+        .where('er.month', '<', nextYearStart as any)
         .where(isActive('p.end_date'))
         .executeTakeFirst(),
-      // Spend and headcount arrive as pre-aggregated subqueries. Joining the
-      // raw tables onto projects instead would multiply every expenditure by
-      // the membership count and silently inflate `spent`.
+      // Spend stays a pre-aggregated subquery: the rollup is per
+      // (month, category) and must collapse to one row per project before it
+      // joins, or each project row multiplies by its bucket count.
       db.selectFrom('branch.projects as p')
         .leftJoin(
           (eb) =>
-            eb.selectFrom('branch.expenditures')
+            eb.selectFrom('branch.expenditure_rollup')
               .select('project_id')
-              .select((sub) => sub.fn.sum('amount').as('total'))
+              .select((sub) => sub.fn.sum('total_amount').as('total'))
               .where('status', '=', APPROVED_EXPENDITURE_STATUS)
               .groupBy('project_id')
               .as('spend'),
           (join) => join.onRef('spend.project_id', '=', 'p.project_id'),
         )
-        .leftJoin(
-          (eb) =>
-            eb.selectFrom('branch.project_memberships')
-              .select('project_id')
-              .select((sub) => sub.fn.count('user_id').as('count'))
-              .groupBy('project_id')
-              .as('staff'),
-          (join) => join.onRef('staff.project_id', '=', 'p.project_id'),
-        )
+        .leftJoin('branch.project_rollup as pr', 'pr.project_id', 'p.project_id')
         .select([
           'p.project_id',
           'p.name',
           'p.total_budget',
           'p.currency',
           'spend.total as spent',
-          'staff.count as staff_count',
+          'pr.member_count as staff_count',
         ])
         .orderBy('p.project_id', 'asc')
         .execute(),
-      db.selectFrom('branch.expenditures')
-        .select([monthExpr.as('month'), 'category', db.fn.sum('amount').as('total')])
+      db.selectFrom('branch.expenditure_rollup')
+        .select([monthExpr.as('month'), 'category', db.fn.sum('total_amount').as('total')])
         .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('category', 'is not', null)
-        .where('spent_on', '>=', yearStart as any)
-        .where('spent_on', '<=', yearEnd as any)
+        .where('month', '>=', yearStart as any)
+        .where('month', '<', nextYearStart as any)
         .groupBy([monthExpr, 'category'])
         .orderBy(monthExpr)
         .orderBy('category')
@@ -204,16 +194,17 @@ export const getOverview: RouteHandler = async (ctx) => {
       .orderBy('spent_on', 'desc')
       .execute(),
     db
-      .selectFrom('branch.project_donations')
-      .select(db.fn.sum('amount').as('total'))
+      .selectFrom('branch.project_rollup')
+      .select('total_donated')
       .where('project_id', '=', id)
       .executeTakeFirst(),
   ]);
   if (!project) return json(404, { message: `Project not found for id: ${id}` });
 
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
-  // The table below lists every expenditure, including the ones still in
-  // review; the stats beside it count only what was approved.
+  // Summed in JS, not from the rollup: the table renders every row anyway, so
+  // the reduce is free and the total cannot disagree with the list.
+  // The list includes rows still in review; the stats count only approved ones.
   const approved = expenditures.filter((e) => e.status === APPROVED_EXPENDITURE_STATUS);
   const totalSpent = approved.reduce((sum, e) => sum + Number(e.amount), 0);
   // Guarded because a project may legitimately have no budget set yet, and
@@ -227,7 +218,7 @@ export const getOverview: RouteHandler = async (ctx) => {
       totalSpent,
       totalRemaining: totalBudget - totalSpent,
       spentPercentage: Number(spentPercentage.toFixed(2)),
-      totalDonated: Number(donationRow?.total ?? 0),
+      totalDonated: Number(donationRow?.total_donated ?? 0),
       memberCount: members.length,
       expenditureCount: approved.length,
     },

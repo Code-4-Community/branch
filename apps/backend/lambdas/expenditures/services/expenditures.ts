@@ -49,6 +49,19 @@ export async function deleteReceiptObject(receiptUrl: string | null): Promise<bo
 }
 
 export async function countExpenditures(projectId: number | null, scope: ExpenditureScope): Promise<number> {
+  // Only the unscoped count can come from the rollup. A scoped one is
+  // `project_id IN (...) OR entered_by = me`, and entered_by is not in the
+  // grain, so summing buckets would double-count rows matching both arms.
+  if (scope.projectIds === null) {
+    let rollup = db
+      .selectFrom('branch.expenditure_rollup')
+      .select(db.fn.sum('expenditure_count').as('count'));
+    if (projectId !== null) rollup = rollup.where('project_id', '=', projectId);
+    const rolledUp = await rollup.executeTakeFirst();
+
+    return Number(rolledUp?.count || 0);
+  }
+
   let query = db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count'));
   if (projectId !== null) query = query.where('project_id', '=', projectId);
   const totalCount = await applyExpenditureScope(query, scope).executeTakeFirst();

@@ -29,6 +29,15 @@ export interface BranchDonors {
   organization: string;
 }
 
+export interface BranchExpenditureRollup {
+  category: string | null;
+  expenditure_count: Generated<number>;
+  month: Timestamp;
+  project_id: number;
+  status: string;
+  total_amount: Generated<Numeric>;
+}
+
 export interface BranchExpenditures {
   admin_notes: string | null;
   amount: Numeric;
@@ -58,6 +67,15 @@ export interface BranchProjectMemberships {
   role: string;
   start_date: Timestamp | null;
   user_id: number;
+}
+
+export interface BranchProjectRollup {
+  donation_count: Generated<number>;
+  member_count: Generated<number>;
+  project_id: number;
+  report_count: Generated<number>;
+  total_donated: Generated<Numeric>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface BranchProjects {
@@ -92,9 +110,11 @@ export interface BranchUsers {
 
 export interface DB {
   "branch.donors": BranchDonors;
+  "branch.expenditure_rollup": BranchExpenditureRollup;
   "branch.expenditures": BranchExpenditures;
   "branch.project_donations": BranchProjectDonations;
   "branch.project_memberships": BranchProjectMemberships;
+  "branch.project_rollup": BranchProjectRollup;
   "branch.projects": BranchProjects;
   "branch.reports": BranchReports;
   "branch.users": BranchUsers;

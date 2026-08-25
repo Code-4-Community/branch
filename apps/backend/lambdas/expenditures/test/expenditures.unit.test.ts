@@ -193,9 +193,10 @@ describe('POST /expenditures unit tests', () => {
     jest.clearAllMocks();
     // Default: requests are from an authenticated admin
     mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
-    // db.fn is used by GET pagination queries
+    // db.fn is used by GET pagination queries: count() scoped, sum() unscoped.
     mockDb.fn = {
       count: jest.fn().mockReturnValue({ as: jest.fn().mockReturnValue('count') }),
+      sum: jest.fn().mockReturnValue({ as: jest.fn().mockReturnValue('count') }),
     };
   });
 
