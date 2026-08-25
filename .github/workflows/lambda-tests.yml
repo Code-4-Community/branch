@@ -7,21 +7,12 @@ on:
   merge_group:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  discover:
-    runs-on: ubuntu-latest
-    outputs:
-      lambdas: ${{ steps.find.outputs.lambdas }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Find all lambdas
-        id: find
-        run: |
-          lambdas=$(for d in apps/backend/lambdas/*/; do [ -f "${d}package.json" ] && echo "$d"; done | grep -Ev "(tools)" | jq -R -s -c 'split("\n") | map(select(. != ""))')
-          echo "lambdas=$lambdas" >> $GITHUB_OUTPUT
-  
   test:
-    needs: discover
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -40,7 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lambda: ${{ fromJson(needs.discover.outputs.lambdas) }}
+        lambda:
+          - apps/backend/lambdas/auth/
+          - apps/backend/lambdas/donors/
+          - apps/backend/lambdas/expenditures/
+          - apps/backend/lambdas/projects/
+          - apps/backend/lambdas/reports/
+          - apps/backend/lambdas/users/
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -78,9 +75,11 @@ jobs:
           COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
           AWS_REGION: us-east-2
 
-  # Migrations must apply cleanly to an empty database, be idempotent, and agree
-  # with the committed types.
-  migrations-fresh:
+
+  # Cheap checks that do not earn their own runners: migration guards
+  # (git only), shared-package tests, and a from-scratch migrate+types
+  # drift check. Sequential on one runner; the lambda matrix stays parallel.
+  checks:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -98,53 +97,15 @@ jobs:
           --health-retries=5
     env:
       DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install db tooling
-        run: npm ci --prefix apps/backend/db --no-audit --no-fund
-
-      - name: Apply every migration from scratch
-        run: npm run migrate --prefix apps/backend/db
-
-      - name: Ledger must be clean afterwards
-        run: |
-          set -o pipefail
-          npm run migrate:status --prefix apps/backend/db | tee status.log
-          if grep -q 'PENDING' status.log; then
-            echo "::error::migrations still pending after a successful migrate run"
-            exit 1
-          fi
-
-      - name: Re-running migrations must be a no-op
-        run: npm run migrate --prefix apps/backend/db
-
-      - name: Seeds must apply on top of the migrated schema
-        run: npm run seed --prefix apps/backend/db
-
-      # Drift check: the committed types must be what these migrations produce.
-      - name: Committed types must match the migrations
-        run: |
-          cp shared/types/db-types.d.ts /tmp/committed.d.ts
-          npm run types --prefix apps/backend/db
-          if ! diff -u /tmp/committed.d.ts shared/types/db-types.d.ts; then
-            echo "::error::shared/types/db-types.d.ts is stale. The Schema Change Checks workflow pushes a fix to this PR automatically -- wait for its commit, then this check goes green. Or run 'make types' in apps/backend and commit the result."
-            exit 1
-          fi
-
-  # Guards that need no database: migration files are append-only, correctly
-  # named, and free of statements that would break the currently deployed code.
-  migrations-guard:
-    runs-on: ubuntu-latest
-    env:
       DIR: apps/backend/db/migrations
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       # push-to-main has nothing meaningful to compare against; resolving to ""
       # makes the guards no-op WITHOUT skipping the job, so the lambda-tests gate
@@ -237,61 +198,52 @@ jobs:
           done
           exit $fail
 
-  # The discover job only globs apps/backend/lambdas/*/, so the shared packages
-  # would never have their tests run without these jobs.
-
-  # @branch/rbac holds the authorization policy for the whole product -- both
-  # the lambdas and the browser evaluate this one table -- so its matrix test is
-  # the closest thing the repo has to a specification of who may do what.
-  shared-rbac:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install dependencies
-        run: npm ci --prefix shared/rbac
-      - name: Run tests
+      - name: Build shared packages
+        uses: ./.github/actions/build-shared-packages
+      - name: Run shared/rbac tests
         run: npm test --prefix shared/rbac
-
-  # The single most security-critical runtime module in the backend.
-  shared-auth:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      # lambda-auth now compiles against @branch/rbac's dist.
-      - name: Build shared packages
-        uses: ./.github/actions/build-shared-packages
-      - name: Run tests
+      - name: Run shared/lambda-auth tests
         run: npm test --prefix shared/lambda-auth
-
-  # Same blind spot as shared-auth: discover only globs the lambdas, so the
-  # shared router would go untested. Every route in every lambda goes through it.
-  shared-http:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Build shared packages
-        uses: ./.github/actions/build-shared-packages
-      - name: Run tests
+      - name: Run shared/lambda-http tests
         run: npm test --prefix shared/lambda-http
+
+      - name: Install db tooling
+        run: npm ci --prefix apps/backend/db --no-audit --no-fund
+
+      - name: Apply every migration from scratch
+        run: npm run migrate --prefix apps/backend/db
+
+      - name: Ledger must be clean afterwards
+        run: |
+          set -o pipefail
+          npm run migrate:status --prefix apps/backend/db | tee status.log
+          if grep -q 'PENDING' status.log; then
+            echo "::error::migrations still pending after a successful migrate run"
+            exit 1
+          fi
+
+      - name: Re-running migrations must be a no-op
+        run: npm run migrate --prefix apps/backend/db
+
+      - name: Seeds must apply on top of the migrated schema
+        run: npm run seed --prefix apps/backend/db
+
+      # Drift check: the committed types must be what these migrations produce.
+      - name: Committed types must match the migrations
+        run: |
+          cp shared/types/db-types.d.ts /tmp/committed.d.ts
+          npm run types --prefix apps/backend/db
+          if ! diff -u /tmp/committed.d.ts shared/types/db-types.d.ts; then
+            echo "::error::shared/types/db-types.d.ts is stale. The Schema Change Checks workflow pushes a fix to this PR automatically -- wait for its commit, then this check goes green. Or run 'make types' in apps/backend and commit the result."
+            exit 1
+          fi
 
   # NOTE: do not rename this job. infrastructure/github/main.tf lists
   # "lambda-tests" as a required status check on main; renaming it here would
   # silently disable the gate rather than fail loudly.
   lambda-tests:
     name: lambda-tests
-    needs: [test, shared-rbac, shared-auth, shared-http, migrations-fresh, migrations-guard]
+    needs: [test, checks]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -301,27 +253,9 @@ jobs:
             echo "Lambda tests failed or were cancelled"
             exit 1
           fi
-          if [ "${{ needs.shared-rbac.result }}" != "success" ]; then
-            echo "shared/rbac policy tests failed or were cancelled"
-            exit 1
-          fi
-          if [ "${{ needs.shared-auth.result }}" != "success" ]; then
-            echo "shared/lambda-auth tests failed or were cancelled"
-            exit 1
-          fi
-          if [ "${{ needs.shared-http.result }}" != "success" ]; then
-            echo "shared/lambda-http tests failed or were cancelled"
-            exit 1
-          fi
-          # Folded into this gate rather than added to branch protection, so
-          # infrastructure/github/main.tf needs no change and there is no risk of
-          # wedging the merge queue on a mistyped required-check context.
-          if [ "${{ needs.migrations-fresh.result }}" != "success" ]; then
-            echo "Migrations do not apply cleanly from scratch, or the committed DB types are stale"
-            exit 1
-          fi
-          if [ "${{ needs.migrations-guard.result }}" != "success" ]; then
-            echo "Migration guard failed (edited an applied migration, bad name, or unsafe SQL)"
+          if [ "${{ needs.checks.result }}" != "success" ]; then
+            echo "Shared package, migration, or guard checks failed or were cancelled"
             exit 1
           fi
           echo "All lambda and migration checks passed!"
+
