@@ -421,32 +421,38 @@ describe('GET /me', () => {
     expect(mockExecuteTakeFirst).not.toHaveBeenCalled();
   });
 
-  it('returns 401 when the token verifies but no branch.users row exists', async () => {
+  it('returns 401 when the context carries no branch.users row', async () => {
+    // Unreachable today -- authentication rejects a token whose sub has no row.
+    // The guard keeps a future refactor from turning a missing row into a 500,
+    // and 401-not-404 keeps /me from being a user-existence oracle.
     mockAuthenticateRequest.mockResolvedValue({
       isAuthenticated: true,
       user: { cognitoSub: 'sub-1', isAdmin: false },
     });
-    mockExecuteTakeFirst.mockResolvedValue(undefined);
 
     const res = await handler(event('/me', 'GET'));
 
     expect(res.statusCode).toBe(401);
   });
 
-  it('sources isAdmin from the database row, not the auth context', async () => {
-    // Regression guard: /auth/me is the only place the frontend can learn
-    // isAdmin, and it must reflect branch.users rather than any token claim.
+  it('answers from the row authentication already read, with no query of its own', async () => {
+    // Was three round trips: identity, memberships, then this handler
+    // re-reading the identity row by the same key for a different column list.
     mockAuthenticateRequest.mockResolvedValue({
       isAuthenticated: true,
-      user: { cognitoSub: 'sub-1', isAdmin: false },
-    });
-    mockExecuteTakeFirst.mockResolvedValue({
-      user_id: 7,
-      cognito_sub: 'sub-1',
-      email: 'a@b.com',
-      name: 'Ada',
-      is_admin: true,
-      profile_image: null,
+      user: {
+        cognitoSub: 'sub-1',
+        userId: 7,
+        isAdmin: true,
+        dbUser: {
+          userId: 7,
+          cognitoSub: 'sub-1',
+          email: 'a@b.com',
+          name: 'Ada',
+          isAdmin: true,
+          profileImage: 'https://s3/pic.png',
+        },
+      },
     });
 
     const res = await handler(event('/me', 'GET', undefined, { Authorization: 'Bearer t' }));
@@ -458,30 +464,61 @@ describe('GET /me', () => {
       email: 'a@b.com',
       name: 'Ada',
       isAdmin: true,
-      profileImage: null,
+      profileImage: 'https://s3/pic.png',
       // The authorization subject rides along with identity so the browser can
       // evaluate @branch/rbac without a second round trip.
       rbac: mockSubject,
     });
+    expect(mockExecuteTakeFirst).not.toHaveBeenCalled();
   });
 
-  it('coerces a non-boolean is_admin to false', async () => {
+  it('reports the email column, not the token email claim', async () => {
+    // The two fields are populated from different places on purpose: an access
+    // token's claim can be stale or absent, branch.users.email cannot.
     mockAuthenticateRequest.mockResolvedValue({
       isAuthenticated: true,
-      user: { cognitoSub: 'sub-1', isAdmin: true },
-    });
-    mockExecuteTakeFirst.mockResolvedValue({
-      user_id: 7,
-      cognito_sub: 'sub-1',
-      email: 'a@b.com',
-      name: 'Ada',
-      is_admin: null,
-      profile_image: null,
+      user: {
+        cognitoSub: 'sub-1',
+        userId: 7,
+        email: 'stale-claim@b.com',
+        isAdmin: false,
+        dbUser: {
+          userId: 7,
+          cognitoSub: 'sub-1',
+          email: 'column@b.com',
+          name: 'Ada',
+          isAdmin: false,
+          profileImage: null,
+        },
+      },
     });
 
     const res = await handler(event('/me', 'GET'));
 
-    expect(JSON.parse(res.body).isAdmin) .toBe(false);
+    expect(JSON.parse(res.body).email).toBe('column@b.com');
+  });
+
+  it('sources isAdmin from the database row', async () => {
+    mockAuthenticateRequest.mockResolvedValue({
+      isAuthenticated: true,
+      user: {
+        cognitoSub: 'sub-1',
+        userId: 7,
+        isAdmin: false,
+        dbUser: {
+          userId: 7,
+          cognitoSub: 'sub-1',
+          email: 'a@b.com',
+          name: 'Ada',
+          isAdmin: true,
+          profileImage: null,
+        },
+      },
+    });
+
+    const res = await handler(event('/me', 'GET'));
+
+    expect(JSON.parse(res.body).isAdmin).toBe(true);
   });
 });
 
