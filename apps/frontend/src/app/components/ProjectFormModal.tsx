@@ -7,7 +7,12 @@ import TextInputField from './TextInputField';
 import DatePickerField from './DatePickerField';
 import StaffPicker from './StaffPicker';
 import { useApi } from '@/hooks/useApi';
-import type { AssignableStaff, Member, Project } from '@/types';
+import type {
+  AssignableStaff,
+  Member,
+  MemberAssignment,
+  Project,
+} from '@/types';
 
 export interface ProjectFormValues {
   name: string;
@@ -16,7 +21,7 @@ export interface ProjectFormValues {
   startDate: string;
   endDate: string;
   inProgress: boolean;
-  memberIds: number[];
+  members: MemberAssignment[];
 }
 
 interface ProjectFormModalProps {
@@ -42,7 +47,7 @@ const EMPTY_VALUES: ProjectFormValues = {
   startDate: '',
   endDate: '',
   inProgress: false,
-  memberIds: [],
+  members: [],
 };
 
 /** Strips `$` and thousands separators so `$30,000` is accepted as typed. */
@@ -79,8 +84,8 @@ function validate(values: ProjectFormValues): FieldErrors {
     }
   }
 
-  if (values.memberIds.length === 0) {
-    errors.memberIds = 'Select AT LEAST 1 staff member for the project';
+  if (values.members.length === 0) {
+    errors.members = 'Select AT LEAST 1 staff member for the project';
   }
 
   return errors;
@@ -136,7 +141,10 @@ export default function ProjectFormModal({
             startDate: project.start_date?.slice(0, 10) ?? '',
             endDate: project.end_date?.slice(0, 10) ?? '',
             inProgress: !project.end_date,
-            memberIds: members.map((m) => m.user_id),
+            members: members.map((m) => ({
+              user_id: m.user_id,
+              role: m.role,
+            })),
           }
         : EMPTY_VALUES,
     );
@@ -201,7 +209,7 @@ export default function ProjectFormModal({
       total_budget: parseBudget(values.budget),
       start_date: values.startDate || null,
       end_date: values.inProgress ? null : values.endDate || null,
-      members: values.memberIds,
+      members: values.members,
     };
 
     try {
@@ -336,10 +344,10 @@ export default function ProjectFormModal({
                   required
                   options={staff}
                   isLoading={staffLoading}
-                  value={values.memberIds}
-                  onChange={(v) => update('memberIds', v)}
-                  isError={showError('memberIds')}
-                  errorMessage={errors.memberIds}
+                  value={values.members}
+                  onChange={(v) => update('members', v)}
+                  isError={showError('members')}
+                  errorMessage={errors.members}
                   disabled={saving}
                 />
 
