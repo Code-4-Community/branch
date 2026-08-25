@@ -19,13 +19,19 @@ everything else is derived from `branch.project_memberships.role`.
 | Role | How someone becomes one |
 |---|---|
 | **Admin** | `branch.users.is_admin = true` |
-| **Director** | holds a `Director` (or `Admin`) membership on **at least one** project |
+| **Director** | holds a `Director` membership on **at least one** project |
 | **Member** | holds any membership, on the projects they hold it for |
 
 "Director" is therefore a derived property, not a stored one — see
 `buildSubject` in `src/subject.ts`, which also owns `PROJECT_ROLES`. The role
 vocabulary lives beside the derivation that reads it so a new role cannot be
 added in one place and silently produce a non-director in the other.
+
+**Admin is not a membership role.** `PROJECT_ROLES` is `Director | Student`;
+being an admin is `users.is_admin` and nothing else. A project-scoped `Admin`
+role did exist, but since `is_admin` was never read from a membership it only
+ever meant Director — so it was dropped and those rows rewritten
+(`20260825023851_drop_project_admin_role.sql`).
 
 ## The matrix
 

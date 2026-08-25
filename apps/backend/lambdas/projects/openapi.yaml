@@ -175,7 +175,7 @@ paths:
                           type: string
                         role:
                           type: string
-                          enum: [Admin, Director, Student]
+                          enum: [Director, Student]
                         profile_image:
                           type: string
                           nullable: true
@@ -359,4 +359,4 @@ components:
                 type: integer
               role:
                 type: string
-                enum: [Admin, Director, Student]
+                enum: [Director, Student]

@@ -69,7 +69,7 @@ describe('loadRbacSubject', () => {
 
     const subject = await loadRbacSubject(
       db,
-      context({ memberships: [{ project_id: 4, role: 'Admin' }] }),
+      context({ memberships: [{ project_id: 4, role: 'Director' }] }),
     );
 
     expect(execute).not.toHaveBeenCalled();

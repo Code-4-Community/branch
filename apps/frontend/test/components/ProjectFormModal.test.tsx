@@ -111,7 +111,7 @@ describe('ProjectFormModal staff roles', () => {
     renderEdit();
 
     const roleSelect = await screen.findByLabelText('Role for Ada Lovelace');
-    fireEvent.change(roleSelect, { target: { value: 'Admin' } });
+    fireEvent.change(roleSelect, { target: { value: 'Student' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
@@ -119,7 +119,18 @@ describe('ProjectFormModal staff roles', () => {
         mockFetch.mock.calls.some(([, init]) => init?.method === 'PUT'),
       ).toBe(true);
     });
-    expect(savedBody().members).toEqual([{ user_id: 1, role: 'Admin' }]);
+    expect(savedBody().members).toEqual([{ user_id: 1, role: 'Student' }]);
+  });
+
+  it('does not offer Admin, which is a user-level flag', async () => {
+    renderEdit();
+
+    const roleSelect = await screen.findByLabelText<HTMLSelectElement>(
+      'Role for Ada Lovelace',
+    );
+    expect(
+      Array.from(roleSelect.options).map((option) => option.value),
+    ).toEqual(['Director', 'Student']);
   });
 
   it('starts a newly picked member at the default role and posts it', async () => {
