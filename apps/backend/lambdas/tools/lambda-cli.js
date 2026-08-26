@@ -51,6 +51,7 @@ function templatePackageJson() {
     "@branch/types": "file:../../../../shared/types",
     "@types/aws-lambda": "^8.10.131",
     "@types/node": "^20.11.30",
+    "@types/pg": "^8.15.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5",
     "js-yaml": "^4.1.0",
@@ -58,8 +59,11 @@ function templatePackageJson() {
   },
   "dependencies": {
     "@branch/lambda-auth": "file:../../../../shared/lambda-auth",
+    "@branch/lambda-http": "file:../../../../shared/lambda-http",
     "dotenv": "^16.4.7",
-    "jest":"^30.2.0"
+    "jest":"^30.2.0",
+    "kysely": "^0.28.8",
+    "pg": "^8.16.3"
   }
 }
 `;
@@ -78,7 +82,7 @@ function templateTsconfig() {
     "outDir": "dist",
     "sourceMap": true
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "controllers/**/*.ts"],
   "exclude": ["node_modules", "dist", "dev-server.ts", "swagger-utils.ts"]
 }
 `;
@@ -90,9 +94,9 @@ info:
   title: ${title} (Local)
   version: 1.0.0
 servers:
-  - url: http://localhost:3000/${title}
+  - url: http://localhost:3000
 paths:
-  /health:
+  /${title}/health:
     get:
       summary: Health check
       responses:
@@ -198,6 +202,29 @@ node tools/lambda-cli.js add-route ${handlerName} POST /${handlerName} --body na
 | \`npm test\` | Run tests |
 | \`npm run package\` | Build and zip for deployment |
 ${customSections}`;
+}
+
+function templateDbTs() {
+  return `import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import type { DB } from '@branch/types';
+
+const db = new Kysely<DB>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      host: process.env.DB_HOST ?? 'localhost',
+      port: Number(process.env.DB_PORT ?? 5432),
+      user: process.env.DB_USER ?? 'branch_dev',
+      password: process.env.DB_PASSWORD ?? 'password',
+      database: process.env.DB_NAME ?? 'branch_db',
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 5000,
+    }),
+  }),
+});
+
+export default db;
+`;
 }
 
 function templateAuthTs() {
@@ -403,277 +430,188 @@ startOrJoinServer().catch(console.error);
 `;
 }
 
-function templateHandlerTs() {
-  return `import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import * as http from 'http';
-import { URL } from 'url';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as yaml from 'js-yaml';
+function templateHandlerTsClean(name) {
+  return `import { dispatch } from '@branch/lambda-http';
+import { routes } from './routes';
 
-export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  try {
-    let normalizedPath = (event.path || '').replace(/\\/$/, '');
-    const method = (event.httpMethod || 'GET').toUpperCase();
-    if (normalizedPath.length === 0) {
-      normalizedPath = '/';
-    }
-
-    if ((normalizedPath.endsWith('/swagger.json') || normalizedPath === '/swagger.json') && method === 'GET') {
-      const spec = loadOpenApiSpec();
-      return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec) };
-    }
-    if ((normalizedPath.endsWith('/swagger') || normalizedPath === '/swagger') && method === 'GET') {
-      const html = getSwaggerHtml('/swagger.json');
-      return { statusCode: 200, headers: { 'Content-Type': 'text/html' }, body: html };
-    }
-
-    // Built-in default route
-    if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
-      return json(200, { ok: true });
-    }
-
-    // >>> ROUTES-START (marker: do not remove)
-    // Add new routes above the 404 using the CLI
-    // <<< ROUTES-END
-
-    return json(404, { message: 'Not Found' });
-  } catch (err) {
-    return json(500, { message: 'Internal Server Error' });
-  }
-};
-
-function json(statusCode: number, body: unknown): APIGatewayProxyResult {
-  return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-}
-
-function loadOpenApiSpec(): unknown {
-  const yamlPath = path.join(__dirname, 'openapi.yaml');
-  if (fs.existsSync(yamlPath)) {
-    const file = fs.readFileSync(yamlPath, 'utf8');
-    return yaml.load(file);
-  }
-  return { openapi: '3.0.0', info: { title: 'Local API', version: '1.0.0' }, paths: {} };
-}
-
-function getSwaggerHtml(specUrl: string): string {
-  return \`<!DOCTYPE html>\n
-<html lang="en">\n
-  <head>\n
-    <meta charset="UTF-8" />\n
-    <meta name="viewport" content="width=device-width, initial-scale=1" />\n
-    <title>Swagger UI</title>\n
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />\n
-  </head>\n
-  <body>\n
-    <div id="swagger-ui"></div>\n
-    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>\n
-    <script>\n
-      window.ui = SwaggerUIBundle({url: '\${specUrl}', dom_id: '#swagger-ui'});\n
-    </script>\n
-  </body>\n
-</html>\`;
-}
-
-// Local bootstrap
-if (typeof require !== 'undefined' && require.main === module) {
-  const server = http.createServer(async (req, res) => {
-    try {
-      const chunks = [] as Buffer[];
-      req.on('data', (c) => chunks.push(c));
-      req.on('end', async () => {
-        const bodyRaw = Buffer.concat(chunks).toString('utf8');
-        const fullUrl = new URL(req.url || '/', \`http://localhost:\${process.env.PORT || 3000}\`);
-        const event: APIGatewayProxyEvent = {
-          body: bodyRaw || null,
-          headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : (v ?? '')])) as Record<string, string>,
-          httpMethod: (req.method || 'GET').toUpperCase(),
-          isBase64Encoded: false,
-          multiValueHeaders: {},
-          multiValueQueryStringParameters: null,
-          path: fullUrl.pathname,
-          pathParameters: null,
-          queryStringParameters: Object.fromEntries(fullUrl.searchParams.entries()),
-          requestContext: {} as any,
-          resource: fullUrl.pathname,
-          stageVariables: null
-        };
-        const result = await handler(event);
-        res.statusCode = result.statusCode || 200;
-        if (result.headers) {
-          for (const [k, v] of Object.entries(result.headers)) res.setHeader(k, String(v));
-        }
-        res.end(result.body);
-      });
-    } catch (err) {
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ message: 'Local bootstrap error' }));
-    }
-  });
-const port = Number(process.env.PORT || 3000);
-server.listen(port, () => {
-    console.log(\`Local Lambda listening on http://localhost:\${port}\`);
-    console.log(\`Swagger UI: http://localhost:\${port}/swagger\`);
-    console.log(\`Swagger JSON: http://localhost:\${port}/swagger.json\`);
-});
-}
+export const handler = (event: any) => dispatch(event, { prefix: '${name}', routes });
 `;
 }
 
-function templateHandlerTsClean() {
-  return `import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-
-export const handler = async (event: any): Promise<APIGatewayProxyResult> => {
-  try {
-    // Support both API Gateway and Lambda Function URL events
-    // API Gateway: event.path, event.httpMethod
-    // Function URL: event.rawPath, event.requestContext.http.method
-    const rawPath = event.rawPath || event.path || '/';
-    const normalizedPath = rawPath.replace(/\\/$/, '');
-    const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
-
-    // Health check
-    if ((normalizedPath.endsWith('/health') || normalizedPath === '/health') && method === 'GET') {
-      return json(200, { ok: true, timestamp: new Date().toISOString() });
-    }
-
-    // >>> ROUTES-START (do not remove this marker)
-    // CLI-generated routes will be inserted here
-    // <<< ROUTES-END
-
-    return json(404, { message: 'Not Found', path: normalizedPath, method });
-  } catch (err) {
-    console.error('Lambda error:', err);
-    return json(500, { message: 'Internal Server Error' });
-  }
-};
-
-function json(statusCode: number, body: unknown): APIGatewayProxyResult {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
-    },
-    body: JSON.stringify(body)
-  };
+// Kept as an alias — both used to emit different handler.ts shapes, but
+// dispatch() now owns OPTIONS/health/404/500, so there is only one shape.
+function templateHandlerTs(name) {
+  return templateHandlerTsClean(name);
 }
+
+function templateRoutesTs() {
+  return `import type { Route } from '@branch/lambda-http';
+
+export const routes: Route[] = [
+  // >>> ROUTES-START (do not remove this marker)
+  // <<< ROUTES-END
+];
 `;
 }
 
-function addRouteToHandler(handlerPath, method, apiPath, options = {}) {
-  const source = fs.readFileSync(handlerPath, 'utf8');
-  const marker = '// <<< ROUTES-END';
-  const insertIndex = source.indexOf(marker);
-  if (insertIndex === -1)
-    error('Marker not found in handler.ts (// <<< ROUTES-END)');
+function templateControllerFile() {
+  return `import { json, type RouteHandler } from '@branch/lambda-http';
+`;
+}
 
+// `/users/{id}` -> `/users/:id`
+function bracesToColon(apiPath) {
+  return apiPath.replace(/\{([^}]+)\}/g, ':$1');
+}
+
+// `/users/:id` -> `/users/{id}`
+function colonToBraces(pattern) {
+  return pattern.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+}
+
+// Prefix apiPath with the service name unless it's already there, mirroring
+// dispatch()'s own canonicalization in @branch/lambda-http.
+function ensurePrefixed(serviceName, apiPath) {
+  let p = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
+  const base = `/${serviceName}`;
+  if (p === base || p.startsWith(`${base}/`)) return p;
+  return p === '/' ? base : base + p;
+}
+
+function pathParamsOf(bracePath) {
+  const params = [];
+  const re = /\{([^}]+)\}/g;
+  let m;
+  while ((m = re.exec(bracePath)) !== null) params.push(m[1]);
+  return params;
+}
+
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function toIdentifier(seg) {
+  return capitalize(seg.replace(/[^a-zA-Z0-9]/g, ''));
+}
+
+const METHOD_VERBS = { GET: 'get', POST: 'create', PUT: 'update', PATCH: 'patch', DELETE: 'delete' };
+
+// Derive a stub function name from the route, e.g. GET /users/:userId -> getUsersById.
+function deriveHandlerName(method, fullPattern, serviceName, existingNames) {
+  const verb = METHOD_VERBS[method.toUpperCase()] || method.toLowerCase();
+  const segs = fullPattern.split('/').filter(Boolean);
+  const rest = segs[0] === serviceName ? segs.slice(1) : segs;
+  const hasParam = rest.some((s) => s.startsWith(':'));
+  const staticSegs = rest.filter((s) => !s.startsWith(':')).map(toIdentifier);
+  const base = staticSegs.join('') || toIdentifier(serviceName);
+  const name = `${verb}${base}${hasParam ? 'ById' : ''}`;
+
+  let candidate = name;
+  let i = 2;
+  while (existingNames.has(candidate)) candidate = `${name}${i++}`;
+  return candidate;
+}
+
+// Merge `newSpecifiers` into an `import { ... } from 'moduleSpecifier';` line,
+// adding the import if it doesn't exist yet.
+function upsertNamedImport(source, moduleSpecifier, newSpecifiers) {
+  const re = new RegExp(`import \\{([^}]*)\\} from '${moduleSpecifier}';`);
+  const match = source.match(re);
+  if (match) {
+    const existing = match[1].split(',').map((s) => s.trim()).filter(Boolean);
+    for (const spec of newSpecifiers) {
+      if (!existing.includes(spec)) existing.push(spec);
+    }
+    return source.replace(match[0], `import { ${existing.join(', ')} } from '${moduleSpecifier}';`);
+  }
+  const importLineRe = /^import .*;\n/gm;
+  let lastImportEnd = 0;
+  let m;
+  while ((m = importLineRe.exec(source)) !== null) lastImportEnd = m.index + m[0].length;
+  const newLine = `import { ${newSpecifiers.join(', ')} } from '${moduleSpecifier}';\n`;
+  return source.slice(0, lastImportEnd) + newLine + source.slice(lastImportEnd);
+}
+
+// Insert a route table entry into routes.ts (before ROUTES-END) and wire up
+// the controller import; scaffolds the controller file/stub if needed.
+function addRouteToRoutes(routesPath, controllersDir, serviceName, method, apiPath, options = {}) {
   const methodUpper = method.toUpperCase();
+  const bracePattern = ensurePrefixed(serviceName, apiPath);
+  const colonPattern = bracesToColon(bracePattern);
+  const pathParams = pathParamsOf(bracePattern);
 
-  // Extract path parameters
-  const pathParams = [];
-  const pathParamRegex = /\{([^}]+)\}/g;
-  let match;
-  while ((match = pathParamRegex.exec(apiPath)) !== null) {
-    pathParams.push(match[1]);
+  let routesSource = fs.readFileSync(routesPath, 'utf8');
+  const marker = '// <<< ROUTES-END';
+  if (!routesSource.includes(marker))
+    error('Marker not found in routes.ts (// <<< ROUTES-END)');
+
+  const controllerModule = `./controllers/${serviceName}`;
+  const controllerPath = path.join(controllersDir, `${serviceName}.ts`);
+  ensureDir(controllersDir);
+  let controllerSource = fs.existsSync(controllerPath)
+    ? fs.readFileSync(controllerPath, 'utf8')
+    : templateControllerFile();
+
+  const existingNames = new Set(
+    [...controllerSource.matchAll(/export const (\w+)/g)].map((m) => m[1]),
+  );
+  const fnName = deriveHandlerName(methodUpper, colonPattern, serviceName, existingNames);
+
+  // Build the stub handler body.
+  const needsBody = ['POST', 'PUT', 'PATCH'].includes(methodUpper) || options.body;
+  const bodyLines = [];
+  if (pathParams.length > 0) bodyLines.push(`const { ${pathParams.join(', ')} } = params;`);
+  if (needsBody) {
+    bodyLines.push('const body = parseBody(event);');
+    bodyLines.push("if (!body) return json(400, { message: 'Invalid JSON body' });");
   }
+  if (options.query) bodyLines.push('const query = event.queryStringParameters || {};');
+  if (options.headers) bodyLines.push('const headers = event.headers || {};');
 
-  // Generate path parameter extraction using URL parsing
-  let pathParamExtraction = '';
-  if (pathParams.length > 0) {
-    // Normalize apiPath to always have leading slash for consistent splitting
-    const normalizedApiPath = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
-    const pathParts = normalizedApiPath.split('/');
-    const extractions = [];
-
-    pathParts.forEach((part, index) => {
-      if (part.startsWith('{') && part.endsWith('}')) {
-        const paramName = part.slice(1, -1);
-        // normalizedPath always starts with '/', so split('/') gives ['', ...parts]
-        // index already accounts for the leading empty string
-        extractions.push(
-          `const ${paramName} = normalizedPath.split('/')[${index
-          }];\n      if (!${paramName}) return json(400, { message: '${paramName} is required' });`,
-        );
-      }
-    });
-
-    pathParamExtraction = extractions.join('\n      ');
-  }
-
-  // Generate body parsing for methods that typically have bodies
-  const needsBody =
-    ['POST', 'PUT', 'PATCH'].includes(methodUpper) || options.body;
-  const bodyParse = needsBody
-    ? `const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};`
-    : '';
-
-  // Generate query parameter extraction if specified
-  const queryParse = options.query
-    ? `const query = event.queryStringParameters || {};`
-    : '';
-
-  // Generate header extraction if specified
-  const headerParse = options.headers
-    ? `const headers = event.headers || {};`
-    : '';
-
-  // Generate response
   const statusCode = options.status || 200;
-  const responseProps = ['ok: true', `route: '${methodUpper} ${apiPath}'`];
-
-  if (pathParams.length > 0) {
-    const pathParamObj = pathParams.map((param) => `${param}`).join(', ');
-    responseProps.push(
-      `pathParams: { ${pathParams.map((p) => `${p}`).join(', ')} }`,
-    );
-  }
+  const responseProps = ['ok: true', `route: '${methodUpper} ${colonPattern}'`];
+  if (pathParams.length > 0) responseProps.push(`pathParams: { ${pathParams.join(', ')} }`);
   if (options.query) responseProps.push('query');
   if (options.headers) responseProps.push('headers');
   if (needsBody) responseProps.push('body');
+  bodyLines.push('// TODO: Add your business logic here');
+  bodyLines.push(`return json(${statusCode}, { ${responseProps.join(', ')} });`);
 
-  // Use simple string matching instead of regex for reliability
-  let matchCondition;
-  if (pathParams.length > 0) {
-    // For paths with parameters, use startsWith and split logic
-    // Normalize apiPath to always have leading slash for consistent splitting
-    const normalizedApiPath = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
-    const pathParts = normalizedApiPath.split('/');
-    const staticParts = pathParts.filter(
-      (part) => !part.startsWith('{'),
-    ).length;
-    const pathPrefix = normalizedApiPath.split('{')[0]; // Get part before first parameter
+  const ctxProps = [];
+  if (needsBody || options.query || options.headers) ctxProps.push('event');
+  if (pathParams.length > 0) ctxProps.push('params');
+  const ctxParam = ctxProps.length ? `{ ${ctxProps.join(', ')} }` : '';
 
-    // normalizedPath always starts with '/', so split('/') includes leading empty string
-    matchCondition = `normalizedPath.startsWith('${pathPrefix}') && normalizedPath.split('/').length === ${pathParts.length
-      }`;
-  } else {
-    // For static paths, normalize to ensure leading slash
-    const normalizedApiPath = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
-    matchCondition = `normalizedPath === '${normalizedApiPath}'`;
-  }
-
-  const codeLines = [
-    pathParamExtraction,
-    bodyParse,
-    queryParse,
-    headerParse,
-    '// TODO: Add your business logic here',
-    `return json(${statusCode}, { ${responseProps.join(', ')} });`,
-  ].filter(Boolean);
-
-  const snippet = `
-    // ${methodUpper} ${apiPath}
-    if (${matchCondition} && method === '${methodUpper}') {
-      ${codeLines.join('\n      ')}
-    }
+  const neededImports = ['json', 'type RouteHandler'];
+  if (needsBody) neededImports.push('parseBody');
+  controllerSource = upsertNamedImport(controllerSource, '@branch/lambda-http', neededImports);
+  controllerSource += `
+export const ${fnName}: RouteHandler = async (${ctxParam}) => {
+  ${bodyLines.join('\n  ')}
+};
 `;
+  fs.writeFileSync(controllerPath, controllerSource, 'utf8');
 
-  const updated = source.replace(marker, `${snippet}    ${marker} `);
-  fs.writeFileSync(handlerPath, updated, 'utf8');
+  routesSource = upsertNamedImport(routesSource, controllerModule, [fnName]);
+  // Every route must declare a gate -- the Route union in @branch/lambda-http
+  // has no default arm, so an entry without one will not compile. Default to
+  // 'authenticated' with a TODO rather than guessing a permission: it is the
+  // narrowest gate that is always correct to start from, and the TODO is
+  // visible in review.
+  const gate = options.permission
+    ? `permission: '${options.permission}'`
+    : `access: '${options.access || 'authenticated'}'`;
+  const gateTodo =
+    options.permission || options.access
+      ? ''
+      : ` // TODO: replace with a permission from @branch/rbac if one fits`;
+  const entryLine = `  { method: '${methodUpper}', pattern: '${colonPattern}', ${gate}, handler: ${fnName} },${gateTodo}\n`;
+  const markerIdx = routesSource.indexOf(marker);
+  const lineStart = routesSource.lastIndexOf('\n', markerIdx) + 1;
+  routesSource = routesSource.slice(0, lineStart) + entryLine + routesSource.slice(lineStart);
+  fs.writeFileSync(routesPath, routesSource, 'utf8');
+
+  return { bracePattern, colonPattern };
 }
 
 function addRouteToOpenApi(openapiPath, method, apiPath, options = {}) {
@@ -781,52 +719,22 @@ function methodUpper(m) {
 }
 
 // Normalize path by replacing path parameters with a placeholder
+// Normalize path params (either style) to a common placeholder for fuzzy comparison
 function normalizePathForComparison(path) {
-  return path.replace(/\{[^}]+\}/g, '{param}');
+  return path.replace(/\{[^}]+\}/g, '{param}').replace(/:[^\/]+/g, '{param}');
 }
 
-// Extract routes from handler.ts
-function extractRoutesFromHandler(handlerPath) {
-  const source = fs.readFileSync(handlerPath, 'utf8');
+// Extract routes from the `Route[]` table in routes.ts. Reads the object
+// literals directly (method then pattern), so it doesn't care where the
+// ROUTES-START/END markers sit relative to the array.
+function extractRoutesFromRoutes(routesPath) {
+  const source = fs.readFileSync(routesPath, 'utf8');
   const routes = [];
-  
-  // Find the routes section between ROUTES-START and ROUTES-END
-  const startMarker = '// >>> ROUTES-START';
-  const endMarker = '// <<< ROUTES-END';
-  const startIndex = source.indexOf(startMarker);
-  const endIndex = source.indexOf(endMarker);
-  
-  if (startIndex === -1 || endIndex === -1) {
-    return routes;
+  const re = /\{\s*method:\s*['"]([A-Za-z]+)['"]\s*,\s*pattern:\s*['"]([^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(source)) !== null) {
+    routes.push({ method: m[1].toUpperCase(), path: m[2] });
   }
-  
-  const routesSection = source.substring(startIndex, endIndex);
-  
-  // Extract route comments - pattern: // METHOD /path
-  // The comment typically contains the actual API path
-  const routeCommentRegex = /\/\/\s*([A-Z]+)\s+([\/\w\{\}\-]+)/g;
-  
-  let commentMatch;
-  while ((commentMatch = routeCommentRegex.exec(routesSection)) !== null) {
-    const method = commentMatch[1];
-    let path = commentMatch[2].trim();
-    
-    // Find the if condition that follows this comment to get the actual method
-    const afterComment = routesSection.substring(commentMatch.index + commentMatch[0].length);
-    const ifMatch = afterComment.match(/if\s*\([^)]*method\s*===\s*['"]([A-Z]+)['"]/);
-    const actualMethod = ifMatch ? ifMatch[1] : method;
-    
-    // Ensure path starts with /
-    if (!path.startsWith('/')) {
-      path = '/' + path;
-    }
-    
-    // Only add if we have a valid path
-    if (path && path.startsWith('/')) {
-      routes.push({ method: actualMethod, path });
-    }
-  }
-  
   return routes;
 }
 
@@ -851,7 +759,7 @@ function extractRoutesFromOpenApi(openapiPath) {
           if (typeof methods === 'object' && methods !== null) {
             for (const [method, _] of Object.entries(methods)) {
               if (['get', 'post', 'put', 'patch', 'delete', 'options', 'head'].includes(method.toLowerCase())) {
-                routes.push({ method: method.toUpperCase(), path });
+                routes.push({ method: method.toUpperCase(), path: bracesToColon(path) });
               }
             }
           }
@@ -863,7 +771,7 @@ function extractRoutesFromOpenApi(openapiPath) {
       const methodRegex = /^\s+([a-z]+):/gm;
       const lines = content.split('\n');
       let currentPath = null;
-      
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const pathMatch = line.match(/^\s+([\/\w\{\}\-]+):/);
@@ -874,7 +782,7 @@ function extractRoutesFromOpenApi(openapiPath) {
           if (methodMatch) {
             const method = methodMatch[1].toUpperCase();
             if (['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'].includes(method)) {
-              routes.push({ method, path: currentPath });
+              routes.push({ method, path: bracesToColon(currentPath) });
             }
           }
         }
@@ -882,15 +790,16 @@ function extractRoutesFromOpenApi(openapiPath) {
     }
   } catch (err) {
     // If parsing fails completely, return empty array
-    // Routes from handler.ts will still be checked
+    // Routes from routes.ts will still be checked
   }
-  
+
   return routes;
 }
 
-// Check for similar routes
-function checkSimilarRoutes(handlerPath, openapiPath, newMethod, newPath) {
-  const handlerRoutes = extractRoutesFromHandler(handlerPath);
+// Check for similar routes. newPath must already be full-prefixed, colon-style
+// (as produced by addRouteToRoutes), matching what the extractors return.
+function checkSimilarRoutes(routesPath, openapiPath, newMethod, newPath) {
+  const handlerRoutes = extractRoutesFromRoutes(routesPath);
   const openApiRoutes = extractRoutesFromOpenApi(openapiPath);
   
   // Deduplicate routes (same method + path)
@@ -941,9 +850,9 @@ function checkSimilarRoutes(handlerPath, openapiPath, newMethod, newPath) {
           const existingPart = existingPathParts[i];
           
           // Conflict if one is a parameter and the other is static, or both are static but different
-          if ((newPart.startsWith('{') && !existingPart.startsWith('{') && existingPart !== '') ||
-              (!newPart.startsWith('{') && existingPart.startsWith('{') && newPart !== '') ||
-              (!newPart.startsWith('{') && !existingPart.startsWith('{') && newPart !== existingPart && newPart !== '' && existingPart !== '')) {
+          if ((newPart.startsWith(':') && !existingPart.startsWith(':') && existingPart !== '') ||
+              (!newPart.startsWith(':') && existingPart.startsWith(':') && newPart !== '') ||
+              (!newPart.startsWith(':') && !existingPart.startsWith(':') && newPart !== existingPart && newPart !== '' && existingPart !== '')) {
             hasConflict = false; // Not a conflict, they're different
             break;
           }
@@ -978,6 +887,8 @@ function cmdInitHandler(nameArg) {
   const tsconfigPath = path.join(baseDir, 'tsconfig.json');
   const openapiPath = path.join(baseDir, 'openapi.yaml');
   const handlerPath = path.join(baseDir, 'handler.ts');
+  const routesPath = path.join(baseDir, 'routes.ts');
+  const dbPath = path.join(baseDir, 'db.ts');
   const authPath = path.join(baseDir, 'auth.ts');
   const swaggerUtilsPath = path.join(baseDir, 'swagger-utils.ts');
   const devServerPath = path.join(baseDir, 'dev-server.ts');
@@ -990,7 +901,9 @@ function cmdInitHandler(nameArg) {
   writeFileIfAbsent(openapiPath, templateOpenApiYaml(nameArg));
   writeFileIfAbsent(swaggerUtilsPath, templateSwaggerUtils());
   writeFileIfAbsent(devServerPath, templateDevServer(nameArg));
-  writeFileIfAbsent(handlerPath, templateHandlerTsClean());
+  writeFileIfAbsent(handlerPath, templateHandlerTsClean(nameArg));
+  writeFileIfAbsent(routesPath, templateRoutesTs());
+  writeFileIfAbsent(dbPath, templateDbTs());
   writeFileIfAbsent(authPath, templateAuthTs());
   writeFileIfAbsent(testPath, templateJestSetup(nameArg));
   writeFileIfAbsent(readmePath, templateReadme(nameArg));
@@ -1007,27 +920,21 @@ function cmdListRoutes(handlerRel) {
     error('list-routes requires: <handlerRel>');
   const lambdasRoot = path.resolve(__dirname, '..');
   const baseDir = path.resolve(lambdasRoot, handlerRel);
-  const handlerPath = path.join(baseDir, 'handler.ts');
+  const routesPath = path.join(baseDir, 'routes.ts');
   const openapiPath = path.join(baseDir, 'openapi.yaml');
-  
-  if (!fs.existsSync(handlerPath))
-    error(`handler.ts not found at ${handlerPath} `);
+
+  if (!fs.existsSync(routesPath))
+    error(`routes.ts not found at ${routesPath} `);
   if (!fs.existsSync(openapiPath))
     error(`openapi.yaml not found at ${openapiPath} `);
 
-  const handlerRoutes = extractRoutesFromHandler(handlerPath);
-  const openApiRoutes = extractRoutesFromOpenApi(openapiPath);
-  
-  // Deduplicate routes (same method + path)
-  const routeMap = new Map();
-  for (const route of [...handlerRoutes, ...openApiRoutes]) {
-    const key = `${route.method}:${route.path}`;
-    if (!routeMap.has(key)) {
-      routeMap.set(key, route);
-    }
-  }
-  const allRoutes = Array.from(routeMap.values());
-  
+  // routes.ts is what dispatch() actually executes; health/OPTIONS/404/500
+  // are handled centrally and aren't table entries, so they're not listed.
+  const allRoutes = extractRoutesFromRoutes(routesPath).map((r) => ({
+    method: r.method,
+    path: colonToBraces(r.path),
+  }));
+
   // Sort routes by method, then by path
   allRoutes.sort((a, b) => {
     if (a.method !== b.method) {
@@ -1044,7 +951,7 @@ function cmdListRoutes(handlerRel) {
 
   log(`\nRoutes in handler: ${handlerRel}`);
   log('─'.repeat(60));
-  
+
   // Group by method for better readability
   const routesByMethod = {};
   for (const route of allRoutes) {
@@ -1062,7 +969,7 @@ function cmdListRoutes(handlerRel) {
       }
     }
   }
-  
+
   log('─'.repeat(60));
   log(`Total: ${allRoutes.length} route(s)\n`);
 }
@@ -1072,15 +979,19 @@ function cmdAddRoute(handlerRel, method, apiPath, options = {}) {
     error('add-route requires: <handlerRel> <METHOD> <path> [options]');
   const lambdasRoot = path.resolve(__dirname, '..');
   const baseDir = path.resolve(lambdasRoot, handlerRel);
-  const handlerPath = path.join(baseDir, 'handler.ts');
+  const routesPath = path.join(baseDir, 'routes.ts');
+  const controllersDir = path.join(baseDir, 'controllers');
   const openapiPath = path.join(baseDir, 'openapi.yaml');
-  if (!fs.existsSync(handlerPath))
-    error(`handler.ts not found at ${handlerPath} `);
+  if (!fs.existsSync(routesPath))
+    error(`routes.ts not found at ${routesPath} `);
   if (!fs.existsSync(openapiPath))
     error(`openapi.yaml not found at ${openapiPath} `);
 
+  const bracePattern = ensurePrefixed(handlerRel, apiPath);
+  const colonPattern = bracesToColon(bracePattern);
+
   // Check for similar routes before adding
-  const similarRoutes = checkSimilarRoutes(handlerPath, openapiPath, method, apiPath);
+  const similarRoutes = checkSimilarRoutes(routesPath, openapiPath, method, colonPattern);
   if (similarRoutes.length > 0) {
     log('');
     log('⚠️  Warning: Similar routes detected:');
@@ -1096,9 +1007,9 @@ function cmdAddRoute(handlerRel, method, apiPath, options = {}) {
     log('');
   }
 
-  addRouteToHandler(handlerPath, method, apiPath, options);
-  addRouteToOpenApi(openapiPath, method, apiPath, options);
-  log(`Added route ${method.toUpperCase()} ${apiPath} to ${handlerRel} `);
+  addRouteToRoutes(routesPath, controllersDir, handlerRel, method, apiPath, options);
+  addRouteToOpenApi(openapiPath, method, bracePattern, options);
+  log(`Added route ${method.toUpperCase()} ${bracePattern} to ${handlerRel} `);
 }
 
 function parseExistingReadme(readmePath) {
@@ -1148,22 +1059,10 @@ function parseExistingReadme(readmePath) {
   return { description, endpointDescriptions, customSections };
 }
 
-function collectRoutes(handlerPath, openapiPath) {
-  const handlerRoutes = extractRoutesFromHandler(handlerPath);
-  const openApiRoutes = extractRoutesFromOpenApi(openapiPath);
-
-  const routeMap = new Map();
-  for (const route of [...handlerRoutes, ...openApiRoutes]) {
-    const key = `${route.method}:${route.path}`;
-    if (!routeMap.has(key)) {
-      routeMap.set(key, route);
-    }
-  }
-
-  const routes = [{ method: 'GET', path: '/health', description: 'Health check' }];
-  for (const route of routeMap.values()) {
-    if (route.method === 'GET' && route.path === '/health') continue;
-    routes.push({ method: route.method, path: route.path, description: '' });
+function collectRoutes(name, routesPath) {
+  const routes = [{ method: 'GET', path: `/${name}/health`, description: 'Health check' }];
+  for (const route of extractRoutesFromRoutes(routesPath)) {
+    routes.push({ method: route.method, path: colonToBraces(route.path), description: '' });
   }
   return routes;
 }
@@ -1193,7 +1092,7 @@ function cmdGenerateReadme(handlerRel) {
   for (const name of handlers) {
     const baseDir = path.resolve(lambdasRoot, name);
     const handlerPath = path.join(baseDir, 'handler.ts');
-    const openapiPath = path.join(baseDir, 'openapi.yaml');
+    const routesPath = path.join(baseDir, 'routes.ts');
     const readmePath = path.join(baseDir, 'README.md');
 
     if (!fs.existsSync(handlerPath)) {
@@ -1201,9 +1100,9 @@ function cmdGenerateReadme(handlerRel) {
       continue;
     }
 
-    const routes = fs.existsSync(openapiPath)
-      ? collectRoutes(handlerPath, openapiPath)
-      : [{ method: 'GET', path: '/health', description: 'Health check' }];
+    const routes = fs.existsSync(routesPath)
+      ? collectRoutes(name, routesPath)
+      : [{ method: 'GET', path: `/${name}/health`, description: 'Health check' }];
 
     // Preserve existing customizations
     const existing = parseExistingReadme(readmePath);
@@ -1244,6 +1143,12 @@ function main() {
     log('      --headers field:type,field:type  Header parameters');
     log(
       '      --status <code>                  Response status code (default: 200)',
+    );
+    log(
+      "      --permission <action>            @branch/rbac action, e.g. 'reports:view'",
+    );
+    log(
+      "      --access <public|authenticated>  Gate with no permission (default: authenticated)",
     );
     log('');
     log('  list-routes <handlerRel>');
@@ -1299,6 +1204,12 @@ function main() {
           break;
         case '--status':
           options.status = parseInt(value) || 200;
+          break;
+        case '--permission':
+          options.permission = value;
+          break;
+        case '--access':
+          options.access = value;
           break;
       }
     }

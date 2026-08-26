@@ -1,7 +1,29 @@
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 import { handler } from '../handler';
-jest.mock('../auth');
+import db from '../db';
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 import { authenticateRequest } from '../auth';
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
@@ -26,12 +48,39 @@ beforeAll(async () => {
 });
 
 
+// Seed user 1 is a Director on project 1, which is what makes them able to read
+// the donor roster (`donors:view` is admin + director) while still being scoped
+// to their own project's donations.
 const authenticatedUser = {
   isAuthenticated: true,
   user: {
     cognitoSub: 'staff-sub',
-    userId: 1,
-    email: 'person@branch.org',
+    userId: 4,
+    email: 'sam@branch.org',
+    isAdmin: false,
+  },
+}
+
+// Seed user 6 is a Student on project 2 only -- no memberships on projects 1 or
+// 3, and not a director anywhere.
+const studentUser = {
+  isAuthenticated: true,
+  user: {
+    cognitoSub: 'student-sub',
+    userId: 6,
+    email: 'diego@branch.org',
+    isAdmin: false,
+  },
+}
+
+// A real, authenticated user who is on no project at all. Not a seeded id:
+// every seeded user has a membership, and this case is about having none.
+const strangerUser = {
+  isAuthenticated: true,
+  user: {
+    cognitoSub: 'stranger-sub',
+    userId: 99,
+    email: 'stranger@branch.org',
     isAdmin: false,
   },
 }
@@ -194,8 +243,22 @@ describe("Donor API with data", () => {
 
   // --- Donations endpoint ---
 
-  test("GET /donations returns 200 with data array", async () => {
+  // The donor roster is the one page that separates a director from a student.
+  test("GET /donors returns 403 for a project member who directs nothing", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(studentUser);
+    const res = await handler(createEvent('GET', '/'));
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toMatch(/directors/i);
+  });
+
+  test("GET /donors returns 200 for a director", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('GET', '/'));
+    expect(res.statusCode).toBe(200);
+  });
+
+  test("GET /donations returns every donation to an admin", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('GET', '/donations'));
     const body = JSON.parse(res.body);
 
@@ -204,8 +267,51 @@ describe("Donor API with data", () => {
     expect(body.data.length).toBe(3);
   });
 
-  test("GET /donations with page and limit returns paginated response", async () => {
+  // Seeded user 1 directs project 1 only, and the seed puts one donation on
+  // each of projects 1-3. Scoping happens in SQL, so the other two never leave
+  // the database.
+  test("GET /donations returns only the caller's projects to a non-admin", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('GET', '/donations'));
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data.map((d: { project_id: number }) => d.project_id)).toEqual([1]);
+  });
+
+  test("GET /donations returns nothing to a user on no projects", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(strangerUser);
+    const res = await handler(createEvent('GET', '/donations'));
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(body.data).toEqual([]);
+  });
+
+  test("GET /donations paginates within the caller's scope, count included", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    const res = await handler(createEvent('GET', '/donations', undefined, { page: '1', limit: '10' }));
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    // 1, not 3: a total the caller may not read would leak the other projects.
+    expect(body.pagination.totalItems).toBe(1);
+    expect(body.data).toHaveLength(1);
+  });
+
+  test("GET /donors/donations reaches the donations controller, not the /donors/:id route", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+    const res = await handler(createEvent('GET', '/donors/donations'));
+    const body = JSON.parse(res.body);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data.length).toBe(3);
+    expect(body.data[0]).toHaveProperty('donation_id');
+  });
+
+  test("GET /donations with page and limit returns paginated response", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { page: '1', limit: '1' }));
     const body = JSON.parse(res.body);
 
@@ -219,7 +325,7 @@ describe("Donor API with data", () => {
   });
 
   test("GET /donations with only page returns all without pagination", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { page: '1' }));
     const body = JSON.parse(res.body);
 
@@ -229,7 +335,7 @@ describe("Donor API with data", () => {
   });
 
   test("GET /donations with only limit returns all without pagination", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { limit: '2' }));
     const body = JSON.parse(res.body);
 
@@ -239,13 +345,13 @@ describe("Donor API with data", () => {
   });
 
   test("GET /donations returns 400 for page=0", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { page: '0', limit: '10' }));
     expect(res.statusCode).toBe(400);
   });
 
   test("GET /donations returns 400 for non-integer limit", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('GET', '/donations', undefined, { page: '1', limit: '1.5' }));
     expect(res.statusCode).toBe(400);
   });
@@ -256,7 +362,7 @@ describe("Donor API with data", () => {
     expect(res.statusCode).toBe(401);
   });
   test("POST /donations returns 201 and created donation", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('POST', '/donations', {
       donor_id: 2, project_id: 1, amount: 500,
     }));
@@ -267,20 +373,38 @@ describe("Donor API with data", () => {
     expect(Number(body.data.amount)).toBe(500);
   });
 
+  test("POST /donations honours an explicit donated_at", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 2, project_id: 1, amount: 500, donated_at: '2024-03-12',
+    }));
+    const body = JSON.parse(res.body);
+    expect(res.statusCode).toBe(201);
+    expect(new Date(body.data.donated_at).toISOString()).toContain('2024-03-12');
+  });
+
+  test("POST /donations returns 400 when donated_at is not a date", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 2, project_id: 1, amount: 500, donated_at: 'not-a-date',
+    }));
+    expect(res.statusCode).toBe(400);
+  });
+
   test("POST /donations returns 400 when donor_id is missing", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('POST', '/donations', { project_id: 1, amount: 100 }));
     expect(res.statusCode).toBe(400);
   });
 
   test("POST /donations returns 400 when amount is zero", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('POST', '/donations', { donor_id: 1, project_id: 1, amount: 0 }));
     expect(res.statusCode).toBe(400);
   });
 
   test("POST /donations returns 400 when amount is negative", async () => {
-    mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser);
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('POST', '/donations', { donor_id: 1, project_id: 1, amount: -50 }));
     expect(res.statusCode).toBe(400);
   });
@@ -431,17 +555,25 @@ describe("Donor API with data", () => {
       }
     });
 
-    test("DELETE /donations/{id} returns 200 for a project member (Director) deleting a donation on their project", async () => {
-      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, Director on project 1
+    test("DELETE /donations/{id} returns 200 for an admin", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
       // donation_id 1 belongs to project_id 1
       const res = await handler(createEvent('DELETE', '/donations/1'));
       expect(res.statusCode).toBe(200);
     });
 
+    // Donations are admin-only to write. A Director on the very project the
+    // donation belongs to is still refused -- this is the rule that changed.
+    test("DELETE /donations/{id} returns 403 for a Director on that donation's project", async () => {
+      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, Director on project 1
+      const res = await handler(createEvent('DELETE', '/donations/1'));
+      expect(res.statusCode).toBe(403);
+    });
+
     test("DELETE /donations/{id} returns 403 for a user with no membership on that donation's project", async () => {
-      mockAuthenticateRequest.mockResolvedValueOnce(authenticatedUser); // userId 1, only member of project 1
-      // donation_id 2 belongs to project_id 2 — user 1 has no membership there
-      const res = await handler(createEvent('DELETE', '/donations/2'));
+      mockAuthenticateRequest.mockResolvedValueOnce(studentUser); // userId 3, member of project 2 only
+      // donation_id 1 belongs to project_id 1 -- user 3 has no membership there
+      const res = await handler(createEvent('DELETE', '/donations/1'));
       expect(res.statusCode).toBe(403);
     });
 
@@ -527,6 +659,7 @@ describe("Donor API when DB is empty", () => {
 
 afterAll(async () => {
   await pool.end();
+  await db.destroy();
 });
 
 

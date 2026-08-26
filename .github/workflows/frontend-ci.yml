@@ -6,6 +6,10 @@ on:
   merge_group:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend-ci:
     name: frontend-ci
@@ -21,6 +25,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # apps/frontend consumes @branch/rbac as a file: dependency and its dist
+      # is gitignored, so it has to be built before npm ci resolves it. The
+      # job's defaults.run working-directory does not reach a composite
+      # action's steps, so this still runs from the repo root as it needs to.
+      - name: Build shared packages
+        uses: ./.github/actions/build-shared-packages
 
       - name: Install dependencies
         run: npm ci

@@ -1,8 +1,30 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import { dispatch, json, type Route } from '@branch/lambda-http';
 
 // Mock the database module BEFORE importing handler
 jest.mock('../db');
-jest.mock('../auth');
+// Memberships the mocked session should appear to have. Named `mock*` so it can
+// be referenced from the jest.mock factory below.
+const mockMemberships: Array<{ project_id: number; role: string }> = [];
+
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. This suite mocks ../db, so
+  // the subject is assembled from the auth context and `mockMemberships`
+  // instead of being read from Postgres -- same buildSubject either way.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { buildSubject } = jest.requireActual<typeof import('@branch/rbac')>('@branch/rbac');
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(authenticateRequest as never, async (context) =>
+      buildSubject(context.user, mockMemberships),
+    ),
+  };
+});
 
 // The DELETE route calls AdminDeleteUser; never let a test reach a real pool.
 const mockSend = jest.fn();
@@ -17,40 +39,12 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 
 import { handler } from '../handler';
 import db from '../db';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 import { before } from 'node:test';
 
 const mockDb = db as any;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (requiredAccess === 'PUBLIC') {
-    return { allowed: true };
-  }
-  
-  if (!authContext.isAuthenticated || !authContext.user) {
-    return { allowed: false, reason: 'Authentication required' };
-  }
-  
-  if (requiredAccess === 'ADMIN') {
-    const isAdmin = authContext.user.isAdmin ?? false;
-    return { 
-      allowed: isAdmin, 
-      reason: isAdmin ? undefined : 'Admin access required' 
-    };
-  }
-  
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { 
-      allowed, 
-      reason: allowed ? undefined : 'Admin access or resource ownership required' 
-    };
-  }
-  
-  return { allowed: false, reason: 'Unknown access level' };
-});
 
 
 // Helper function to create a POST event
@@ -88,18 +82,14 @@ function mockExistingUserForPatch(updated?: Record<string, unknown>) {
     profile_image: null,
   };
 
-  mockDb.selectFrom.mockReturnValue({
-    where: jest.fn().mockReturnValue({
-      selectAll: jest.fn().mockReturnValue({
-        executeTakeFirst: (jest.fn() as any).mockResolvedValue(updated ?? existing),
-      }),
-    }),
-  });
-
+  // patchUser writes and reads back in one statement, so the row the handler
+  // answers with is the one the UPDATE's RETURNING produces.
   mockDb.updateTable.mockReturnValue({
     set: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({
-        execute: (jest.fn() as any).mockResolvedValue(undefined),
+        returningAll: jest.fn().mockReturnValue({
+          executeTakeFirst: (jest.fn() as any).mockResolvedValue(updated ?? existing),
+        }),
       }),
     }),
   });
@@ -496,10 +486,13 @@ describe('PATCH /users/{userId} unit tests', () => {
 
   describe('Success Cases', () => {
     test('404: returns 404 when user does not exist', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: (jest.fn() as any).mockResolvedValue(null),
+      // Nothing matched the id, so the UPDATE returns no row.
+      mockDb.updateTable.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returningAll: jest.fn().mockReturnValue({
+              executeTakeFirst: (jest.fn() as any).mockResolvedValue(undefined),
+            }),
           }),
         }),
       });
@@ -549,5 +542,34 @@ describe('PATCH /users/{userId} unit tests', () => {
       const setCall = (mockDb.updateTable.mock.results[0].value.set as jest.Mock).mock.calls[0][0];
       expect(setCall).toStrictEqual({ name: 'New Name' });
     });
+  });
+});
+
+describe('route precedence', () => {
+  test('a literal segment route wins over a same-shaped :param route placed after it', async () => {
+    const literalHandler = jest.fn(async () => json(200, { matched: 'literal' }));
+    const paramHandler = jest.fn(async () => json(200, { matched: 'param' }));
+
+    // `access: 'public'` keeps this about matching order: dispatch then skips
+    // authentication entirely, so no session has to be faked to observe it.
+    const routes: Route[] = [
+      { method: 'GET', pattern: '/users/me', access: 'public', handler: literalHandler },
+      { method: 'GET', pattern: '/users/:userId', access: 'public', handler: paramHandler },
+    ];
+
+    const literalRes = await dispatch(
+      { rawPath: '/users/me', requestContext: { http: { method: 'GET' } } },
+      { prefix: 'users', routes },
+    );
+    expect(JSON.parse(literalRes.body)).toEqual({ matched: 'literal' });
+    expect(literalHandler).toHaveBeenCalledTimes(1);
+    expect(paramHandler).not.toHaveBeenCalled();
+
+    const paramRes = await dispatch(
+      { rawPath: '/users/42', requestContext: { http: { method: 'GET' } } },
+      { prefix: 'users', routes },
+    );
+    expect(JSON.parse(paramRes.body)).toEqual({ matched: 'param' });
+    expect(paramHandler).toHaveBeenCalledTimes(1);
   });
 });

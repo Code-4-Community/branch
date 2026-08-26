@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { STORAGE_KEYS } from '@/lib/authTokens';
 import { __resetRefreshStateForTests, onSessionExpired } from '@/lib/authClient';
+import { TestQueryProvider } from '../utils';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -21,12 +22,15 @@ function accessTokenExpiringIn(seconds: number) {
   return makeToken({ sub: 'sub-123', exp: Math.floor(Date.now() / 1000) + seconds });
 }
 
+// `rbac` is not optional: AuthProvider rejects a /auth/me payload without a
+// subject rather than signing the user in and then denying them everything.
 const ME = {
   userId: 7,
   cognitoSub: 'sub-123',
   email: 'jane@example.com',
   name: 'Jane Doe',
   isAdmin: false,
+  rbac: { userId: 7, isAdmin: false, memberProjectIds: [1], directorProjectIds: [] },
 };
 
 const TOKENS = {
@@ -63,7 +67,9 @@ function seedTokens(access = TOKENS.AccessToken) {
 }
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <AuthProvider>{children}</AuthProvider>
+  <TestQueryProvider>
+    <AuthProvider>{children}</AuthProvider>
+  </TestQueryProvider>
 );
 
 async function renderAuth() {

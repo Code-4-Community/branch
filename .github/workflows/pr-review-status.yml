@@ -97,17 +97,20 @@ jobs:
               commented:         'Commented',
             };
 
-            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer }) {
-              const allDone = reviewers.every(r => r.status !== 'pending')
-                && (!alwaysReviewer || alwaysReviewer.status !== 'pending');
-              const anyChangesRequested = reviewers.some(r => r.status === 'changes_requested')
-                || (alwaysReviewer && alwaysReviewer.status === 'changes_requested');
+            function buildBlocks({ prUrl, prNumber, prTitle, prAuthor, reviewers, alwaysReviewer, approvalMet, anyChangesRequested }) {
+              const participantStatuses = [
+                ...reviewers.map(r => r.status),
+                ...(alwaysReviewer ? [alwaysReviewer.status] : []),
+              ];
+              const allDone = participantStatuses.every(status => status !== 'pending');
 
               let headerText;
-              if (allDone && !anyChangesRequested) {
-                headerText = ':approved:  All Reviews Complete';
-              } else if (allDone && anyChangesRequested) {
+              if (approvalMet) {
+                headerText = ':approved:  Approval Requirement Met';
+              } else if (anyChangesRequested) {
                 headerText = ':git-request-changes:  Changes Requested';
+              } else if (allDone) {
+                headerText = ':white_check_mark:  All Reviews Complete';
               } else {
                 headerText = ':evergreen_tree:  Review Requested';
               }
@@ -119,7 +122,7 @@ jobs:
                 reviewerLines.push(`${STATUS_EMOJI[alwaysReviewer.status]}  <@${alwaysReviewer.slack}> — ${STATUS_LABEL[alwaysReviewer.status]}`);
               }
 
-              const infoText = allDone
+              const infoText = (allDone || approvalMet)
                 ? `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*`
                 : `*<${prUrl}|#${prNumber} ${prTitle}>*\nAuthor: *${prAuthor}*\n_Please review as soon as you can! Thank you!_`;
 
@@ -152,6 +155,29 @@ jobs:
             } catch (err) {
               console.log(`Could not fetch reviews: ${err.message}`);
             }
+
+            // ── GitHub is the source of truth for "is this approved" ─────────
+            // reviewDecision folds in required_approving_review_count, code-owner
+            // rules, and dismissals — so this tracks branch protection even if
+            // it changes without a corresponding edit here.
+            let reviewDecision = null;
+            try {
+              const result = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                   repository(owner: $owner, name: $repo) {
+                     pullRequest(number: $number) { reviewDecision }
+                   }
+                 }`,
+                { owner: context.repo.owner, repo: context.repo.repo, number: prNumber }
+              );
+              reviewDecision = result.repository.pullRequest.reviewDecision;
+            } catch (err) {
+              console.log(`Could not fetch reviewDecision: ${err.message}`);
+            }
+            console.log(`GitHub reviewDecision for PR #${prNumber}: ${reviewDecision}`);
+
+            const approvalMet = reviewDecision === 'APPROVED';
+            const anyChangesRequested = reviewDecision === 'CHANGES_REQUESTED';
 
             const REVIEW_STATES = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'];
 
@@ -200,12 +226,14 @@ jobs:
                 prUrl, prNumber, prTitle, prAuthor: prData.author,
                 reviewers: reviewerObjs,
                 alwaysReviewer: alwaysReviewerObj,
+                approvalMet,
+                anyChangesRequested,
               });
 
               await slackApi('chat.update', {
                 channel: config.slack_channel_id,
                 ts: prData.slack_thread_ts,
-                text: `PR #${prNumber}: ${allDone ? 'reviews complete' : 'review in progress'}`,
+                text: `PR #${prNumber}: ${approvalMet || allDone ? 'reviews complete' : 'review in progress'}`,
                 blocks,
               });
               console.log(`Updated Slack message for PR #${prNumber}`);
@@ -226,38 +254,35 @@ jobs:
             }
 
             // ── DM author when fully approved ─────────────────────────────────
-            const anyChangesRequested = reviewerObjs.some(r => r.status === 'changes_requested')
-              || (alwaysReviewerObj && alwaysReviewerObj.status === 'changes_requested');
-
-            if (allDone && !anyChangesRequested && prData.status === 'open' && authorSlackId) {
+            if (approvalMet && prData.status === 'open' && authorSlackId) {
               const dmBlocks = [
                 {
                   type: 'header',
-                  text: { type: 'plain_text', text: ':approved:  Your PR is Fully Approved', emoji: true },
+                  text: { type: 'plain_text', text: ':approved:  Your PR is Approved', emoji: true },
                 },
                 {
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: `*<${prUrl}|#${prNumber} ${prTitle}>* has been approved by all reviewers and is ready to merge!`,
+                    text: `*<${prUrl}|#${prNumber} ${prTitle}>* has met the required approvals and is ready to merge!`,
                   },
                 },
               ];
 
               await slackApi('chat.postMessage', {
                 channel: authorSlackId,
-                text: `PR #${prNumber} is fully approved and ready to merge!`,
+                text: `PR #${prNumber} is approved and ready to merge!`,
                 blocks: dmBlocks,
               });
-              console.log(`DM'd author ${prData.author} (${authorSlackId}) — PR #${prNumber} fully approved`);
+              console.log(`DM'd author ${prData.author} (${authorSlackId}) — PR #${prNumber} approval requirement met`);
             }
 
-            // ── Update bot state when all assigned reviewers are done ─────────
-            if (allDone && prData.status === 'open') {
+            // ── Update bot state when approval requirement is met or all done ─
+            if ((approvalMet || allDone) && prData.status === 'open') {
               prData.status = 'reviewed';
               prData.resolved_at = new Date().toISOString();
               fs.writeFileSync(prFilePath, JSON.stringify(prData, null, 2) + '\n');
-              console.log(`All reviewers done — marked PR #${prNumber} as reviewed`);
+              console.log(`Review completion detected — marked PR #${prNumber} as reviewed`);
             }
 
       - name: Commit and push bot-state

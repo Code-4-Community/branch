@@ -5,7 +5,7 @@ info:
 servers:
   - url: http://localhost:3000
 paths:
-  /health:
+  /projects/health:
     get:
       summary: Health check
       responses:
@@ -81,6 +81,7 @@ paths:
                       properties:
                         total_spent:
                           type: number
+                          description: Approved expenditures only.
                         member_count:
                           type: integer
                         is_active:
@@ -142,6 +143,9 @@ paths:
                     $ref: '#/components/schemas/Project'
                   stats:
                     type: object
+                    description: >-
+                      Counts approved expenditures only; `expenditures` below
+                      still lists every row, including those under review.
                     properties:
                       totalBudget:
                         type: number
@@ -171,7 +175,7 @@ paths:
                           type: string
                         role:
                           type: string
-                          enum: [Admin, Director, Student]
+                          enum: [Director, Student]
                         profile_image:
                           type: string
                           nullable: true
@@ -181,11 +185,6 @@ paths:
                       type: object
                   isActive:
                     type: boolean
-                  canEdit:
-                    type: boolean
-                    description: >-
-                      Whether the caller may edit — admin, or a Director on this
-                      project. Returned so the client need not re-derive it.
         '400':
           description: Project id must be a valid number
         '403':
@@ -282,9 +281,13 @@ paths:
                 items:
                   type: object
 
-  /dashboard:
+  /projects/dashboard:
     get:
-      summary: GET /dashboard
+      summary: GET /projects/dashboard
+      description: >-
+        Admin-only roll-up: this year's totals, the per-project breakdown and
+        the monthly expense series. Every spend figure counts approved
+        expenditures only.
       responses:
         '200':
           description: OK
@@ -356,4 +359,4 @@ components:
                 type: integer
               role:
                 type: string
-                enum: [Admin, Director, Student]
+                enum: [Director, Student]

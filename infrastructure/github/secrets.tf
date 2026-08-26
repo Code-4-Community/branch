@@ -63,6 +63,14 @@ resource "github_actions_secret" "slack_bot_token" {
   plaintext_value = data.infisical_secrets.slack_folder.secrets["slack-bot-token"].value
 }
 
+# ── AWS ──────────────────────────────────────────────────────
+
+resource "github_actions_variable" "aws_account_id" {
+  repository    = github_repository.branch.name
+  variable_name = "AWS_ACCOUNT_ID"
+  value         = var.aws_account_id
+}
+
 
 
 variable "infisical_client_id" {

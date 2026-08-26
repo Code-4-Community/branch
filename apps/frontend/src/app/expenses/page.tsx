@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useQueryParams } from '@/hooks/useQueryParams';
 import NavBar from '../components/Navbar';
 import Header from '../components/Header';
@@ -14,11 +14,21 @@ import DropdownSelector from '../components/DropdownSelector';
 import ExpenseFilterMenu, { type FilterGroup } from '../components/ExpenseFilterMenu';
 import ReviewExpenseModal from '../components/ReviewExpenseModal';
 import { useApi } from '@/hooks/useApi';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import {
+  expendituresAllQuery,
+  expendituresPageQuery,
+  expensesFiltered,
+  projectsQuery,
+} from '@/lib/queries';
+import { GatedButton } from '../components/Permission';
 import { LuArrowDownUp } from 'react-icons/lu';
 import { FaPlus } from 'react-icons/fa';
 import { IoClose } from 'react-icons/io5';
 import ExpensesTable from '../components/ExpensesTable';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { getReceiptDownloadUrl } from '@/lib/expenditures';
+import { formatCurrencyPrecise } from '@/lib/format';
 import {
   EXPENDITURE_STATUSES,
   EXPENDITURE_STATUS_LABELS,
@@ -52,12 +62,7 @@ export default function ExpensePage() {
 
 function ExpensePageContent() {
   const api = useApi();
-
-  // Data
-  const [expenditures, setExpenditures] = useState<Expenditure[]>([]);
-  const [projects, setProjects] = useState<Pick<Project, 'project_id' | 'name'>[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   // Search & Filters (synced to URL query params)
   const [filters, setFilter] = useQueryParams({
@@ -84,35 +89,62 @@ function ExpensePageContent() {
   // Modals
   const [showNewExpense, setShowNewExpense] = useState(false);
   const [reviewExpenditureId, setReviewExpenditureId] = useState<number | null>(null);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expenditure | null>(null);
 
+  /**
+   * Whether this view can be served one page at a time.
+   *
+   * `GET /expenditures` accepts only `page`, `limit` and `projectId`. The search
+   * box, the month/type/status filters and sort-by-amount have no server-side
+   * equivalent, and paginating underneath them would silently reduce them to
+   * "filter the ten rows you happen to be looking at" — a correctness
+   * regression, not a speed-up. So those views still fetch the full list and
+   * filter in the browser, exactly as before, while the default view — the one
+   * every cold load pays for — asks for ten rows.
+   *
+   * Sort-by-Date needs no fallback: the server already orders by `spent_on`
+   * descending, which is what that option and the default both do.
+   */
+  const searchState = new URLSearchParams({
+    q: query,
+    sort: sortOption,
+    months: selectedMonths.join(','),
+    types: selectedTypes.join(','),
+    projects: selectedProjects.join(','),
+    statuses: selectedStatuses.join(','),
+  });
+  const serverPaged = !expensesFiltered(searchState);
 
-  // Fetch expenditures
-  async function fetchExpenditures() {
-    try {
-      const json = await api.get<{ data: Expenditure[] }>('/expenditures');
-      setExpenditures(json.data ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load expenditures');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const expendituresList = useQuery({
+    ...(serverPaged
+      ? expendituresPageQuery(currentPage, ROWS_PER_PAGE)
+      : expendituresAllQuery()),
+    // v5's replacement for keepPreviousData: a page flip keeps the old rows on
+    // screen instead of collapsing the table into a skeleton.
+    placeholderData: keepPreviousData,
+  });
 
-  // Fetch projects
-  async function fetchProjects() {
-    try {
-      const json = await api.get<Project[]>('/projects');
-      setProjects(Array.isArray(json) ? json : []);
-    } catch {
-      // Projects fetch failure is non-critical
-    }
-  }
+  const expenditures = expendituresList.data?.data ?? [];
+  const loading = expendituresList.isPending;
+  const loadError = expendituresList.error;
 
-  useEffect(() => {
-    fetchExpenditures();
-    fetchProjects();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const projectsList = useQuery(projectsQuery());
+  const projects: Pick<Project, 'project_id' | 'name'>[] = projectsList.data ?? [];
+
+  // A failed projects fetch stays non-critical — it only costs the filter its
+  // option labels, so it must not replace the table with an error.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const error =
+    actionError ??
+    (loadError
+      ? loadError instanceof Error
+        ? loadError.message
+        : 'Failed to load expenditures'
+      : null);
+
+  const refetchExpenditures = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['expenditures'] });
+  };
 
   const uniqueCategories = EXPENSE_CATEGORIES;
 
@@ -157,12 +189,15 @@ function ExpensePageContent() {
       const { downloadUrl } = await getReceiptDownloadUrl(expenditure.expenditure_id);
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open receipt');
+      setActionError(err instanceof Error ? err.message : 'Failed to open receipt');
     }
   }
 
-  // Filtered + sorted data
-  const filteredData = expenditures
+  // Filtered + sorted data. Skipped entirely when the server already returned
+  // exactly the ten rows this page shows, in the order it wants them.
+  const filteredData = serverPaged
+    ? expenditures
+    : expenditures
     .filter((e) => {
       if (query) {
         const q = query.toLowerCase();
@@ -198,20 +233,23 @@ function ExpensePageContent() {
       return new Date(b.spent_on).getTime() - new Date(a.spent_on).getTime();
     });
 
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredData.length / ROWS_PER_PAGE));
-  const paginatedData = filteredData.slice(
-    (currentPage - 1) * ROWS_PER_PAGE,
-    currentPage * ROWS_PER_PAGE,
-  );
+  // Pagination — server-side in the default view, client-side behind a filter.
+  const totalPages = serverPaged
+    ? Math.max(1, expendituresList.data?.pagination?.totalPages ?? 1)
+    : Math.max(1, Math.ceil(filteredData.length / ROWS_PER_PAGE));
+  const paginatedData = serverPaged
+    ? filteredData
+    : filteredData.slice(
+        (currentPage - 1) * ROWS_PER_PAGE,
+        currentPage * ROWS_PER_PAGE,
+      );
 
 
   // Modal success handler
   async function handleExpenseAdded() {
     setShowNewExpense(false);
-    setLoading(true);
-    setError(null);
-    await fetchExpenditures();
+    setActionError(null);
+    await refetchExpenditures();
   }
 
   return (
@@ -285,14 +323,13 @@ function ExpensePageContent() {
               </div>
 
               {/* + New Expense */}
-              <Button
-                backgroundColor="var(--color-core-green)"
-                color="var(--color-core-white)"
+              <GatedButton
+                action="expenses:create"
+                icon={<FaPlus aria-hidden />}
                 onClick={() => setShowNewExpense(true)}
               >
-                <FaPlus />
                 New Expense
-              </Button>
+              </GatedButton>
             </HStack>
           </HStack>
 
@@ -308,6 +345,7 @@ function ExpensePageContent() {
               projectNames={projectNames}
               onViewReceipt={handleViewReceipt}
               onRowClick={(e) => setReviewExpenditureId(e.expenditure_id)}
+              onDelete={setExpenseToDelete}
             />
           )}
 
@@ -338,8 +376,33 @@ function ExpensePageContent() {
           onClose={() => setReviewExpenditureId(null)}
           onReviewed={async () => {
             setReviewExpenditureId(null);
-            await fetchExpenditures();
+            await refetchExpenditures();
           }}
+        />
+
+        <ConfirmDeleteDialog
+          open={expenseToDelete !== null}
+          onClose={() => setExpenseToDelete(null)}
+          onConfirm={async () => {
+            if (!expenseToDelete) return;
+            await api.del(`/expenditures/${expenseToDelete.expenditure_id}`);
+            await refetchExpenditures();
+          }}
+          title="Delete Expense"
+          itemName={
+            expenseToDelete
+              ? `expense #${String(expenseToDelete.expenditure_id).padStart(6, '0')}`
+              : undefined
+          }
+          consequences={
+            expenseToDelete ? (
+              <p>
+                {formatCurrencyPrecise(expenseToDelete.amount)} —{' '}
+                {expenseToDelete.category ?? 'Uncategorised'}
+                {expenseToDelete.receipt_url ? ', and its receipt' : ''}.
+              </p>
+            ) : undefined
+          }
         />
       </main>
     </div>

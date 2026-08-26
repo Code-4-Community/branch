@@ -76,8 +76,9 @@ jobs:
             # Derive unique directories from changed files on push.
             # Exclude infrastructure/preview: it's the per-PR module (needs a
             # pr_number, applied per-PR by preview-env.yml). preview-shared is
-            # applied normally here.
-            echo "$ALL_CHANGED" | tr ' ' '\n' | xargs -I {} dirname {} | sort -u | grep -vx 'infrastructure/preview' | jq -R -s -c 'split("\n") | map(select(length > 0))' > dirs.json
+            # applied normally here. Exclude infrastructure/modules/*: shared
+            # child modules with no backend, applied via their callers.
+            echo "$ALL_CHANGED" | tr ' ' '\n' | xargs -I {} dirname {} | sort -u | grep -vx 'infrastructure/preview' | grep -v '^infrastructure/modules/' | jq -R -s -c 'split("\n") | map(select(length > 0))' > dirs.json
             dirs_json=$(cat dirs.json)
           fi
 
@@ -144,7 +145,7 @@ jobs:
       - name: Configure AWS credentials (write apply role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-apply
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/branch-ci-apply
           aws-region: us-east-2
 
       - name: Terraform Init

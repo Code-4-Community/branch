@@ -61,14 +61,50 @@ resource "aws_iam_role_policy" "lambda_s3_objects" {
 
   policy = jsonencode({
     Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "LambdaReportsBucketObjects"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          # DELETE /expenditures/{id}, DELETE /reports/{id} and the cascade from
+          # DELETE /projects/{id} remove the object alongside the row, so the
+          # bucket does not accumulate files no row points at any more.
+          "s3:DeleteObject",
+        ]
+        Resource = "${aws_s3_bucket.reports_bucket.arn}/*"
+      },
+      {
+        # Scoped to the bucket itself, not its objects: ListObjectsV2 authorizes
+        # against the bucket ARN. DELETE /projects/{id} needs it because the
+        # cascade removes the rows naming the files, leaving the receipts/{id}/
+        # and reports/{id}/ prefixes as the only record of what to clean up.
+        Sid      = "LambdaReportsBucketList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.reports_bucket.arn
+      },
+    ]
+  })
+}
+
+# The role had no SES permissions at all, so mailer.ts's SendEmailCommand would
+# throw AccessDeniedException on every approve/decline -- caught by the PATCH
+# /expenditures/{id}/status handler's try/catch, so it fails silently rather
+# than surfacing as a request error. Scoped to SendEmail only: this role never
+# needs to manage identities, templates, or receipt rules.
+resource "aws_iam_role_policy" "lambda_ses_send" {
+  name = "branch-lambda-ses-send"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
     Statement = [{
-      Sid    = "LambdaReportsBucketObjects"
-      Effect = "Allow"
-      Action = [
-        "s3:PutObject",
-        "s3:GetObject",
-      ]
-      Resource = "${aws_s3_bucket.reports_bucket.arn}/*"
+      Sid      = "LambdaSesSendEmail"
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+      Resource = "*"
     }]
   })
 }
@@ -96,6 +132,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "lambda_deployment
       sse_algorithm = "AES256"
     }
   }
+}
+
+module "sentry" {
+  source = "../modules/sentry"
 }
 
 # Define all Lambda functions
@@ -142,6 +182,10 @@ resource "aws_lambda_function" "functions" {
   memory_size   = 256
   role          = aws_iam_role.lambda_role.arn
 
+  # Error monitoring. The layer is the only source of the Sentry SDK -- it is
+  # deliberately not a lambda dependency, so nothing here changes the bundles.
+  layers = [module.sentry.layer_arn]
+
   # Use S3 for deployment (initial placeholder, replaced by GitHub Actions)
   s3_bucket = aws_s3_bucket.lambda_deployments.id
   s3_key    = aws_s3_object.lambda_placeholder[each.key].key
@@ -179,6 +223,21 @@ resource "aws_lambda_function" "functions" {
       # on branch-reports only; listed here so this authoritative block does not
       # wipe it. Harmless on the other five functions.
       REPORTS_BUCKET_NAME = aws_s3_bucket.reports_bucket.id
+
+      # Loads the Sentry layer's handler wrapper before the function starts.
+      # Dropping NODE_OPTIONS silently disables error reporting -- the layer
+      # alone does nothing.
+      NODE_OPTIONS = module.sentry.node_options
+      SENTRY_DSN   = data.infisical_secrets.sentry_folder.secrets["sentry-dsn"].value
+
+      # Preview stacks copy this map from prod, then override the environment,
+      # so PR errors do not land in the production issue stream.
+      SENTRY_ENVIRONMENT = "production"
+
+      # Grafana Cloud OTLP. The headers carry the instance ID and API token, so
+      # they come from Infisical `/grafana`, not the tree.
+      OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp-gateway-prod-us-west-0.grafana.net/otlp"
+      OTEL_EXPORTER_OTLP_HEADERS  = data.infisical_secrets.grafana_folder.secrets["OTEL_EXPORTER_OTLP_HEADERS"].value
     }
   }
 }

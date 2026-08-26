@@ -8,8 +8,8 @@ Lambda for managing projects.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
-| GET | /dashboard |  |
+| GET | /projects/health | Health check |
+| GET | /projects/dashboard |  |
 | GET | /projects/{id}/members |  |
 | GET | /projects/assignable-staff |  |
 | GET | /projects |  |

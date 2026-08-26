@@ -34,7 +34,7 @@ on:
 env:
   LABEL: test-environment
   AWS_REGION: us-east-2
-  ROLE_ARN: arn:aws:iam::489881683177:role/branch-ci-preview
+  ROLE_ARN: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/branch-ci-preview
   TF_VERSION: 1.13.0
   DIST_COMMENT: branch PR previews (shared, per-PR path prefixes)
 
@@ -207,16 +207,26 @@ jobs:
               lambdas="$lambdas $svc"
             fi
           done
+          # A shared/ change rebuilds the frontend too: @branch/rbac is compiled
+          # into the browser bundle, so a policy edit that only touched shared/
+          # would otherwise leave the preview frontend on the old rules.
           frontend=false
-          echo "$CHANGED" | grep -q '^apps/frontend/' && frontend=true
+          if [ "$shared_changed" = true ] || echo "$CHANGED" | grep -q '^apps/frontend/'; then
+            frontend=true
+          fi
           echo "lambdas=$(echo $lambdas | xargs)" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
+      # Needed by the frontend build as well as the lambdas: apps/frontend
+      # resolves @branch/rbac through a gitignored dist.
+      - name: Build shared packages
+        if: steps.detect.outputs.lambdas != '' || steps.detect.outputs.frontend == 'true'
+        uses: ./.github/actions/build-shared-packages
 
       - name: Build + deploy lambdas
         if: steps.detect.outputs.lambdas != ''
         run: |
           set -euo pipefail
-          npm ci --prefix shared/lambda-auth && npm run build --prefix shared/lambda-auth
           for svc in ${{ steps.detect.outputs.lambdas }}; do
             echo "::group::lambda $svc"
             ( cd "apps/backend/lambdas/$svc" && npm ci --legacy-peer-deps && npm run package )

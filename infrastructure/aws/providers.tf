@@ -5,13 +5,32 @@ terraform {
       version = "6.14.1"
     }
     infisical = {
-      source = "infisical/infisical"
+      source  = "infisical/infisical"
+      version = "0.17.0"
     }
   }
 }
 
+module "tags" {
+  source = "../modules/tags"
+}
+
 provider "aws" {
   region = "us-east-2"
+
+  default_tags {
+    tags = module.tags.tags
+  }
+}
+
+# CloudFront only accepts ACM certificates issued in us-east-1.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = module.tags.tags
+  }
 }
 
 provider "infisical" {

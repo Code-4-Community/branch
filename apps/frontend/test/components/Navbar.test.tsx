@@ -7,7 +7,8 @@
 
 import React from "react";
 import { render, screen, fireEvent } from "../utils";
-import NavBar, { UserRole } from "../../src/app/components/Navbar";
+import NavBar from "../../src/app/components/Navbar";
+import { adminSubject, directorSubject, memberSubject } from "../rbac";
 
 // next/font/google, next/navigation, next/link: global mocks in jest.setup.ts
 
@@ -25,15 +26,16 @@ describe("NavBar", () => {
   });
 
   it("does not link to routes that do not exist", () => {
-    // Regression guard: the Navbar used to link to /profile and /logout, and
-    // defaulted /dashboard and /projects to pages that had never been built.
-    render(<NavBar roleOverride="admin" activePath="/dashboard" />);
-    expect(screen.queryByText("Profile")).not.toBeInTheDocument();
+    // Regression guard: the Navbar used to link to /logout, and defaulted
+    // /dashboard and /projects to pages that had never been built. /profile is
+    // a real link (see NAV_ITEMS) now that apps/frontend/src/app/profile/page.tsx
+    // exists, so it is not part of this guard.
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     expect(screen.queryByRole("link", { name: "Log Out" })).not.toBeInTheDocument();
   });
 
   it("renders all admin nav items by default", () => {
-    render(<NavBar roleOverride="admin" activePath="/dashboard" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     const labels = [
       "Dashboard",
       "Projects",
@@ -42,6 +44,7 @@ describe("NavBar", () => {
       "Expenses",
       "Reports",
       "Accounts",
+      "Profile",
       "Log Out",
     ];
     labels.forEach((label) => {
@@ -51,27 +54,41 @@ describe("NavBar", () => {
 
   // ── Role-based visibility ─────────────────────────────────────────────────
 
-  it("hides admin-only items for standard role", () => {
-    render(<NavBar roleOverride="standard" activePath="/projects" />);
+  it("hides admin-only items from a director", () => {
+    render(<NavBar subjectOverride={directorSubject()} activePath="/projects" />);
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
-  it("hides admin-only items for limited role", () => {
-    render(<NavBar roleOverride="limited" activePath="/projects" />);
+  it("hides admin-only items from a project member", () => {
+    render(<NavBar subjectOverride={memberSubject()} activePath="/projects" />);
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.queryByText("Reports")).not.toBeInTheDocument();
     expect(screen.queryByText("Accounts")).not.toBeInTheDocument();
   });
 
-  it("shows shared items for all roles", () => {
+  // The donor roster is admin + director, so it is the one link that separates
+  // the two non-admin roles.
+  it("shows Donors to a director but not to a project member", () => {
+    const { unmount } = render(
+      <NavBar subjectOverride={directorSubject()} activePath="/projects" />,
+    );
+    expect(screen.getAllByText("Donors").length).toBeGreaterThan(0);
+    unmount();
+
+    render(<NavBar subjectOverride={memberSubject()} activePath="/projects" />);
+    expect(screen.queryByText("Donors")).not.toBeInTheDocument();
+  });
+
+  it("shows shared items to every signed-in role", () => {
     // Expenses is shared: non-admins submit expenses there.
-    const sharedItems = ["Projects", "Donors", "Donations", "Expenses", "Log Out"];
-    const roles: UserRole[] = ["admin", "standard", "limited"];
+    const sharedItems = ["Projects", "Donations", "Expenses", "Profile", "Log Out"];
 
-    roles.forEach((role) => {
-      const { unmount } = render(<NavBar roleOverride={role} activePath="/projects" />);
+    [adminSubject(), directorSubject(), memberSubject()].forEach((subject) => {
+      const { unmount } = render(
+        <NavBar subjectOverride={subject} activePath="/projects" />,
+      );
       sharedItems.forEach((label) => {
         expect(screen.getAllByText(label).length).toBeGreaterThan(0);
       });
@@ -82,7 +99,7 @@ describe("NavBar", () => {
   // ── Active state ──────────────────────────────────────────────────────────
 
   it("marks the current page link with aria-current='page'", () => {
-    render(<NavBar activePath="/projects" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/projects" />);
     const activeLinks = screen.getAllByRole("link", { name: "Projects" });
     const marked = activeLinks.some(
       (link) => link.getAttribute("aria-current") === "page"
@@ -95,7 +112,7 @@ describe("NavBar", () => {
   });
 
   it("does not mark non-active links with aria-current", () => {
-    render(<NavBar activePath="/dashboard" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     const donorLinks = screen.getAllByRole("link", { name: "Donors" });
     donorLinks.forEach((link) => {
       expect(link.getAttribute("aria-current")).toBeNull();
@@ -106,7 +123,7 @@ describe("NavBar", () => {
   // Note: mobile menu tests are skipped as the current Navbar version
   // does not render a mobile hamburger button in the test environment.
   it.skip("toggles mobile menu open/close", () => {
-    render(<NavBar activePath="/dashboard" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     const menuButton = screen.getByRole("button", { name: /open menu/i });
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
 
@@ -118,7 +135,7 @@ describe("NavBar", () => {
   });
 
   it.skip("closes mobile menu when a link is clicked", () => {
-    render(<NavBar activePath="/dashboard" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     fireEvent.click(screen.getByRole("button", { name: /open menu/i }));
     const dashLinks = screen.getAllByRole("link", { name: "Dashboard" });
     fireEvent.click(dashLinks[dashLinks.length - 1]);
@@ -128,7 +145,7 @@ describe("NavBar", () => {
   // ── Accessibility ─────────────────────────────────────────────────────────
 
   it("has accessible nav landmarks", () => {
-    render(<NavBar activePath="/dashboard" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     const navs = screen.getAllByRole("navigation");
     expect(navs.length).toBeGreaterThanOrEqual(1);
   });
@@ -136,7 +153,7 @@ describe("NavBar", () => {
   // ── Nav links ─────────────────────────────────────────────────────────────
 
   it("nav links point to correct hrefs", () => {
-    render(<NavBar roleOverride="admin" activePath="/dashboard" />);
+    render(<NavBar subjectOverride={adminSubject()} activePath="/dashboard" />);
     const expectedHrefs: Record<string, string> = {
       Dashboard:  "/dashboard",
       Projects:   "/projects",

@@ -150,6 +150,12 @@ resource "aws_iam_role_policy" "ci_preview" {
         Action   = ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:ListFunctions"]
         Resource = "*"
       },
+      {
+        Sid      = "ReadSentryLayer"
+        Effect   = "Allow"
+        Action   = ["lambda:GetLayerVersion"]
+        Resource = module.sentry.layer_arn
+      },
       # API Gateway: create/destroy per-PR REST APIs. ARNs are random ids, so
       # this cannot be name-scoped — bounded to the account/region instead.
       {
@@ -279,9 +285,8 @@ resource "aws_iam_role_policy" "ci_migrate" {
         Action   = ["lambda:GetFunctionConfiguration"]
         Resource = aws_lambda_function.functions["auth"].arn
       },
-      # DescribeDBInstances is on "*" because branch_rds has no explicit
-      # `identifier`, so its id is an AWS-generated terraform-<hex> string that
-      # cannot be written down here; the job resolves it by matching DB_HOST.
+      # DescribeDBInstances is on "*" because the job resolves the instance by
+      # matching DB_HOST rather than by name, so the ARN isn't known up front.
       {
         Sid      = "ResolveInstanceAndSnapshots"
         Effect   = "Allow"

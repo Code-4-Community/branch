@@ -9,6 +9,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@branch/rbac": "file:../rbac",
     "@branch/types": "file:../types",
     "aws-jwt-verify": "^5.1.1"
   },

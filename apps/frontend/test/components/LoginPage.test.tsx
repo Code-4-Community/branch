@@ -62,6 +62,41 @@ describe('Login Page Component', () => {
             expect(screen.getByPlaceholderText('Enter password')).toBeInTheDocument();
         });
 
+        it('masks the password and labels both fields for password managers', () => {
+            // Without type=password plus these autocomplete hints the browser
+            // neither hides the value nor offers to save the credentials.
+            render(<LoginPage />);
+            const email = screen.getByPlaceholderText('Enter email address');
+            const password = screen.getByPlaceholderText('Enter password');
+
+            expect(password).toHaveAttribute('type', 'password');
+            expect(password).toHaveAttribute('autocomplete', 'current-password');
+            expect(email).toHaveAttribute('autocomplete', 'username');
+        });
+
+        it('submits a real form, which is what triggers the save-password prompt', () => {
+            render(<LoginPage />);
+            expect(
+                screen.getByPlaceholderText('Enter password').closest('form'),
+            ).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Login' })).toHaveAttribute(
+                'type',
+                'submit',
+            );
+        });
+
+        it('unmasks the password while "Show password" is checked', async () => {
+            render(<LoginPage />);
+            const password = screen.getByPlaceholderText('Enter password');
+            const toggle = screen.getByRole('checkbox', { name: /show password/i });
+
+            await userEvent.click(toggle);
+            expect(password).toHaveAttribute('type', 'text');
+
+            await userEvent.click(toggle);
+            expect(password).toHaveAttribute('type', 'password');
+        });
+
         it('renders the login button', () => {
             render(<LoginPage />);
             expect(screen.getByRole('button', { name: 'Login' })).toBeInTheDocument();
@@ -221,10 +256,10 @@ describe('Login Page Component', () => {
             expect(mockReplace).toHaveBeenCalledWith('/');
         });
 
-        it('explains that an MFA challenge is not supported yet', async () => {
+        it('explains that an unmodelled challenge is not supported yet', async () => {
             mockLogin.mockResolvedValue({
                 status: 'challenge',
-                challengeName: 'SOFTWARE_TOKEN_MFA',
+                challengeName: 'SELECT_MFA_TYPE',
                 session: 'sess-1',
                 email: 'jane@example.com',
             });
@@ -233,7 +268,69 @@ describe('Login Page Component', () => {
             await fillCredentials();
             await submit();
 
-            await waitFor(() => expect(screen.getByText(/SOFTWARE_TOKEN_MFA/)).toBeInTheDocument());
+            await waitFor(() => expect(screen.getByText(/SELECT_MFA_TYPE/)).toBeInTheDocument());
+            expect(mockReplace).not.toHaveBeenCalled();
+        });
+
+        const totp = {
+            status: 'challenge',
+            challengeName: 'SOFTWARE_TOKEN_MFA',
+            session: 'sess-1',
+            email: 'jane@example.com',
+        };
+
+        it('shows the code step for SOFTWARE_TOKEN_MFA without navigating', async () => {
+            mockLogin.mockResolvedValue(totp);
+            render(<LoginPage />);
+
+            await fillCredentials();
+            await submit();
+
+            await waitFor(() => expect(screen.getByText('Enter your code')).toBeInTheDocument());
+            expect(mockReplace).not.toHaveBeenCalled();
+        });
+
+        it('submits the TOTP code and then redirects', async () => {
+            mockLogin.mockResolvedValue(totp);
+            mockRespondToChallenge.mockResolvedValue({ status: 'authenticated' });
+            render(<LoginPage />);
+
+            await fillCredentials();
+            await submit();
+            await waitFor(() => expect(screen.getByText('Enter your code')).toBeInTheDocument());
+
+            await userEvent.type(screen.getByPlaceholderText('123456'), '654321');
+            await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+            await waitFor(() =>
+                expect(mockRespondToChallenge).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        challengeName: 'SOFTWARE_TOKEN_MFA',
+                        session: 'sess-1',
+                        code: '654321',
+                    }),
+                ),
+            );
+            expect(mockReplace).toHaveBeenCalledWith('/');
+        });
+
+        it('shows an inline error for a wrong TOTP code without navigating', async () => {
+            mockLogin.mockResolvedValue(totp);
+            mockRespondToChallenge.mockRejectedValue(
+                new ApiError('Invalid verification code', 400),
+            );
+            render(<LoginPage />);
+
+            await fillCredentials();
+            await submit();
+            await waitFor(() => expect(screen.getByText('Enter your code')).toBeInTheDocument());
+
+            await userEvent.type(screen.getByPlaceholderText('123456'), '000000');
+            await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+            await waitFor(() =>
+                expect(screen.getByText('Invalid verification code')).toBeInTheDocument(),
+            );
             expect(mockReplace).not.toHaveBeenCalled();
         });
     });

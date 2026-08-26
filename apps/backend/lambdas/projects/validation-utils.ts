@@ -1,3 +1,13 @@
+import { DEFAULT_PROJECT_ROLE, PROJECT_ROLES, type ProjectRole } from '@branch/rbac';
+
+/**
+ * Re-exported, not redeclared: `@branch/rbac` owns the role vocabulary because
+ * its director derivation reads it. The DB check constraint still accepts the
+ * legacy PI/Accountant/Staff values during the expand phase, but nothing writes
+ * them.
+ */
+export { DEFAULT_PROJECT_ROLE, PROJECT_ROLES, type ProjectRole };
+
 // Result type for input validation operations
 export type ValidationResult<T> = {
   isValid: boolean;
@@ -6,17 +16,19 @@ export type ValidationResult<T> = {
 };
 
 /**
- * Roles a project membership may carry. The DB check constraint still accepts
- * the legacy PI/Accountant/Staff values during the expand phase, but nothing
- * writes them any more, so new assignments are restricted to these three.
+ * `role` is optional so "the staff picker sent me an id with no role" stays
+ * distinguishable from "make this person a Student". `syncMemberships` keeps an
+ * existing member's current role when it is absent, which is what stops an
+ * ordinary project edit from demoting the project's directors.
  */
-export const PROJECT_ROLES = ['Admin', 'Director', 'Student'] as const;
-export type ProjectRole = (typeof PROJECT_ROLES)[number];
+export type MemberAssignment = { user_id: number; role?: ProjectRole };
 
-/** The project form assigns staff without asking for a role. */
-export const DEFAULT_PROJECT_ROLE: ProjectRole = 'Student';
-
-export type MemberAssignment = { user_id: number; role: ProjectRole };
+/**
+ * A pending or denied expenditure is a request, not a spend. Every total,
+ * chart series and budget percentage filters on this; the raw lists do not,
+ * because their job is to show what is still awaiting review.
+ */
+export const APPROVED_EXPENDITURE_STATUS = 'approved';
 
 // Utility class for validating project-related input fields
 export class ProjectValidationUtils {
@@ -130,7 +142,9 @@ export class ProjectValidationUtils {
       if (rawRole !== undefined && !PROJECT_ROLES.includes(rawRole as ProjectRole)) {
         return { isValid: false, error: `'role' must be one of: ${PROJECT_ROLES.join(', ')}` };
       }
-      const role = (rawRole as ProjectRole) ?? DEFAULT_PROJECT_ROLE;
+      // Left undefined when the request did not say. Resolving it to a default
+      // here would erase the difference between "unspecified" and "Student".
+      const role = rawRole as ProjectRole | undefined;
 
       // A repeated id is a UI race, not a client error, and the intent is
       // unambiguous — take the last role rather than rejecting the whole write.

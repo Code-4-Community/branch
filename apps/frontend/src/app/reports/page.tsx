@@ -15,8 +15,11 @@ import {
 } from '@chakra-ui/react';
 import DataTable, { type DataTableColumn } from '../components/DataTable';
 import { useApi } from '@/hooks/useApi';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { projectsQuery, reportsPageQuery } from '@/lib/queries';
 import { type Project } from '@/lib/reports';
 import UploadReportModal from '../components/UploadReportModal';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { FaPlus } from 'react-icons/fa';
 import { LuClipboardPenLine } from 'react-icons/lu';
 import { RiDeleteBack2Line } from "react-icons/ri";
@@ -71,13 +74,8 @@ export default function ReportsPage() {
 }
 
 function ReportsPageContent() {
-    // Data
-    const [reports, setReports] = useState<Report[]>([]);
-    const [projects, setProjects] = useState<Project[]>([]);
     const api = useApi();
-
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const queryClient = useQueryClient();
 
     // Delete/download failures — non-blocking, so they must not hide the table
     const [actionError, setActionError] = useState<string | null>(null);
@@ -85,6 +83,7 @@ function ReportsPageContent() {
     // Selected rows (checkboxes) for bulk delete
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [deleting, setDeleting] = useState(false);
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
     // report_id whose download URL is currently being fetched
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
@@ -100,37 +99,32 @@ function ReportsPageContent() {
         page: '',
     });
     const currentPage = parseInt(filters.page, 10) || 1;
-    const [totalPages, setTotalPages] = useState(1);
 
+    // Already server-paginated before this change; now cached, and prefetched
+    // for the page the URL asks for while /auth/me is still in flight.
+    const reportsList = useQuery({
+      ...reportsPageQuery(currentPage, ROWS_PER_PAGE),
+      // Page flips reuse the previous page's rows instead of unmounting the
+      // table into a skeleton.
+      placeholderData: keepPreviousData,
+    });
 
-    // Fetch reports
-    async function fetchReports() {
-        try {
-        const json = await api.get<{ data: Report[]; pagination?: { totalPages: number } }>(
-          `/reports?page=${currentPage}&limit=${ROWS_PER_PAGE}`,
-        );
-        setReports(json.data ?? []);
-        setTotalPages(Math.max(1, json.pagination?.totalPages ?? 1));
-        } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load reports');
-        } finally {
-        setLoading(false);
-        }
-    }
+    const reports: Report[] = reportsList.data?.data ?? [];
+    const totalPages = Math.max(1, reportsList.data?.pagination?.totalPages ?? 1);
+    const loading = reportsList.isPending;
+    const error = reportsList.error
+      ? reportsList.error instanceof Error
+        ? reportsList.error.message
+        : 'Failed to load reports'
+      : null;
 
-    // Fetch projects (used to resolve project_id -> name if needed elsewhere)
-    async function fetchProjects() {
-        try {
-        const json = await api.get<Project[]>('/projects');
-        const list = Array.isArray(json) ? json : [];
-        setProjects(list);
-        if (list.length > 0) {
-          setGenerateProjectId(String(list[0].project_id));
-        }
-        } catch {
-        // Projects fetch failure is non-critical
-        }
-    }
+    // Same `['projects']` entry the navbar and every other page reads.
+    const projectsList = useQuery(projectsQuery());
+    const projects: Project[] = projectsList.data ?? [];
+
+    const refetchReports = async () => {
+      await queryClient.invalidateQueries({ queryKey: ['reports'] });
+    };
 
     const {
       showGenerateModal,
@@ -142,21 +136,25 @@ function ReportsPageContent() {
       generating,
       error: generateError,
       handleGenerate,
-    } = useGenerateReport({ onSuccess: fetchReports });
+    } = useGenerateReport({ onSuccess: refetchReports });
     
 
     useEffect(() => {
         // Selection is scoped to the visible page, so it must not survive a page
         // change — bulk delete would otherwise remove rows the user can't see.
         setSelectedIds([]);
-        fetchReports();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage]);
 
+    // Default the generate-report picker to the first project once the shared
+    // projects query resolves. Was a side effect inside the old fetchProjects.
+    // Only fills a blank selection, so a later refetch cannot silently move the
+    // user's choice out from under them.
+    const firstProjectId = projects[0]?.project_id;
     useEffect(() => {
-        fetchProjects();
+        if (firstProjectId === undefined) return;
+        setGenerateProjectId((current) => current || String(firstProjectId));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [firstProjectId]);
 
     // Selection helpers (scoped to the currently visible page of rows)
     const allSelected = reports.length > 0 && reports.every((r) => selectedIds.includes(r.report_id));
@@ -188,13 +186,17 @@ function ReportsPageContent() {
             selectedIds.map((id) => api.del(`/reports/${id}`)),
           );
           const failed = results.filter((r) => r.status === 'rejected').length;
+          // Keep whatever did fail selected so a retry does not re-issue the
+          // deletes that already succeeded.
+          setSelectedIds(
+            selectedIds.filter((_, i) => results[i].status === 'rejected'),
+          );
+          await refetchReports();
           if (failed > 0) {
-            setActionError(
+            throw new Error(
               `Failed to delete ${failed} of ${selectedIds.length} report${selectedIds.length === 1 ? '' : 's'}`,
             );
           }
-          setSelectedIds([]);
-          await fetchReports();
         } finally {
           setDeleting(false);
         }
@@ -310,7 +312,7 @@ function ReportsPageContent() {
                   <Button
                     backgroundColor="var(--color-error-red)"
                     color="var(--color-core-white)"
-                    onClick={handleDeleteSelected}
+                    onClick={() => setConfirmDeleteOpen(true)}
                     loading={deleting}
                     disabled={selectedIds.length === 0 || deleting}
                   >
@@ -392,7 +394,7 @@ function ReportsPageContent() {
             <UploadReportModal
               open={isUploadModalOpen}
               onClose={() => setIsUploadModalOpen(false)}
-              onSuccess={() => { setIsUploadModalOpen(false); fetchReports(); }}
+              onSuccess={() => { setIsUploadModalOpen(false); void refetchReports(); }}
               projects={projects}
             />
 
@@ -498,6 +500,20 @@ function ReportsPageContent() {
                 </Dialog.Positioner>
               </Portal>
             </Dialog.Root>
+
+            <ConfirmDeleteDialog
+              open={confirmDeleteOpen}
+              onClose={() => setConfirmDeleteOpen(false)}
+              onConfirm={handleDeleteSelected}
+              title="Delete Reports"
+              itemName={`${selectedIds.length} report${selectedIds.length === 1 ? '' : 's'}`}
+              confirmLabel="Delete"
+              consequences={
+                <p>
+                  The generated files are deleted too, for everyone.
+                </p>
+              }
+            />
           </main>
         </div>
     );

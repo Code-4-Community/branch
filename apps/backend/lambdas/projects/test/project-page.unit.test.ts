@@ -6,10 +6,28 @@ import { test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globa
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
-jest.mock('../auth', () => ({
-  ...jest.requireActual<typeof import('../auth')>('../auth'),
-  authenticateRequest: jest.fn(),
-}));
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 import { handler } from '../handler';
 import db from '../db';
@@ -76,6 +94,9 @@ afterAll(async () => {
   await db.destroy();
 });
 
+const stored = (members: Array<{ user_id: number; role: string }>) =>
+  members.filter((m) => m.role !== 'Admin');
+
 // ── Routing ──────────────────────────────────────────────────────────────────
 
 test('/projects/assignable-staff is not parsed as a project id', async () => {
@@ -86,6 +107,14 @@ test('/projects/assignable-staff is not parsed as a project id', async () => {
   expect(staff.length).toBeGreaterThan(0);
   // Only the fields the picker renders — not the whole user row.
   expect(Object.keys(staff[0]).sort()).toEqual(['email', 'name', 'profile_image', 'user_id']);
+});
+
+test('/projects/dashboard is not parsed as a project id', async () => {
+  const res = await handler(event('/dashboard', 'GET'));
+  expect(res.statusCode).toBe(200);
+  // The dashboard controller's shape, not a single project's — misrouting to
+  // `GET /projects/{id}` with id="dashboard" would 400 instead.
+  expect(parse(res).summary).toBeDefined();
 });
 
 test('400 rather than 403 for a non-numeric project id', async () => {
@@ -102,7 +131,7 @@ test('list includes spend, member count and the active flag', async () => {
       total_budget: 1000,
       start_date: '2020-01-01',
       end_date: '2020-06-01',
-      members: [1, 2],
+      members: [4, 5],
     }),
   );
 
@@ -110,14 +139,14 @@ test('list includes spend, member count and the active flag', async () => {
   expect(res.statusCode).toBe(200);
   const created = parse(res).find((p: { name: string }) => p.name === 'Aggregated');
 
-  expect(created.member_count).toBe(2);
+  expect(created.member_count).toBe(5);
   expect(created.total_spent).toBe(0);
   // End date is in the past, so the list page files it under Archived.
   expect(created.is_active).toBe(false);
 });
 
 test('a project with no end date is always active', async () => {
-  await handler(event('/', 'POST', { name: 'Ongoing', total_budget: 10, members: [1] }));
+  await handler(event('/', 'POST', { name: 'Ongoing', total_budget: 10, members: [4] }));
   const res = await handler(event('/', 'GET'));
   const created = parse(res).find((p: { name: string }) => p.name === 'Ongoing');
   expect(created.is_active).toBe(true);
@@ -128,7 +157,7 @@ test('a project with no end date is always active', async () => {
 test('overview returns the project, stats, members and expenditures together', async () => {
   const created = parse(
     await handler(
-      event('/', 'POST', { name: 'Overview', total_budget: 1000, members: [1, 2] }),
+      event('/', 'POST', { name: 'Overview', total_budget: 1000, members: [4, 5] }),
     ),
   );
 
@@ -137,16 +166,18 @@ test('overview returns the project, stats, members and expenditures together', a
 
   const body = parse(res);
   expect(body.project.name).toBe('Overview');
-  expect(body.members).toHaveLength(2);
+  expect(stored(body.members)).toHaveLength(2);
   expect(body.stats.totalBudget).toBe(1000);
   expect(body.stats.totalSpent).toBe(0);
   expect(body.stats.totalRemaining).toBe(1000);
-  expect(body.canEdit).toBe(true);
+  // No `canEdit`: the client asks the shared policy rather than trusting a flag
+  // the payload computed for it.
+  expect(body.canEdit).toBeUndefined();
   expect(body.isActive).toBe(true);
 });
 
 test('overview reports 0% rather than NaN when no budget is set', async () => {
-  const created = parse(await handler(event('/', 'POST', { name: 'No budget', members: [1] })));
+  const created = parse(await handler(event('/', 'POST', { name: 'No budget', members: [4] })));
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
   expect(body.stats.spentPercentage).toBe(0);
 });
@@ -160,43 +191,43 @@ test('overview 404s for a project that does not exist', async () => {
 
 test('POST assigns the given staff', async () => {
   const created = parse(
-    await handler(event('/', 'POST', { name: 'Staffed', total_budget: 5, members: [1, 3] })),
+    await handler(event('/', 'POST', { name: 'Staffed', total_budget: 5, members: [4, 6] })),
   );
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
-  expect(body.members.map((m: { user_id: number }) => m.user_id).sort()).toEqual([1, 3]);
+  expect(stored(body.members).map((m) => m.user_id).sort()).toEqual([4, 6]);
 });
 
 test('PUT replaces the roster rather than appending to it', async () => {
   const created = parse(
-    await handler(event('/', 'POST', { name: 'Rotating', total_budget: 5, members: [1, 2] })),
+    await handler(event('/', 'POST', { name: 'Rotating', total_budget: 5, members: [4, 5] })),
   );
 
-  const res = await handler(event(`/${created.project_id}`, 'PUT', { members: [3] }));
+  const res = await handler(event(`/${created.project_id}`, 'PUT', { members: [6] }));
   expect(res.statusCode).toBe(200);
 
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
-  expect(body.members.map((m: { user_id: number }) => m.user_id)).toEqual([3]);
+  expect(stored(body.members).map((m) => m.user_id)).toEqual([6]);
 });
 
 test('PUT without a members key leaves the roster alone', async () => {
   const created = parse(
-    await handler(event('/', 'POST', { name: 'Untouched', total_budget: 5, members: [1, 2] })),
+    await handler(event('/', 'POST', { name: 'Untouched', total_budget: 5, members: [4, 5] })),
   );
 
   await handler(event(`/${created.project_id}`, 'PUT', { name: 'Renamed' }));
 
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
   expect(body.project.name).toBe('Renamed');
-  expect(body.members).toHaveLength(2);
+  expect(stored(body.members)).toHaveLength(2);
 });
 
 test('PUT with an empty members array clears the roster', async () => {
   const created = parse(
-    await handler(event('/', 'POST', { name: 'Emptied', total_budget: 5, members: [1] })),
+    await handler(event('/', 'POST', { name: 'Emptied', total_budget: 5, members: [4] })),
   );
   await handler(event(`/${created.project_id}`, 'PUT', { members: [] }));
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
-  expect(body.members).toHaveLength(0);
+  expect(stored(body.members)).toHaveLength(0);
 });
 
 test('400 for a member id that is not a real user', async () => {
@@ -216,10 +247,10 @@ test('400 for a member entry that is not a positive integer id', async () => {
 
 test('a duplicated member id is de-duplicated instead of failing the write', async () => {
   const created = parse(
-    await handler(event('/', 'POST', { name: 'Deduped', total_budget: 5, members: [1, 1] })),
+    await handler(event('/', 'POST', { name: 'Deduped', total_budget: 5, members: [4, 4] })),
   );
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
-  expect(body.members).toHaveLength(1);
+  expect(stored(body.members)).toHaveLength(1);
 });
 
 // ── Date range ───────────────────────────────────────────────────────────────
@@ -231,7 +262,7 @@ test('400 when the end date precedes the start date on create', async () => {
       total_budget: 5,
       start_date: '2026-05-01',
       end_date: '2026-01-01',
-      members: [1],
+      members: [4],
     }),
   );
   expect(res.statusCode).toBe(400);
@@ -246,7 +277,7 @@ test('400 when an update moves the start date past the stored end date', async (
         total_budget: 5,
         start_date: '2026-01-01',
         end_date: '2026-02-01',
-        members: [1],
+        members: [4],
       }),
     ),
   );
@@ -264,7 +295,7 @@ test('clearing the end date in the same request that moves the start date is all
         total_budget: 5,
         start_date: '2026-01-01',
         end_date: '2026-02-01',
-        members: [1],
+        members: [4],
       }),
     ),
   );

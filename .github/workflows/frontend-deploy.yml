@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - 'apps/frontend/**'
+      # The authorization policy is compiled into the browser bundle, so a
+      # change to shared/rbac has to redeploy the frontend or the two sides
+      # stop agreeing.
+      - 'shared/rbac/**'
   workflow_dispatch:
 
 # Requires the OIDC apply role (branch-ci-apply) from infrastructure/aws/oidc.tf.
@@ -29,10 +33,18 @@ jobs:
         with:
           node-version: '20'
 
+      # apps/frontend consumes @branch/rbac as a file: dependency and its dist
+      # is gitignored, so npm ci cannot resolve it until this has run. npm does
+      # not run `prepare` for a file: directory dep -- it symlinks -- so the
+      # build has to be explicit. The job's defaults.run working-directory does
+      # not reach a composite action's steps, so this runs from the repo root.
+      - name: Build shared packages
+        uses: ./.github/actions/build-shared-packages
+
       - name: Configure AWS credentials (write apply role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-apply
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/branch-ci-apply
           aws-region: us-east-2
 
       - name: Start deploy notification
@@ -46,9 +58,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Resolve backend API base URL
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: |
-          API_ID=$(aws apigateway get-rest-apis --query "items[?name=='branch-api'].id | [0]" --output text)
-          echo "NEXT_PUBLIC_API_BASE_URL=https://$API_ID.execute-api.us-east-2.amazonaws.com/prod" >> "$GITHUB_ENV"
+          # Set vars.API_BASE_URL once the API's custom domain is live; until then
+          # fall back to the generated execute-api URL.
+          if [ -n "$API_BASE_URL" ]; then
+            echo "NEXT_PUBLIC_API_BASE_URL=$API_BASE_URL" >> "$GITHUB_ENV"
+          else
+            API_ID=$(aws apigateway get-rest-apis --query "items[?name=='branch-api'].id | [0]" --output text)
+            echo "NEXT_PUBLIC_API_BASE_URL=https://$API_ID.execute-api.us-east-2.amazonaws.com/prod" >> "$GITHUB_ENV"
+          fi
 
       # ── Step 1: build ────────────────────────────────────────────
       - name: Build static export

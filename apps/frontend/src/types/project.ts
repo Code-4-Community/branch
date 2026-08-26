@@ -1,3 +1,10 @@
+import {
+  ADMIN_MEMBER_ROLE,
+  DEFAULT_PROJECT_ROLE,
+  PROJECT_ROLES,
+  type MemberDisplayRole,
+  type ProjectRole,
+} from '@branch/rbac';
 import type { Expenditure } from './expenditure';
 
 export interface Project {
@@ -11,14 +18,19 @@ export interface Project {
     created_at: string | null;
 };
 
-export const PROJECT_ROLES = ['Admin', 'Director', 'Student'] as const;
-export type ProjectRole = (typeof PROJECT_ROLES)[number];
+export {
+  ADMIN_MEMBER_ROLE,
+  DEFAULT_PROJECT_ROLE,
+  PROJECT_ROLES,
+  type MemberDisplayRole,
+  type ProjectRole,
+};
 
 export interface Member {
   user_id: number;
   name: string;
   email: string;
-  role: ProjectRole;
+  role: MemberDisplayRole;
   profile_image?: string | null;
 }
 
@@ -56,7 +68,6 @@ export interface ProjectOverview {
    * rule is "admin **or** a Director on this project" — not something the
    * client can work out from the session alone.
    */
-  canEdit: boolean;
 }
 
 /** A user who can be assigned to a project, from `GET /projects/assignable-staff`. */
@@ -67,6 +78,11 @@ export interface AssignableStaff {
   profile_image?: string | null;
 }
 
+export interface MemberAssignment {
+  user_id: number;
+  role: ProjectRole;
+}
+
 /** Body accepted by `POST /projects` and `PUT /projects/{id}`. */
 export interface ProjectWriteBody {
   name: string;
@@ -74,5 +90,5 @@ export interface ProjectWriteBody {
   total_budget: string | null;
   start_date: string | null;
   end_date: string | null;
-  members: number[];
+  members: MemberAssignment[];
 }

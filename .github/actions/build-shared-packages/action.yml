@@ -1,0 +1,32 @@
+name: Build shared lambda packages
+description: >
+  Discover every shared/*/package.json, npm ci + build in @branch-dep
+  order (so a new shared package does not need a new step here), then
+  optionally run each package's test script.
+
+  dist/ is gitignored, so anything that typechecks, tests, or bundles a
+  lambda or the frontend has to run this first or the file: path
+  resolves to a package with no dist.
+
+  Single source of truth on purpose: this logic lived in lambda-tests,
+  lambda-deploy and preview-env separately, and adding @branch/lambda-http
+  updated only the first two -- so preview deploys failed at esbuild with
+  "Could not resolve @branch/lambda-http" while the other two were green.
+
+  Requires actions/checkout to have run.
+
+inputs:
+  test:
+    description: Also run npm test in each shared package that declares a test script
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Build shared packages
+      shell: bash
+      run: |
+        args=()
+        [ "${{ inputs.test }}" = "true" ] && args+=(test)
+        python3 "${GITHUB_ACTION_PATH}/run.py" "${args[@]}"

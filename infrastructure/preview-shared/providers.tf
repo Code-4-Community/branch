@@ -7,6 +7,14 @@ terraform {
   }
 }
 
+module "tags" {
+  source = "../modules/tags"
+}
+
 provider "aws" {
   region = "us-east-2"
+
+  default_tags {
+    tags = module.tags.tags
+  }
 }

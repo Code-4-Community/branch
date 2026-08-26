@@ -2,10 +2,28 @@ import { test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globa
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
-jest.mock('../auth', () => ({
-  ...jest.requireActual<typeof import('../auth')>('../auth'),
-  authenticateRequest: jest.fn(),
-}));
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 import { handler } from '../handler';
 import db from '../db';
@@ -79,6 +97,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
+  await db.destroy();
 });
 
 test("health test 🌞", async () => {

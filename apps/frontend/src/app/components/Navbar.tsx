@@ -1,43 +1,42 @@
 "use client";
 import Image from "next/image";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { PT_Sans } from "next/font/google";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useAuth } from "@/context/AuthContext";
-import { useApi } from "@/hooks/useApi";
+import { useQuery } from "@tanstack/react-query";
+import { projectsQuery } from "@/lib/queries";
+import { usePermissions } from "@/hooks/usePermissions";
+import { authorizeAny, type RbacSubject } from "@branch/rbac";
 import { assetPath } from "@/lib/asset";
-import { normalizePath, projectPath } from "@/lib/routes";
+import { normalizePath, pagePermission, projectPath } from "@/lib/routes";
 import type { ProjectSummary } from "@/types";
 import LoadingState from "./LoadingState";
 
-const ptSans = PT_Sans({ subsets: ["latin"], weight: ["400", "700"] });
-
 // ─── Types & Definitions ──────────────────────────────────────────────────────
 
-export type UserRole = "admin" | "standard" | "limited";
 interface NavItem {
   label: string;
   href?: string;
   action?: "logout";
-  roles?: UserRole[];
   /** Renders the expandable project list beneath this item. */
   submenu?: "projects";
 }
 
-// Every href here must resolve to a real route. "Profile" was removed because
-// no /profile page exists, and "Log Out" is an action rather than a route —
-// keying the special case on `action` means a future /logout page couldn't
-// silently turn the button back into a dead link.
+// Every href here must resolve to a real route. "Log Out" is an action rather
+// than a route — keying the special case on `action` means a future /logout
+// page couldn't silently turn the button back into a dead link. Visibility
+// comes from PAGE_PERMISSIONS, the table AuthGate guards with.
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", roles: ["admin"] },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Projects", href: "/projects", submenu: "projects" },
   { label: "Donors", href: "/donors" },
   { label: "Donations", href: "/donations" },
   { label: "Expenses", href: "/expenses" },
-  { label: "Reports", href: "/reports", roles: ["admin"] },
-  { label: "Accounts", href: "/accounts", roles: ["admin"] },
+  { label: "Reports", href: "/reports" },
+  { label: "Accounts", href: "/accounts" },
+  { label: "Profile", href: "/profile" },
   { label: "Log Out", action: "logout" },
 ];
 
@@ -146,14 +145,12 @@ function ProjectsSubmenu({
 }
 
 /**
- * `roleOverride` exists for tests only — it is named that way so nobody mistakes
- * it for the source of truth again. The role comes from the session, which comes
- * from GET /auth/me; it used to default to "admin", which made the role-based
- * filtering below purely decorative. Hiding a link was never a security control
- * anyway — AuthGate enforces admin routes.
+ * `subjectOverride` is for tests only, and named so nobody mistakes it for the
+ * source of truth. Hiding a link is not a security control — AuthGate refuses
+ * the page and every lambda refuses the request.
  */
 export const NavBar: React.FC<{
-  roleOverride?: UserRole;
+  subjectOverride?: RbacSubject;
   activePath?: string;
   /**
    * Which project the flyout should mark as current. Passed in rather than
@@ -163,15 +160,16 @@ export const NavBar: React.FC<{
    */
   activeProjectId?: number | null;
 }> = ({
-  roleOverride,
+  subjectOverride,
   activePath,
   activeProjectId = null
 }) => {
   const pathname = usePathname?.() ?? "/";
   const currentPath = normalizePath(activePath ?? pathname);
   const router = useRouter();
-  const { logout, isAdmin } = useAuth();
-  const api = useApi();
+  const { logout } = useAuth();
+  const { subject } = usePermissions();
+  const effectiveSubject = subjectOverride ?? subject;
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -180,19 +178,22 @@ export const NavBar: React.FC<{
   // content beside the rail, so opening it automatically would cover the very
   // page the user just navigated to.
   const [projectsOpen, setProjectsOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  // Starts as loading: the menu only renders once expanded, and expanding
-  // always triggers a load — defaulting to false made "No projects yet" flash
-  // before the first response arrived.
-  const [projectsState, setProjectsState] = useState<{ loading: boolean; error: string | null }>({
-    loading: true,
-    error: null,
-  });
-  const hasLoadedProjects = useRef(false);
   const submenuRef = useRef<HTMLLIElement | null>(null);
 
-  const role: UserRole = roleOverride ?? (isAdmin ? "admin" : "standard");
-  const visibleItems = NAV_ITEMS.filter(item => !item.roles || item.roles.includes(role));
+  // Still lazy — `enabled` keeps the request off every page load, exactly as the
+  // old first-expand latch did. What changed is that it now shares `['projects']`
+  // with the page behind the rail, so on /projects, /donations, /expenses and
+  // /reports expanding the flyout costs no request at all.
+  const projectsList = useQuery({ ...projectsQuery(), enabled: projectsOpen });
+  const projects = projectsList.data ?? [];
+
+  // Same table AuthGate guards with, so a link cannot appear for a page that
+  // would then refuse to render.
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (!item.href) return true;
+    const required = pagePermission(item.href);
+    return required === undefined || authorizeAny(effectiveSubject, required).allowed;
+  });
 
   // Compare normalized paths: trailingSlash: true means production sees
   // "/expenses/" where dev and tests see "/expenses". The boundary check stops
@@ -202,27 +203,6 @@ export const NavBar: React.FC<{
     if (currentPath === target) return true;
     return target !== "/" && currentPath.startsWith(`${target}/`);
   };
-
-  // Fetched on first expand rather than on mount: the list is only ever read by
-  // this menu, and eagerly loading it would add a request to every page.
-  const loadProjects = useCallback(async () => {
-    if (hasLoadedProjects.current) return;
-    hasLoadedProjects.current = true;
-    setProjectsState({ loading: true, error: null });
-    try {
-      const rows = await api.get<ProjectSummary[]>("/projects");
-      setProjects(Array.isArray(rows) ? rows : []);
-      setProjectsState({ loading: false, error: null });
-    } catch {
-      // Retryable: clearing the latch lets the next expand try again.
-      hasLoadedProjects.current = false;
-      setProjectsState({ loading: false, error: "Could not load projects" });
-    }
-  }, [api]);
-
-  useEffect(() => {
-    if (projectsOpen) void loadProjects();
-  }, [projectsOpen, loadProjects]);
 
   // Dismiss on outside click and Escape, the two things a flyout must honour.
   useEffect(() => {
@@ -265,7 +245,7 @@ export const NavBar: React.FC<{
         backgroundColor: COLORS.brandGreen,
         display: "flex",
         flexDirection: "column",
-        fontFamily: ptSans.style.fontFamily,
+        fontFamily: "var(--font-body)",
         position: "relative",
         // `visible` so the projects flyout can escape the rail; the background
         // image is clipped by its own wrapper instead.
@@ -275,7 +255,7 @@ export const NavBar: React.FC<{
       {/* Background Image Layer */}
       <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
         <Image
-          src={assetPath("/leaves-bg.png")}
+          src={assetPath("/leaves-bg.webp")}
           alt=""
           fill
           style={{ objectFit: "cover" }}
@@ -379,8 +359,8 @@ export const NavBar: React.FC<{
                   {projectsOpen && (
                     <ProjectsSubmenu
                       projects={projects}
-                      isLoading={projectsState.loading}
-                      error={projectsState.error}
+                      isLoading={projectsList.isPending}
+                      error={projectsList.isError ? "Could not load projects" : null}
                       activeProjectId={activeProjectId}
                       onNavigate={() => setProjectsOpen(false)}
                     />

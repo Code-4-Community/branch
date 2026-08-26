@@ -8,10 +8,11 @@ Lambda for managing users.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /health | Health check |
+| GET | /users/health | Health check |
 | GET | /users |  |
-| GET | /{userId} |  |
-| PATCH | /{userId} |  |
+| GET | /users/{userId} |  |
+| GET | /users/{userId}/photo-upload-url |  |
+| PATCH | /users/{userId} |  |
 | DELETE | /users/{userId} |  |
 | POST | /users |  |
 

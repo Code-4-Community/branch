@@ -12,8 +12,14 @@ data "infisical_secrets" "rds_folder" {
   folder_path  = "/aws/rds"
 }
 
-data "infisical_secrets" "github_folder" {
+data "infisical_secrets" "sentry_folder" {
   env_slug     = "dev"
   workspace_id = var.infisical_workspace_id
-  folder_path  = "/github"
+  folder_path  = "/sentry"
+}
+
+data "infisical_secrets" "grafana_folder" {
+  env_slug     = "dev"
+  workspace_id = var.infisical_workspace_id
+  folder_path  = "/grafana"
 }

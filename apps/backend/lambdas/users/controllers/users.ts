@@ -1,0 +1,351 @@
+import {
+  CognitoIdentityProviderClient,
+  AdminCreateUserCommand,
+  AdminDeleteUserCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
+import { json, reportError, requirePermission, type RouteHandler } from '@branch/lambda-http';
+import db from '../db';
+import { UserValidationUtils } from '../validation-utils';
+import {
+  AVATAR_EXTENSIONS,
+  avatarContentType,
+  avatarKey,
+  isAvatarKeyFor,
+  presignAvatarUpload,
+  resolveProfileImage,
+} from '../photos';
+
+const cognitoClient = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION || 'us-east-2',
+});
+
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
+
+// Authentication and each route's declared permission are enforced by dispatch
+// before these run -- see routes.ts. The two self-service routes below are the
+// exception: `profile:view` / `profile:update` need the target user id, so they
+// are checked here.
+
+/**
+ * Swaps each row's stored `profile_image` for a presigned URL. The bucket
+ * blocks public access, so the key on its own will not load in an `<img>`.
+ */
+async function withResolvedPhotos<T extends { profile_image?: string | null }>(
+  rows: T[],
+): Promise<T[]> {
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      profile_image: await resolveProfileImage(row.profile_image),
+    })),
+  );
+}
+
+export const listUsers: RouteHandler = async ({ event }) => {
+  const queryParams = event.queryStringParameters || {};
+  const page = queryParams.page ? parseInt(queryParams.page, 10) : null;
+  const limit = queryParams.limit ? parseInt(queryParams.limit, 10) : null;
+
+  if (page && limit) {
+    const offset = (page - 1) * limit;
+
+    // The count does not depend on the page, so both go out at once.
+    const [totalCount, users] = await Promise.all([
+      db.selectFrom('branch.users').select(db.fn.count('user_id').as('count')).executeTakeFirst(),
+      db
+        .selectFrom('branch.users')
+        .selectAll()
+        .orderBy('user_id', 'asc')
+        .limit(limit)
+        .offset(offset)
+        .execute(),
+    ]);
+
+    const totalUsers = Number(totalCount?.count || 0);
+    const totalPages = Math.ceil(totalUsers / limit);
+    return json(200, {
+      users: await withResolvedPhotos(users),
+      pagination: {
+        page,
+        limit,
+        totalUsers,
+        totalPages
+      }
+    });
+  }
+
+  const users = await db
+    .selectFrom('branch.users')
+    .selectAll()
+    .execute();
+
+  return json(200, { users: await withResolvedPhotos(users) });
+};
+
+export const getUser: RouteHandler = async ({ params, auth }) => {
+  const userId = params.userId;
+  if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
+
+  const denied = requirePermission(auth.subject, 'profile:view', { userId: Number(userId) });
+  if (denied) return denied;
+
+  const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+  if (!user) return json(404, { message: 'User not found' });
+
+  return json(200, {
+    ok: true,
+    route: 'GET /users/{userId}',
+    pathParams: { userId },
+    body: {
+      userId: user.user_id,
+      email: user.email,
+      name: user.name,
+      isAdmin: user.is_admin,
+      profile_image: await resolveProfileImage(user.profile_image),
+      created_at: user.created_at,
+    }
+  });
+};
+
+/**
+ * GET /users/{userId}/photo-upload-url
+ *
+ * Presigned PUT so the browser uploads the photo straight to S3 and then PATCHes
+ * the returned key onto the user. The lambda never receives the image bytes,
+ * which keeps a large photo under the API Gateway payload limit.
+ *
+ * Handing out a writable URL is part of setting the photo, so this is gated on
+ * `profile:update` rather than `profile:view`.
+ */
+export const getPhotoUploadUrl: RouteHandler = async ({ event, params, auth }) => {
+  const userId = params.userId;
+  if (!/^\d+$/.test(userId)) {
+    return json(400, { message: 'userId must be a positive integer' });
+  }
+
+  const denied = requirePermission(auth.subject, 'profile:update', { userId: Number(userId) });
+  if (denied) return denied;
+
+  const fileName = (event.queryStringParameters || {}).fileName;
+  if (!fileName || typeof fileName !== 'string') {
+    return json(400, { message: 'fileName is required' });
+  }
+
+  const contentType = avatarContentType(fileName);
+  if (!contentType) {
+    return json(400, {
+      message: `Unsupported image type, expected one of: ${AVATAR_EXTENSIONS.join(', ')}`,
+    });
+  }
+
+  const key = avatarKey(Number(userId), fileName);
+  return json(200, {
+    uploadUrl: await presignAvatarUpload(key, contentType),
+    key,
+    contentType,
+  });
+};
+
+export const patchUser: RouteHandler = async ({ event, params, auth }) => {
+  const userId = params.userId;
+  if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
+
+  const denied = requirePermission(auth.subject, 'profile:update', { userId: Number(userId) });
+  if (denied) return denied;
+  const body = event.body ? JSON.parse(event.body) as Record<string, unknown> : {};
+
+  const updates: { name?: string; is_admin?: boolean; profile_image?: string } = {};
+
+  // email is the Cognito username and nothing here syncs it, so it is immutable
+  if (body.email !== undefined && body.email !== null && body.email !== '') {
+    return json(400, { message: 'email cannot be changed' });
+  }
+
+  const nameResult = UserValidationUtils.validateName(body.name);
+  if (!nameResult.isValid) return json(400, { message: nameResult.error });
+  if (nameResult.value != null) updates.name = nameResult.value;
+
+  const isAdminResult = UserValidationUtils.validateIsAdmin(body.isAdmin);
+  if (!isAdminResult.isValid) return json(400, { message: isAdminResult.error });
+  if (isAdminResult.value != null) {
+    // is_admin is a privilege grant, not profile data. `profile:update` above
+    // intentionally lets a non-admin PATCH their own row, so without this
+    // second gate any user could PATCH { isAdmin: true } to their own userId
+    // and self-promote. validateIsAdmin returns value: null when the field is
+    // absent, so ordinary self-service edits are unaffected.
+    const cannotGrant = requirePermission(auth.subject, 'accounts:update');
+    if (cannotGrant) return cannotGrant;
+    updates.is_admin = isAdminResult.value;
+  }
+
+  const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
+  if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
+  if (profileImageResult.value != null) {
+    // Two shapes are legitimate: a key this service minted for *this* user, or
+    // an absolute URL (how the column was populated before uploads existed).
+    // Anything else is refused rather than stored -- a photo key is presigned on
+    // the way out, so accepting an arbitrary key would make PATCH a way to
+    // obtain a readable URL for another user's object, and storing unreadable
+    // junk in the column has no upside either.
+    const isAbsoluteUrl = /^https?:\/\//.test(profileImageResult.value);
+    if (!isAbsoluteUrl && !isAvatarKeyFor(profileImageResult.value, Number(userId))) {
+      return json(400, { message: 'profileImage is not a photo key for this user' });
+    }
+    updates.profile_image = profileImageResult.value;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return json(400, { message: 'No valid fields provided to update' });
+  }
+
+  // One statement does all three jobs: it applies the change, reports whether
+  // the row existed at all, and hands back the updated columns. So there is no
+  // SELECT ahead of it and none behind it. The cost is that a malformed body is
+  // now answered before a bad id — a 400 rather than a 404 — which is the same
+  // precedence every other validated route here already has.
+  const updatedUser = await db
+    .updateTable('branch.users')
+    .set(updates)
+    .where('user_id', '=', Number(userId))
+    .returningAll()
+    .executeTakeFirst();
+
+  if (!updatedUser) return json(404, { message: 'User not found' });
+
+  return json(200, { ok: true, route: 'PATCH /users/{userId}', pathParams: { userId }, body: { email: updatedUser.email, name: updatedUser.name, isAdmin: updatedUser.is_admin, profileImage: await resolveProfileImage(updatedUser.profile_image), created_at: updatedUser.created_at } });
+};
+
+export const deleteUser: RouteHandler = async ({ params }) => {
+  const userId = params.userId;
+  if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
+
+  const user = await db.selectFrom('branch.users').where('user_id', '=', Number(userId)).select('email').executeTakeFirst();
+  if (!user) return json(404, { message: 'User not found' });
+
+  const deleted = await db.deleteFrom('branch.users').where('user_id', '=', Number(userId)).execute();
+
+  if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+    return json(404, { message: 'User not found' });
+  }
+
+  // the Cognito user must go too, or the email can never be re-invited
+  let cognitoDeleted = true;
+  if (!USER_POOL_ID) {
+    console.error('COGNITO_USER_POOL_ID is not set; skipping Cognito delete for', user.email);
+    cognitoDeleted = false;
+  } else {
+    try {
+      await cognitoClient.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: user.email }));
+    } catch (err: any) {
+      if (err?.name !== 'UserNotFoundException') {
+        // The row is gone but the identity is not, so the email cannot be
+        // re-invited. The 200 says so; nothing else would.
+        console.error('Cognito delete error:', err);
+        reportError(err, { email: user.email });
+        cognitoDeleted = false;
+      }
+    }
+  }
+
+  return json(200, { ok: true, route: 'DELETE /users/{userId}', pathParams: { userId }, cognitoDeleted });
+};
+
+export const createUser: RouteHandler = async ({ event }) => {
+  const body = event.body
+    ? (JSON.parse(event.body) as Record<string, unknown>)
+    : {};
+
+  // email, name, and isAdmin are required on create
+  if (!body.email || !body.name || body.isAdmin === undefined || body.isAdmin === null) {
+    return json(400, { message: 'email, name, and isAdmin are required' });
+  }
+
+  // validate the type/format of each field
+  const emailResult = UserValidationUtils.validateEmail(body.email);
+  if (!emailResult.isValid) return json(400, { message: emailResult.error });
+
+  const nameResult = UserValidationUtils.validateName(body.name);
+  if (!nameResult.isValid) return json(400, { message: nameResult.error });
+
+  const isAdminResult = UserValidationUtils.validateIsAdmin(body.isAdmin);
+  if (!isAdminResult.isValid) return json(400, { message: isAdminResult.error });
+
+  const profileImageResult = UserValidationUtils.validateProfileImage(body.profileImage);
+  if (!profileImageResult.isValid) return json(400, { message: profileImageResult.error });
+
+  const email = emailResult.value as string;
+  const name = nameResult.value as string;
+  const isAdmin = isAdminResult.value as boolean;
+  const profile_image = profileImageResult.value ?? undefined;
+
+  // Check if user with this email already exists in DB
+  const existingUser = await db
+    .selectFrom('branch.users')
+    .where('email', '=', email)
+    .selectAll()
+    .executeTakeFirst();
+
+  if (existingUser) {
+    return json(409, { message: 'User with this email already exists' });
+  }
+
+  // Create user in Cognito via AdminCreateUser — sends invite email with temp password
+  let cognitoSub: string;
+  try {
+    const cognitoResponse = await cognitoClient.send(new AdminCreateUserCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: email,
+      DesiredDeliveryMediums: ['EMAIL'],
+      UserAttributes: [
+        { Name: 'email', Value: email },
+        { Name: 'email_verified', Value: 'true' },
+        { Name: 'name', Value: name },
+      ],
+    }));
+    const sub = cognitoResponse.User?.Attributes?.find(a => a.Name === 'sub')?.Value;
+    if (!sub) throw new Error('No sub returned from AdminCreateUser');
+    cognitoSub = sub;
+  } catch (err: any) {
+    console.error('Cognito AdminCreateUser error:', err);
+    if (err.name === 'UsernameExistsException') {
+      return json(409, { message: 'User with this email already exists' });
+    }
+    reportError(err);
+    return json(500, { message: 'Failed to create user in authentication service' });
+  }
+
+  // Insert into database with cognito_sub
+  try {
+    await db
+      .insertInto('branch.users')
+      .values({ cognito_sub: cognitoSub, email, name, is_admin: isAdmin, profile_image })
+      .execute();
+  } catch (err: any) {
+    console.error('Database insert error:', err);
+    // Rollback: delete Cognito user to keep systems in sync
+    try {
+      await cognitoClient.send(new AdminDeleteUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: email,
+      }));
+      console.log('Rolled back Cognito user after database failure');
+    } catch (rollbackErr) {
+      // Orphaned Cognito user: no DB row, and the email is now unusable.
+      console.error('Failed to rollback Cognito user:', rollbackErr);
+      reportError(rollbackErr, { email });
+    }
+    reportError(err);
+    return json(500, { message: 'Failed to create user' });
+  }
+
+  return json(201, {
+    ok: true,
+    route: 'POST /users',
+    pathParams: {},
+    body: {
+      email,
+      name,
+      isAdmin,
+    },
+  });
+};

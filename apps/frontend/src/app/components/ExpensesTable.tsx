@@ -3,6 +3,9 @@
 import { Expenditure } from '@/types';
 import DataTable, { type DataTableColumn } from './DataTable';
 import StatusBadge from './StatusBadge';
+import RowDeleteButton from './RowDeleteButton';
+import Tooltip from './Tooltip';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface ExpensesTableProps {
   expenditures: Expenditure[];
@@ -13,6 +16,8 @@ interface ExpensesTableProps {
   projectNames?: Record<number, string>;
   onViewReceipt?: (expenditure: Expenditure) => void;
   onRowClick?: (expenditure: Expenditure) => void;
+  /** Adds a trailing trash column. Omit it and no delete column renders. */
+  onDelete?: (expenditure: Expenditure) => void;
   /** Fills the body with skeleton rows, keeping the header and widths in place. */
   isLoading?: boolean;
   /** Set this to the page size so the table does not resize when data lands. */
@@ -33,9 +38,12 @@ export default function ExpensesTable({
   projectNames = {},
   onViewReceipt,
   onRowClick,
+  onDelete,
   isLoading = false,
   skeletonRows = 5,
 }: ExpensesTableProps) {
+  const { why } = usePermissions();
+
   // Percentages are shared out among whichever columns are on, so dropping one
   // widens the rest instead of leaving a gap at the end of the row.
   const widths = showProject
@@ -128,6 +136,38 @@ export default function ExpensesTable({
       // Matches the pill the loaded row shows rather than a text bar.
       skeleton: { width: '81px', height: 29, className: '!rounded-[14px]' },
     },
+    // Fixed px rather than a percentage: the width maps above already account
+    // for 100%, and a px column lets the rest keep their existing proportions.
+    ...(onDelete
+      ? [
+          {
+            key: 'actions',
+            header: '',
+            width: '56px',
+            align: 'center' as const,
+            // Disabled with the policy's own wording rather than hidden: the
+            // row is right there, so an absent trash icon reads as a bug. The
+            // tooltip is the same sentence the API would return.
+            cell: (e: Expenditure) => {
+              const reason = why('expense:delete', {
+                projectId: e.project_id,
+                enteredBy: e.entered_by ?? null,
+                status: e.status,
+              });
+              return (
+                <Tooltip label={reason} wrapsDisabledControl={reason !== undefined}>
+                  <RowDeleteButton
+                    label={`Delete expense #${String(e.expenditure_id).padStart(6, '0')}`}
+                    disabled={reason !== undefined}
+                    onClick={() => onDelete(e)}
+                  />
+                </Tooltip>
+              );
+            },
+            skeleton: { width: '32px' },
+          },
+        ]
+      : []),
   ];
 
   return (

@@ -5,9 +5,11 @@ import {
   classifyRoute,
   landingPathFor,
   normalizePath,
-  requiresAdmin,
+  pagePermission,
   safeNextPath,
 } from '@/lib/routes';
+import { can } from '@branch/rbac';
+import { adminSubject, anonymousSubject, directorSubject, memberSubject } from '../rbac';
 
 describe('normalizePath', () => {
   it.each([
@@ -52,35 +54,73 @@ describe('classifyRoute', () => {
   });
 });
 
-describe('requiresAdmin', () => {
+/** Would this subject be let into this page by AuthGate? */
+function reaches(subject: Parameters<typeof can>[0], path: string): boolean {
+  const required = pagePermission(path);
+  return required === undefined || (can as (s: typeof subject, a: typeof required) => boolean)(subject, required);
+}
+
+describe('pagePermission', () => {
+  it.each([
+    ['/dashboard', 'dashboard:view'],
+    ['/dashboard/', 'dashboard:view'],
+    ['/reports/', 'reports:view'],
+    ['/accounts', 'accounts:view'],
+    ['/donors', 'donors:view'],
+    ['/expenses', 'expenses:view'],
+    ['/projects/7', 'projects:view'],
+  ])('maps %s to %s', (path, action) => {
+    expect(pagePermission(path)).toBe(action);
+  });
+
+  it('does not match a lookalike prefix', () => {
+    expect(pagePermission('/reports-archive')).toBeUndefined();
+  });
+
   it.each(['/dashboard', '/dashboard/', '/reports/', '/accounts'])(
-    'requires admin for %s',
+    'keeps %s admin-only',
     (path) => {
-      expect(requiresAdmin(path)).toBe(true);
+      expect(reaches(adminSubject(), path)).toBe(true);
+      expect(reaches(directorSubject(), path)).toBe(false);
+      expect(reaches(memberSubject(), path)).toBe(false);
     },
   );
 
-  // Non-admins submit expenses, so the page itself is not admin-gated; only the
-  // approve/deny controls inside the review modal are.
-  it.each(['/donors', '/projects/7', '/reports-archive', '/expenses', '/expenses/123'])(
-    'does not require admin for %s',
+  it('opens /donors to admins and directors but not to students', () => {
+    expect(reaches(adminSubject(), '/donors')).toBe(true);
+    expect(reaches(directorSubject(), '/donors')).toBe(true);
+    expect(reaches(memberSubject(), '/donors')).toBe(false);
+  });
+
+  // Non-admins submit expenses and read their own projects, so these pages are
+  // reachable by anyone signed in; the rows and controls inside are scoped.
+  it.each(['/projects/7', '/expenses', '/expenses/123', '/donations'])(
+    'lets any signed-in user reach %s',
     (path) => {
-      expect(requiresAdmin(path)).toBe(false);
+      expect(reaches(memberSubject(), path)).toBe(true);
     },
   );
+
+  it('lets nobody through while signed out', () => {
+    for (const path of ['/dashboard', '/donors', '/expenses', '/projects']) {
+      expect(reaches(anonymousSubject, path)).toBe(false);
+    }
+  });
 });
 
 describe('landingPathFor', () => {
   it('sends an admin to the dashboard', () => {
-    expect(landingPathFor(true)).toBe(ADMIN_LANDING_PATH);
+    expect(landingPathFor(adminSubject())).toBe(ADMIN_LANDING_PATH);
   });
 
   it('sends everyone else somewhere they can actually load', () => {
     // Regression guard: the landing route was /dashboard for every role, so
     // making the dashboard admin-only dropped non-admins on the no-access panel
     // the instant they signed in.
-    expect(landingPathFor(false)).toBe(DEFAULT_LANDING_PATH);
-    expect(requiresAdmin(DEFAULT_LANDING_PATH)).toBe(false);
+    for (const subject of [directorSubject(), memberSubject(), anonymousSubject]) {
+      expect(landingPathFor(subject)).toBe(DEFAULT_LANDING_PATH);
+    }
+    expect(reaches(memberSubject(), DEFAULT_LANDING_PATH)).toBe(true);
   });
 });
 

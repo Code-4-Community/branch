@@ -3,13 +3,22 @@
 import { useMemo } from 'react';
 import { createListCollection, Portal, Select } from '@chakra-ui/react';
 
+/**
+ * Options are plain strings where the label *is* the value. Pass the object
+ * form when the two differ — selecting a donor by name has to yield its id,
+ * and organization names are not unique.
+ */
+export type DropdownOption = string | { label: string; value: string };
+
 interface DropdownSelectorProps {
-  options: string[];
+  options: DropdownOption[];
   placeholder?: string;
   multiSelect?: boolean;
   value?: string | string[];
   onChange?: (value: string | string[]) => void;
   hideTrigger?: boolean;
+  disabled?: boolean;
+  ariaLabel?: string;
 }
 
 export default function DropdownSelector({
@@ -19,9 +28,16 @@ export default function DropdownSelector({
   value,
   onChange,
   hideTrigger = false,
+  disabled = false,
+  ariaLabel,
 }: DropdownSelectorProps) {
   const collection = useMemo(
-    () => createListCollection({ items: options.map((o) => ({ label: o, value: o })) }),
+    () =>
+      createListCollection({
+        items: options.map((o) =>
+          typeof o === 'string' ? { label: o, value: o } : o,
+        ),
+      }),
     [options],
   );
 
@@ -38,12 +54,14 @@ export default function DropdownSelector({
       <Select.Root
         collection={collection}
         multiple={multiSelect}
+        disabled={disabled}
         value={controlledValue}
         onValueChange={handleValueChange}
         open={hideTrigger ? true : undefined}
         closeOnSelect={!multiSelect && !hideTrigger}
       >
         <Select.Trigger
+          aria-label={ariaLabel}
           style={
             hideTrigger
               ? {
@@ -62,7 +80,7 @@ export default function DropdownSelector({
           className={
             hideTrigger
               ? ''
-              : 'flex !w-full items-center justify-between !rounded !border !border-black-200 !bg-core-white !px-3 !py-2 !h-10 cursor-pointer !shadow-none !text-black-700 !font-body !text-body'
+              : 'flex !w-full items-center justify-between !rounded !border !border-black-200 !bg-core-white !px-3 !py-2 !h-10 cursor-pointer !shadow-none !text-black-700 !font-body !text-body data-[disabled]:cursor-not-allowed data-[disabled]:!opacity-60'
           }
         >
           {!hideTrigger && (
@@ -83,8 +101,7 @@ export default function DropdownSelector({
 
         <Portal>
           <Select.Positioner style={{ width: 'var(--reference-width)', left:"3px" }}>
-            <Select.Content className="!rounded !border !border-black-200 !bg-core-white !shadow-none !p-0 !mt-0.5 !font-body !text-body">
-              {collection.items.map((item) =>
+          <Select.Content className="!rounded !border !border-black-200 !bg-core-white !shadow-none !p-0 !mt-0.5 !font-body !text-body !max-h-[176px] !overflow-y-auto">              {collection.items.map((item) =>
                 multiSelect ? (
                   <Select.Item
                     key={item.value}

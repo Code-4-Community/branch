@@ -1,29 +1,41 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
+import db from '../db';
 
 // mock auth only for now
-jest.mock('../auth');
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 import { handler } from '../handler';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (requiredAccess === 'PUBLIC') return { allowed: true };
-  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
-  if (requiredAccess === 'ADMIN') {
-    const isAdmin = authContext.user.isAdmin ?? false;
-    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
-  }
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
-  }
-  return { allowed: false, reason: 'Unknown access level' };
-});
+
+jest.mock('../mailer');
+import { sendExpenseStatusEmail } from '../mailer';
+const mockSendExpenseStatusEmail = sendExpenseStatusEmail as jest.MockedFunction<typeof sendExpenseStatusEmail>;
 
 const pool = new Pool({
   host: 'localhost',
@@ -85,35 +97,35 @@ const adminUser = {
   },
 };
 
-// Non-admin user 1: has Director role on project 1
+// Non-admin user 4: has Director role on project 1
 const directorUser = {
   isAuthenticated: true as const,
   user: {
     cognitoSub: 'director-sub',
-    userId: 1,
-    email: 'ashley@branch.org',
+    userId: 4,
+    email: 'sam@branch.org',
     isAdmin: false,
   },
 };
 
-// Non-admin user 2: also has Director role on project 1
+// Non-admin user 5: also has Director role on project 1
 const secondDirectorUser = {
   isAuthenticated: true as const,
   user: {
     cognitoSub: 'second-director-sub',
-    userId: 2,
-    email: 'renee@branch.org',
+    userId: 5,
+    email: 'priya@branch.org',
     isAdmin: false,
   },
 };
 
-// Non-admin user 3: has Student role on project 2, no role on project 1
+// Non-admin user 6: has Student role on project 2, no role on project 1
 const studentUser = {
   isAuthenticated: true as const,
   user: {
     cognitoSub: 'student-sub',
-    userId: 3,
-    email: 'nour@branch.org',
+    userId: 6,
+    email: 'diego@branch.org',
     isAdmin: false,
   },
 };
@@ -175,6 +187,7 @@ describe('Expenditures integration tests', () => {
 
   afterAll(async () => {
     await pool.end();
+    await db.destroy();
   });
 
   describe('Health check', () => {
@@ -215,17 +228,27 @@ describe('Expenditures integration tests', () => {
     test('201: a second Director on the same project can create expenditure', async () => {
       mockAuthenticateRequest.mockResolvedValue(secondDirectorUser);
 
-      // User 2 is also a Director on project 1
+      // User 5 is also a Director on project 1
       const res = await handler(postEvent({ projectID: 1, amount: 750 }));
       expect(res.statusCode).toBe(201);
-      expect(JSON.parse(res.body).body.enteredBy).toBe(2);
+      expect(JSON.parse(res.body).body.enteredBy).toBe(5);
     });
 
-    test('403: Student cannot create expenditure on their project', async () => {
+    // Filing an expense is open to any member of the project now -- it used to
+    // require Director/Admin, which left students with nothing to submit with.
+    test('201: Student can create an expenditure on their own project', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
 
       const res = await handler(postEvent({ projectID: 2, amount: 500 }));
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(201);
+    });
+
+    test('201: a non-admin cannot file an expenditure as already approved', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+
+      const res = await handler(postEvent({ projectID: 2, amount: 500, status: 'approved' }));
+      expect(res.statusCode).toBe(201);
+      expect(JSON.parse(res.body).body.status).toBe('pending');
     });
 
     test('403: user with no membership on project is rejected', async () => {
@@ -545,36 +568,54 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    test('403: Student cannot delete an expenditure on a project they have no role on', async () => {
+    // 404 rather than 403: a row the caller cannot see must not be confirmed
+    // to exist by the status code.
+    test('404: a user with no membership on the project cannot even see it', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
       const id = await firstExpenditureId(1); // studentUser has no membership on project 1
 
       const res = await handler(idRequestEvent('DELETE', id));
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(404);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('403: Student role on their own project is still not sufficient to delete', async () => {
+    test('403: a member of the project who did not submit it cannot delete', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
-      const id = await firstExpenditureId(2); // studentUser is Student on project 2
+      const id = await firstExpenditureId(2); // entered_by 5; studentUser is user 6
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(403);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('200: Director can delete an expenditure on their own project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(directorUser);
+    // The seeded expenditures on project 1 are already approved, which is the
+    // point: directing the project does not thaw them, and neither does having
+    // submitted them.
+    test('403: an approved expenditure is frozen even for its submitter', async () => {
+      mockAuthenticateRequest.mockResolvedValue(directorUser); // user 4, submitted it
       const id = await firstExpenditureId(1);
 
       const res = await handler(idRequestEvent('DELETE', id));
-      expect(res.statusCode).toBe(200);
-      expect(await expenditureExists(id)).toBe(false);
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toMatch(/Approved expenses/);
+      expect(await expenditureExists(id)).toBe(true);
     });
 
-    test('200: a second Director can delete an expenditure on their own project', async () => {
-      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser);
-      const id = await firstExpenditureId(1);
+    test('403: a Director on the project cannot delete an expenditure they did not submit', async () => {
+      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser); // user 5, on project 1
+      const id = await firstExpenditureId(1); // entered_by 4
+
+      const res = await handler(idRequestEvent('DELETE', id));
+      expect(res.statusCode).toBe(403);
+      expect(await expenditureExists(id)).toBe(true);
+    });
+
+    // Seeded expenditure 5 is project 3, entered_by 6, still pending. User 6
+    // has no membership there, so this also covers the author keeping access
+    // to what they filed after leaving a project.
+    test('200: the submitter can delete their own pending expenditure', async () => {
+      mockAuthenticateRequest.mockResolvedValue(studentUser);
+      const id = await firstExpenditureId(3);
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(200);
@@ -628,39 +669,53 @@ describe('Expenditures integration tests', () => {
       return result.rows[0]?.status;
     }
 
+    // Seeded pending row, so the two success cases below really do move a
+    // status. Expenditure 1 is seeded approved and is used for the rejection
+    // cases, where the point is that nothing changes.
+    const PENDING_ID = 5;
+
     test('200: admin approves a pending expenditure', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
-      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+      expect(await getStatus(PENDING_ID)).toBe('pending');
+      const res = await handler(patchStatusEvent(PENDING_ID, { status: 'approved' }));
 
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body).body.status).toBe('approved');
       // confirms it persisted to the database
-      expect(await getStatus(1)).toBe('approved');
+      expect(await getStatus(PENDING_ID)).toBe('approved');
     });
 
     test('200: admin declines a pending expenditure', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
-      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
+      expect(await getStatus(PENDING_ID)).toBe('pending');
+      const res = await handler(patchStatusEvent(PENDING_ID, { status: 'denied' }));
 
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.body).body.status).toBe('denied');
-      expect(await getStatus(1)).toBe('denied');
+      expect(await getStatus(PENDING_ID)).toBe('denied');
     });
 
+    // The rejection cases each ask for a status the row does not already hold
+    // and assert the stored value is untouched, so they cannot pass merely
+    // because the request happened to match the seed.
     test('401: unauthenticated request is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
-      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+      const before = await getStatus(1);
+      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
 
       expect(res.statusCode).toBe(401);
-      expect(await getStatus(1)).toBe('pending');
+      expect(before).not.toBe('denied');
+      expect(await getStatus(1)).toBe(before);
     });
 
     test('403: non-admin user is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
-      const res = await handler(patchStatusEvent(1, { status: 'approved' }));
+      const before = await getStatus(1);
+      const res = await handler(patchStatusEvent(1, { status: 'denied' }));
 
       expect(res.statusCode).toBe(403);
-      expect(await getStatus(1)).toBe('pending');
+      expect(before).not.toBe('denied');
+      expect(await getStatus(1)).toBe(before);
     });
 
     test('404: expenditure not found', async () => {
@@ -672,10 +727,11 @@ describe('Expenditures integration tests', () => {
 
     test('400: status not valid is rejected', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const before = await getStatus(1);
       const res = await handler(patchStatusEvent(1, { status: 'pend' }));
 
       expect(res.statusCode).toBe(400);
-      expect(await getStatus(1)).toBe('pending');
+      expect(await getStatus(1)).toBe(before);
     });
 
     test('400: invalid id is rejected', async () => {
@@ -683,6 +739,28 @@ describe('Expenditures integration tests', () => {
       const res = await handler(patchStatusEvent('abc', { status: 'approved' }));
 
       expect(res.statusCode).toBe(400);
+    });
+
+    test('sends an approval email to the seeded submitter', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const id = await firstExpenditureId(1); // entered_by = 4 → sam@branch.org
+    
+      const res = await handler(patchStatusEvent(id, { status: 'approved' }));
+    
+      expect(res.statusCode).toBe(200);
+      expect(mockSendExpenseStatusEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'sam@branch.org', status: 'approved' }),
+      );
+    });
+    
+    test('does not send an email on needs_more_info', async () => {
+      mockAuthenticateRequest.mockResolvedValue(adminUser);
+      const id = await firstExpenditureId(1);
+    
+      const res = await handler(patchStatusEvent(id, { status: 'needs_more_info' }));
+    
+      expect(res.statusCode).toBe(200);
+      expect(mockSendExpenseStatusEmail).not.toHaveBeenCalled();
     });
   });
 });

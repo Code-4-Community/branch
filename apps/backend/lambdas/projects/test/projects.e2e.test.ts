@@ -2,10 +2,28 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
-jest.mock('../auth', () => ({
-  ...jest.requireActual<typeof import('../auth')>('../auth'),
-  authenticateRequest: jest.fn(),
-}));
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 import { handler } from '../handler';
 import db from '../db';
@@ -45,8 +63,8 @@ beforeAll(async () => {
 });
 
 
-// Non-admin users inserted by the Authorization block after each reseed.
-// The seed creates users 1-3, so these deterministically become 4 and 5.
+// Non-admin users inserted by the Authorization block after each reseed, which
+// fills in their ids -- the seed's own user count is not fixed.
 const nonMemberUser = {
   isAuthenticated: true as const,
   user: { cognitoSub: 'nonmember-sub', userId: 4, email: 'nonmember@branch.org', isAdmin: false },
@@ -115,11 +133,16 @@ describe('Authorization', () => {
   beforeEach(async () => {
     const client = await pool.connect();
     try {
-      await client.query(
+      const { rows } = await client.query(
         `INSERT INTO branch.users (name, email, is_admin) VALUES
            ('Non Member', 'nonmember@branch.org', FALSE),
-           ('Director Member', 'directormember@branch.org', FALSE)`,
+           ('Director Member', 'directormember@branch.org', FALSE)
+         RETURNING user_id, email`,
       );
+      const idFor = (email: string) =>
+        rows.find((r: { email: string }) => r.email === email).user_id;
+      nonMemberUser.user.userId = idFor('nonmember@branch.org');
+      directorMemberUser.user.userId = idFor('directormember@branch.org');
       await client.query(
         `INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours)
          SELECT 1, user_id, 'Director', '2025-01-01', 10 FROM branch.users WHERE email = 'directormember@branch.org'`,
@@ -133,14 +156,14 @@ describe('Authorization', () => {
     mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
     const res = await handler(postEvent({ name: 'Nope' }));
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Admin access required');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('403: non-member cannot read a project', async () => {
     mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
     const res = await handler(getEvent('/projects/1'));
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('You do not have access to this project');
+    expect(JSON.parse(res.body).message).toBe('You are not a member of this project');
   });
 
   test('200: admin lists every project', async () => {
@@ -170,7 +193,7 @@ describe('Authorization', () => {
     mockAuthenticateRequest.mockResolvedValue(nonMemberUser);
     const res = await handler(putEvent('/projects/1', { name: 'X' }));
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('You do not have access to edit this project');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('200: Director member can read their project', async () => {
@@ -180,17 +203,88 @@ describe('Authorization', () => {
     expect(JSON.parse(res.body).project_id).toBe(1);
   });
 
-  test('200: Director member can edit their project', async () => {
+  // Directors lost project editing: `project:update` is admin-only. They keep
+  // read access to the projects they are on, which the test above covers.
+  test('403: Director member can no longer edit their project', async () => {
     mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
     const res = await handler(putEvent('/projects/1', { name: 'Renamed by Director' }));
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).name).toBe('Renamed by Director');
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('403: Director member cannot edit a project they do not belong to', async () => {
     mockAuthenticateRequest.mockResolvedValue(directorMemberUser);
     const res = await handler(putEvent('/projects/2', { name: 'X' }));
     expect(res.statusCode).toBe(403);
+  });
+
+  /**
+   * The staff picker submits bare user ids, and "Director" is derived from these
+   * rows, so defaulting an unspecified role to Student made every ordinary
+   * project edit strip the project's directors of their role -- and with it the
+   * donor roster -- with no UI to put it back.
+   */
+  test('an edit that does not mention roles leaves the existing ones alone', async () => {
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+
+    const client = await pool.connect();
+    let directorId: number;
+    try {
+      const { rows } = await client.query(
+        `SELECT user_id FROM branch.users WHERE email = 'directormember@branch.org'`,
+      );
+      directorId = rows[0].user_id;
+    } finally {
+      client.release();
+    }
+
+    const res = await handler(
+      putEvent('/projects/1', { name: 'Renamed by admin', members: [directorId] }),
+    );
+    expect(res.statusCode).toBe(200);
+
+    const after = await pool.connect();
+    try {
+      const { rows } = await after.query(
+        `SELECT role FROM branch.project_memberships WHERE project_id = 1 AND user_id = $1`,
+        [directorId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].role).toBe('Director');
+    } finally {
+      after.release();
+    }
+  });
+
+  test('an explicit role in the payload still wins', async () => {
+    mockAuthenticateRequest.mockResolvedValue(adminAuthResult);
+
+    const client = await pool.connect();
+    let directorId: number;
+    try {
+      const { rows } = await client.query(
+        `SELECT user_id FROM branch.users WHERE email = 'directormember@branch.org'`,
+      );
+      directorId = rows[0].user_id;
+    } finally {
+      client.release();
+    }
+
+    const res = await handler(
+      putEvent('/projects/1', { members: [{ user_id: directorId, role: 'Student' }] }),
+    );
+    expect(res.statusCode).toBe(200);
+
+    const after = await pool.connect();
+    try {
+      const { rows } = await after.query(
+        `SELECT role FROM branch.project_memberships WHERE project_id = 1 AND user_id = $1`,
+        [directorId],
+      );
+      expect(rows[0].role).toBe('Student');
+    } finally {
+      after.release();
+    }
   });
 });
 
@@ -348,7 +442,7 @@ describe('GET /dashboard (e2e)', () => {
     mockAuthenticateRequest.mockResolvedValue(nonAdminAuthResult);
     const res = await handler(dashboardEvent());
     expect(res.statusCode).toBe(403);
-    expect(JSON.parse(res.body).message).toBe('Admin access required');
+    expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
   });
 
   test('summary aggregates seed totals 🌞', async () => {
@@ -357,8 +451,10 @@ describe('GET /dashboard (e2e)', () => {
     const body = JSON.parse(res.body);
 
     expect(body.summary.totalProjects).toBe(4);
-    expect(body.summary.totalSpent).toBe(18000);
-    expect(body.summary.averageSpendPerProject).toBe(4500);
+    // 14000, not the 18000 the seed spends: one denied and one pending row are
+    // requests rather than spend and stay out of every total.
+    expect(body.summary.totalSpent).toBe(14000);
+    expect(body.summary.averageSpendPerProject).toBe(3500);
   });
 
   test('topExpenseCategory is highest-summed category 🌞', async () => {
@@ -378,7 +474,7 @@ describe('GET /dashboard (e2e)', () => {
     expect(p1.name).toContain('Clinician Communication Study');
     expect(p1.total_budget).toBe(500000);
     expect(p1.spent).toBe(9200);
-    expect(p1.staff_count).toBe(2);
+    expect(p1.staff_count).toBe(5);
     expect(p1.spent_percentage).toBeCloseTo(1.84, 2);
   });
 
@@ -388,7 +484,7 @@ describe('GET /dashboard (e2e)', () => {
     const projB = body.projects.find((p: any) => p.name === 'Proj B');
     expect(projB).toBeDefined();
     expect(projB.spent).toBe(0);
-    expect(projB.staff_count).toBe(0);
+    expect(projB.staff_count).toBe(3);
   });
 
   test('expensesByMonth rows are chronological with numeric amounts 🌞', async () => {

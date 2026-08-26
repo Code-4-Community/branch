@@ -14,11 +14,33 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
+import db from '../db';
 import { handler } from '../handler';
-import { authenticateRequest, checkAuthorization } from '../auth';
+import { authenticateRequest } from '../auth';
 
 
-jest.mock('../auth');
+jest.mock('../auth', () => {
+  // dispatch() resolves the caller through resolveAuth, so an auto-mock would
+  // hand it `undefined` and every route would 500. Only the authenticate half
+  // is faked: the subject is still loaded from the seeded memberships, which is
+  // what makes "director" and "member of this project" mean anything here.
+  const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
+    '@branch/lambda-http',
+  );
+  const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
+    '@branch/lambda-auth',
+  );
+  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const authenticateRequest = jest.fn();
+  return {
+    ...jest.requireActual<typeof import('../auth')>('../auth'),
+    authenticateRequest,
+    resolveAuth: createAuthResolver(
+      authenticateRequest as never,
+      (context) => loadRbacSubject(db as never, context),
+    ),
+  };
+});
 
 jest.mock('@aws-sdk/client-cognito-identity-provider', () => ({
   CognitoIdentityProviderClient: jest.fn().mockImplementation(() => ({
@@ -31,22 +53,8 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => ({
 }));
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
-const mockCheckAuthorization = checkAuthorization as jest.MockedFunction<typeof checkAuthorization>;
 
 
-mockCheckAuthorization.mockImplementation((authContext, requiredAccess, resourceUserId?) => {
-  if (requiredAccess === 'PUBLIC') return { allowed: true };
-  if (!authContext.isAuthenticated || !authContext.user) return { allowed: false, reason: 'Authentication required' };
-  if (requiredAccess === 'ADMIN') {
-    const isAdmin = authContext.user.isAdmin ?? false;
-    return { allowed: isAdmin, reason: isAdmin ? undefined : 'Admin access required' };
-  }
-  if (requiredAccess === 'ADMIN_OR_SELF') {
-    const allowed = (authContext.user.isAdmin ?? false) || authContext.user.userId === Number(resourceUserId);
-    return { allowed, reason: allowed ? undefined : 'Admin access or resource ownership required' };
-  }
-  return { allowed: false, reason: 'Unknown access level' };
-});
 
 const pool = new Pool({
   host: 'localhost',
@@ -85,7 +93,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await db.destroy();
 });
 
 
@@ -218,12 +226,14 @@ test("patch user profile_image test 🌞", async () => {
 test("patch user 404 test 🌞", async () => {
   mockAdminAuth();
   
+  // Body has to be one the handler would otherwise accept: patchUser validates
+  // before it writes, and `email` is immutable, so leaving it in would assert a
+  // 400 under the name of a 404.
   const event = createEvent({
     method: 'PATCH',
-    path: '/4',
+    path: '/99999',
     body: {
-      name: "John Doe",
-      email: "john.doe@example.com"
+      name: "John Doe"
     },
   });
   
@@ -246,7 +256,7 @@ test("get users test", async () => {
   console.log(body);
   expect(body.users).toBeDefined();
   expect(Array.isArray(body.users)).toBe(true);
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 
   const firstUser = body.users[0];
   expect(firstUser.email).toBe("ashley@branch.org");
@@ -285,8 +295,8 @@ test("get users with correct pagnation", async () => {
   expect(body.pagination).toBeDefined();
   expect(body.pagination.page).toBe(1);
   expect(body.pagination.limit).toBe(1);
-  expect(body.pagination.totalUsers).toBe(3);
-  expect(body.pagination.totalPages).toBe(3);
+  expect(body.pagination.totalUsers).toBe(6);
+  expect(body.pagination.totalPages).toBe(6);
 
   expect(body.users).toBeDefined();
   expect(body.users.length).toBe(1);
@@ -317,7 +327,7 @@ test("get users with only page", async () => {
   expect(body.pagination).toBeUndefined();
 
   expect(body.users).toBeDefined();
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 });
 
 
@@ -339,7 +349,7 @@ test("get users with only limit", async () => {
   expect(body.pagination).toBeUndefined();
 
   expect(body.users).toBeDefined();
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 });
 
 test("get users with limit above total user", async () => {
@@ -359,11 +369,11 @@ test("get users with limit above total user", async () => {
   expect(body.pagination).toBeDefined();
   expect(body.pagination.page).toBe(1);
   expect(body.pagination.limit).toBe(100);
-  expect(body.pagination.totalUsers).toBe(3);
+  expect(body.pagination.totalUsers).toBe(6);
   expect(body.pagination.totalPages).toBe(1);
 
   expect(body.users).toBeDefined();
-  expect(body.users.length).toBe(3);
+  expect(body.users.length).toBe(6);
 });
 
 // Wrong path
