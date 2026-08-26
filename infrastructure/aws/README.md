@@ -86,7 +86,6 @@
 | [aws_s3_bucket_versioning.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_versioning) | resource |
 | [aws_s3_object.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_object) | resource |
 | [aws_security_group.rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/security_group) | resource |
-| [aws_ses_email_identity.no_reply](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_email_identity) | resource |
 | [aws_vpc_security_group_egress_rule.rds_all](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_egress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.rds_postgres](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [archive_file.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
