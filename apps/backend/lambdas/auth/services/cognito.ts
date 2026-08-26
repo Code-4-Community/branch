@@ -5,7 +5,7 @@ import {
   InitiateAuthCommandOutput,
   RespondToAuthChallengeCommandOutput,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json } from '@branch/lambda-http';
+import { json, reportError } from '@branch/lambda-http';
 
 // Initialize Cognito client (region defaults to us-east-2)
 export const cognitoClient = new CognitoIdentityProviderClient({
@@ -157,6 +157,10 @@ export function mapCognitoAuthError(
     case 'ForbiddenException':
       return json(403, { message: 'Request blocked', code });
     default:
+      // Every other arm is an expected Cognito outcome; this one is a genuine
+      // failure, and the Sentry layer never sees it because we answer with a
+      // 500 instead of throwing.
+      reportError(error, { stage, code });
       return json(500, { message: 'Authentication failed', error: error?.message, code });
   }
 }

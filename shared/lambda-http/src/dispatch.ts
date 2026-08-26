@@ -3,6 +3,7 @@ import { authorize } from '@branch/rbac';
 import { json } from './response';
 import { matchPattern } from './match';
 import { ANONYMOUS_AUTH } from './authz';
+import { reportError } from './errors';
 import type { DispatchOptions, RequestAuth, Route } from './types';
 
 /**
@@ -22,15 +23,16 @@ export async function dispatch(
   event: any,
   { prefix, routes, resolveAuth }: DispatchOptions,
 ): Promise<APIGatewayProxyResult> {
-  try {
-    const rawPath: string = event.rawPath || event.path || '/';
-    let path = rawPath.replace(/\/+$/, '') || '/';
-    const method = (
-      event.requestContext?.http?.method ||
-      event.httpMethod ||
-      'GET'
-    ).toUpperCase();
+  // Hoisted out of the try so the catch can name the route that failed.
+  const rawPath: string = event?.rawPath || event?.path || '/';
+  let path = rawPath.replace(/\/+$/, '') || '/';
+  const method = (
+    event?.requestContext?.http?.method ||
+    event?.httpMethod ||
+    'GET'
+  ).toUpperCase();
 
+  try {
     // Canonicalize to `/<prefix>...` when the prefix was stripped (dev-server).
     const base = `/${prefix}`;
     if (path !== base && !path.startsWith(`${base}/`)) {
@@ -57,6 +59,9 @@ export async function dispatch(
     return json(404, { message: 'Not Found', path, method });
   } catch (err) {
     console.error('Lambda error:', err);
+    // The layer's wrapHandler only records throws, and catching here is what
+    // gets API Gateway a JSON 500 instead of a 502 -- so hand it over by hand.
+    reportError(err, { method, path });
     return json(500, { message: 'Internal Server Error' });
   }
 }
@@ -73,9 +78,11 @@ async function enforce(
   // A guarded route in a service that never wired up authentication is a
   // deployment bug, not an anonymous request. 500 rather than serving it.
   if (!resolveAuth) {
-    console.error(
+    const err = new Error(
       `Route ${route.method} ${route.pattern} is guarded but the service passed no resolveAuth`,
     );
+    console.error(err.message);
+    reportError(err);
     return { response: json(500, { message: 'Internal Server Error' }) };
   }
 

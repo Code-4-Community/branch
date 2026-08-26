@@ -6,6 +6,7 @@
 | Name | Version |
 |------|---------|
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | 6.14.1 |
+| <a name="requirement_infisical"></a> [infisical](#requirement\_infisical) | 0.17.0 |
 
 ## Providers
 
@@ -13,7 +14,8 @@
 |------|---------|
 | <a name="provider_archive"></a> [archive](#provider\_archive) | n/a |
 | <a name="provider_aws"></a> [aws](#provider\_aws) | 6.14.1 |
-| <a name="provider_infisical"></a> [infisical](#provider\_infisical) | n/a |
+| <a name="provider_aws.us_east_1"></a> [aws.us\_east\_1](#provider\_aws.us\_east\_1) | 6.14.1 |
+| <a name="provider_infisical"></a> [infisical](#provider\_infisical) | 0.17.0 |
 
 ## Modules
 
@@ -26,7 +28,13 @@
 
 | Name | Type |
 |------|------|
+| [aws_acm_certificate.api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/acm_certificate) | resource |
+| [aws_acm_certificate.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/acm_certificate) | resource |
+| [aws_acm_certificate_validation.api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/acm_certificate_validation) | resource |
+| [aws_acm_certificate_validation.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/acm_certificate_validation) | resource |
+| [aws_api_gateway_base_path_mapping.api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_base_path_mapping) | resource |
 | [aws_api_gateway_deployment.branch_deployment](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_deployment) | resource |
+| [aws_api_gateway_domain_name.api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_domain_name) | resource |
 | [aws_api_gateway_gateway_response.cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_gateway_response) | resource |
 | [aws_api_gateway_integration.cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
 | [aws_api_gateway_integration.lambda_integrations](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/api_gateway_integration) | resource |
@@ -62,6 +70,11 @@
 | [aws_iam_role_policy_attachment.lambda_basic](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role_policy_attachment) | resource |
 | [aws_lambda_function.functions](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/lambda_function) | resource |
 | [aws_lambda_permission.api_gateway_permissions](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/lambda_permission) | resource |
+| [aws_route53_record.api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.api_cert_validation](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.frontend_cert_validation](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_zone.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_zone) | resource |
 | [aws_s3_bucket.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.reports_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
@@ -82,15 +95,16 @@
 | [aws_iam_policy_document.ci_preview_assume](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.frontend_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
-| [infisical_secrets.github_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
-| [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
-| [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
-| [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/latest/docs/data-sources/secrets) | data source |
+| [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
+| [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
+| [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_app_domain"></a> [app\_domain](#input\_app\_domain) | Subdomain serving the app; delegated to Route 53 from the registrar | `string` | `""` | no |
+| <a name="input_enable_custom_domain"></a> [enable\_custom\_domain](#input\_enable\_custom\_domain) | Attach the custom domain to CloudFront and API Gateway | `bool` | `false` | no |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
@@ -100,6 +114,9 @@
 | Name | Description |
 |------|-------------|
 | <a name="output_api_gateway_url"></a> [api\_gateway\_url](#output\_api\_gateway\_url) | The URL of the API Gateway |
+| <a name="output_api_url"></a> [api\_url](#output\_api\_url) | Public URL of the API once the custom domain is attached |
+| <a name="output_app_domain_nameservers"></a> [app\_domain\_nameservers](#output\_app\_domain\_nameservers) | Nameservers for the app subdomain; add these as NS records at the registrar |
+| <a name="output_app_url"></a> [app\_url](#output\_app\_url) | Public URL of the app once the custom domain is attached |
 | <a name="output_ci_apply_role_arn"></a> [ci\_apply\_role\_arn](#output\_ci\_apply\_role\_arn) | OIDC role for terraform-apply / lambda-deploy (write, production env only) |
 | <a name="output_ci_migrate_role_arn"></a> [ci\_migrate\_role\_arn](#output\_ci\_migrate\_role\_arn) | OIDC role for the db migrate job (production-db env only) |
 | <a name="output_ci_plan_role_arn"></a> [ci\_plan\_role\_arn](#output\_ci\_plan\_role\_arn) | OIDC role for terraform-plan (read-only) |

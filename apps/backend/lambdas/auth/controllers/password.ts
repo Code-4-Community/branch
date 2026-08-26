@@ -5,7 +5,7 @@ import {
   ConfirmForgotPasswordCommand,
   ConfirmForgotPasswordCommandInput,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { json } from '@branch/lambda-http';
+import { json, reportError } from '@branch/lambda-http';
 import { cognitoClient, USER_POOL_CLIENT_ID } from '../services/cognito';
 
 export async function handleForgotPassword(event: any): Promise<APIGatewayProxyResult> {
@@ -39,6 +39,7 @@ export async function handleForgotPassword(event: any): Promise<APIGatewayProxyR
     if (error.name === 'InvalidParameterException') {
       return json(400, { message: 'Cannot reset password for unverified email. Please verify your email first.' });
     }
+    reportError(error);
     return json(500, { message: 'Failed to initiate password reset' });
   }
 }
@@ -77,6 +78,7 @@ export async function handleResetPassword(event: any): Promise<APIGatewayProxyRe
     if (error.name === 'LimitExceededException') {
       return json(429, { message: 'Too many attempts, please try again later' });
     }
+    reportError(error);
     return json(500, { message: 'Failed to reset password' });
   }
 }

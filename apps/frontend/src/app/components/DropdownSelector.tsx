@@ -17,6 +17,8 @@ interface DropdownSelectorProps {
   value?: string | string[];
   onChange?: (value: string | string[]) => void;
   hideTrigger?: boolean;
+  disabled?: boolean;
+  ariaLabel?: string;
 }
 
 export default function DropdownSelector({
@@ -26,6 +28,8 @@ export default function DropdownSelector({
   value,
   onChange,
   hideTrigger = false,
+  disabled = false,
+  ariaLabel,
 }: DropdownSelectorProps) {
   const collection = useMemo(
     () =>
@@ -50,12 +54,14 @@ export default function DropdownSelector({
       <Select.Root
         collection={collection}
         multiple={multiSelect}
+        disabled={disabled}
         value={controlledValue}
         onValueChange={handleValueChange}
         open={hideTrigger ? true : undefined}
         closeOnSelect={!multiSelect && !hideTrigger}
       >
         <Select.Trigger
+          aria-label={ariaLabel}
           style={
             hideTrigger
               ? {
@@ -74,7 +80,7 @@ export default function DropdownSelector({
           className={
             hideTrigger
               ? ''
-              : 'flex !w-full items-center justify-between !rounded !border !border-black-200 !bg-core-white !px-3 !py-2 !h-10 cursor-pointer !shadow-none !text-black-700 !font-body !text-body'
+              : 'flex !w-full items-center justify-between !rounded !border !border-black-200 !bg-core-white !px-3 !py-2 !h-10 cursor-pointer !shadow-none !text-black-700 !font-body !text-body data-[disabled]:cursor-not-allowed data-[disabled]:!opacity-60'
           }
         >
           {!hideTrigger && (

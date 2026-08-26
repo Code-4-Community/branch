@@ -1,12 +1,16 @@
-import { json, parseBody, requirePermission, RouteHandler } from '@branch/lambda-http';
+import { json, parseBody, requirePermission, RouteHandler, serverError } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
+import { sql, type SqlBool } from 'kysely';
 import db from '../db';
 import { ProjectValidationUtils } from '../validation-utils';
 import { requireVisibleProject } from './project-guard';
 import {
+  ADMIN_ASSIGNMENT_MESSAGE,
   deleteProjectObjects,
+  findAdminUserIds,
   findUnknownUserIds,
   isProjectActive,
+  loadAdminHeadcount,
   loadProjectAggregates,
   syncMemberships,
   toIsoDate,
@@ -21,23 +25,30 @@ import {
 export const listProjects: RouteHandler = async ({ auth }) => {
   // Scoped in SQL rather than by fetching everything and filtering: a non-admin
   // must never receive a row for a project they are not on, not even to drop it.
+  // `= ANY($1)` and not `IN ($1, ..., $n)`: one bound array is one entry in the
+  // plan cache whatever the caller's project count.
   const scope = projectScopeIds(auth.subject);
 
   let query = db.selectFrom('branch.projects').selectAll().orderBy('project_id', 'asc');
-  if (scope) query = query.where('project_id', 'in', scope);
+  if (scope) query = query.where(sql<SqlBool>`project_id = ANY(${scope})`);
   const projects = await query.execute();
 
   // The list cards render "spent / budget", a member count and an
   // active-vs-archived split. Serving those aggregates here keeps the page
   // to one request instead of three per project.
-  const { spent, members } = await loadProjectAggregates(projects.map((p) => p.project_id));
+  const projectIds = projects.map((p) => p.project_id);
+  const [{ spent, members }, { admins, storedAdmins }] = await Promise.all([
+    loadProjectAggregates(projectIds),
+    loadAdminHeadcount(projectIds),
+  ]);
 
   return json(
     200,
     projects.map((p) => ({
       ...p,
       total_spent: spent.get(p.project_id) ?? 0,
-      member_count: members.get(p.project_id) ?? 0,
+      member_count:
+        (members.get(p.project_id) ?? 0) - (storedAdmins.get(p.project_id) ?? 0) + admins,
       is_active: isProjectActive(p.end_date),
     })),
   );
@@ -113,6 +124,10 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
     if (unknownIds.length > 0) {
       return json(400, { message: `Unknown user ids: ${unknownIds.join(', ')}` });
     }
+    const adminIds = await findAdminUserIds(members);
+    if (adminIds.length > 0) {
+      return json(400, { message: ADMIN_ASSIGNMENT_MESSAGE });
+    }
   }
 
   try {
@@ -140,8 +155,7 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
     if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
     return json(200, updatedProject);
   } catch (e) {
-    console.error('Project update failed', e);
-    return json(500, { message: 'Failed to update project' });
+    return serverError(e, 'Failed to update project');
   }
 };
 
@@ -217,6 +231,10 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
   if (unknownIds.length > 0) {
     return json(400, { message: `Unknown user ids: ${unknownIds.join(', ')}` });
   }
+  const adminIds = await findAdminUserIds(members);
+  if (adminIds.length > 0) {
+    return json(400, { message: ADMIN_ASSIGNMENT_MESSAGE });
+  }
 
   try {
     // Creating the project and its roster together: a project that saved
@@ -235,7 +253,6 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
 
     return json(201, inserted);
   } catch (e) {
-    console.error('DB insert failed', e);
-    return json(500, { message: 'Failed to create project' });
+    return serverError(e, 'Failed to create project');
   }
 };

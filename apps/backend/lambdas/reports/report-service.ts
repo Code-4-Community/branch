@@ -132,43 +132,45 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
 
   if (!project) return null;
 
-  const members = await db
-    .selectFrom('branch.project_memberships')
-    .innerJoin('branch.users', 'branch.users.user_id', 'branch.project_memberships.user_id')
-    .where('branch.project_memberships.project_id', '=', projectId)
-    .select([
-      'branch.users.name',
-      'branch.users.email',
-      'branch.project_memberships.role',
-      'branch.project_memberships.hours',
-    ])
-    .execute();
-
-  const donations = await db
-    .selectFrom('branch.project_donations')
-    .innerJoin('branch.donors', 'branch.donors.donor_id', 'branch.project_donations.donor_id')
-    .where('branch.project_donations.project_id', '=', projectId)
-    .select([
-      'branch.donors.organization',
-      'branch.donors.contact_name',
-      'branch.project_donations.amount',
-      'branch.project_donations.donated_at',
-    ])
-    .execute();
-
-  const expenditures = await db
-    .selectFrom('branch.expenditures')
-    .leftJoin('branch.users', 'branch.users.user_id', 'branch.expenditures.entered_by')
-    .where('branch.expenditures.project_id', '=', projectId)
-    .where('branch.expenditures.status', '=', APPROVED_EXPENDITURE_STATUS)
-    .select([
-      'branch.expenditures.category',
-      'branch.expenditures.description',
-      'branch.expenditures.amount',
-      'branch.expenditures.spent_on',
-      'branch.users.name as entered_by_name',
-    ])
-    .execute();
+  // The three below depend only on projectId, so they issue together. The
+  // project read stays ahead of them: it is what turns a bad id into a 404.
+  const [members, donations, expenditures] = await Promise.all([
+    db
+      .selectFrom('branch.project_memberships')
+      .innerJoin('branch.users', 'branch.users.user_id', 'branch.project_memberships.user_id')
+      .where('branch.project_memberships.project_id', '=', projectId)
+      .select([
+        'branch.users.name',
+        'branch.users.email',
+        'branch.project_memberships.role',
+        'branch.project_memberships.hours',
+      ])
+      .execute(),
+    db
+      .selectFrom('branch.project_donations')
+      .innerJoin('branch.donors', 'branch.donors.donor_id', 'branch.project_donations.donor_id')
+      .where('branch.project_donations.project_id', '=', projectId)
+      .select([
+        'branch.donors.organization',
+        'branch.donors.contact_name',
+        'branch.project_donations.amount',
+        'branch.project_donations.donated_at',
+      ])
+      .execute(),
+    db
+      .selectFrom('branch.expenditures')
+      .leftJoin('branch.users', 'branch.users.user_id', 'branch.expenditures.entered_by')
+      .where('branch.expenditures.project_id', '=', projectId)
+      .where('branch.expenditures.status', '=', APPROVED_EXPENDITURE_STATUS)
+      .select([
+        'branch.expenditures.category',
+        'branch.expenditures.description',
+        'branch.expenditures.amount',
+        'branch.expenditures.spent_on',
+        'branch.users.name as entered_by_name',
+      ])
+      .execute(),
+  ]);
 
   return {
     project: {

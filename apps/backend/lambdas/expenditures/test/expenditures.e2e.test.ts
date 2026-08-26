@@ -93,35 +93,35 @@ const adminUser = {
   },
 };
 
-// Non-admin user 1: has Director role on project 1
+// Non-admin user 4: has Director role on project 1
 const directorUser = {
   isAuthenticated: true as const,
   user: {
     cognitoSub: 'director-sub',
-    userId: 1,
-    email: 'ashley@branch.org',
+    userId: 4,
+    email: 'sam@branch.org',
     isAdmin: false,
   },
 };
 
-// Non-admin user 2: also has Director role on project 1
+// Non-admin user 5: also has Director role on project 1
 const secondDirectorUser = {
   isAuthenticated: true as const,
   user: {
     cognitoSub: 'second-director-sub',
-    userId: 2,
-    email: 'renee@branch.org',
+    userId: 5,
+    email: 'priya@branch.org',
     isAdmin: false,
   },
 };
 
-// Non-admin user 3: has Student role on project 2, no role on project 1
+// Non-admin user 6: has Student role on project 2, no role on project 1
 const studentUser = {
   isAuthenticated: true as const,
   user: {
     cognitoSub: 'student-sub',
-    userId: 3,
-    email: 'nour@branch.org',
+    userId: 6,
+    email: 'diego@branch.org',
     isAdmin: false,
   },
 };
@@ -224,10 +224,10 @@ describe('Expenditures integration tests', () => {
     test('201: a second Director on the same project can create expenditure', async () => {
       mockAuthenticateRequest.mockResolvedValue(secondDirectorUser);
 
-      // User 2 is also a Director on project 1
+      // User 5 is also a Director on project 1
       const res = await handler(postEvent({ projectID: 1, amount: 750 }));
       expect(res.statusCode).toBe(201);
-      expect(JSON.parse(res.body).body.enteredBy).toBe(2);
+      expect(JSON.parse(res.body).body.enteredBy).toBe(5);
     });
 
     // Filing an expense is open to any member of the project now -- it used to
@@ -577,7 +577,7 @@ describe('Expenditures integration tests', () => {
 
     test('403: a member of the project who did not submit it cannot delete', async () => {
       mockAuthenticateRequest.mockResolvedValue(studentUser);
-      const id = await firstExpenditureId(2); // entered_by 2; studentUser is user 3
+      const id = await firstExpenditureId(2); // entered_by 5; studentUser is user 6
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(403);
@@ -588,7 +588,7 @@ describe('Expenditures integration tests', () => {
     // point: directing the project does not thaw them, and neither does having
     // submitted them.
     test('403: an approved expenditure is frozen even for its submitter', async () => {
-      mockAuthenticateRequest.mockResolvedValue(directorUser); // user 1, submitted it
+      mockAuthenticateRequest.mockResolvedValue(directorUser); // user 4, submitted it
       const id = await firstExpenditureId(1);
 
       const res = await handler(idRequestEvent('DELETE', id));
@@ -598,15 +598,15 @@ describe('Expenditures integration tests', () => {
     });
 
     test('403: a Director on the project cannot delete an expenditure they did not submit', async () => {
-      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser); // user 2, on project 1
-      const id = await firstExpenditureId(1); // entered_by 1
+      mockAuthenticateRequest.mockResolvedValue(secondDirectorUser); // user 5, on project 1
+      const id = await firstExpenditureId(1); // entered_by 4
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(403);
       expect(await expenditureExists(id)).toBe(true);
     });
 
-    // Seeded expenditure 5 is project 3, entered_by 3, still pending. User 3
+    // Seeded expenditure 5 is project 3, entered_by 6, still pending. User 6
     // has no membership there, so this also covers the author keeping access
     // to what they filed after leaving a project.
     test('200: the submitter can delete their own pending expenditure', async () => {

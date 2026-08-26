@@ -118,11 +118,29 @@ const fakeExpenditure = {
 // Mocks the query chain used by the handler to fetch a single expenditure
 function mockSelectExpenditure(result: any, name?: string) {
   return {
+    // GET /expenditures/{id} reads the row and the submitter and project names
+    // in one joined statement, so those names arrive as columns on the row.
+    innerJoin: jest.fn().mockReturnValue({
+      leftJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          selectAll: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnValue({
+              executeTakeFirst: jest
+                .fn()
+                .mockReturnValue(
+                  result && name
+                    ? { ...result, project_name: name, submitted_by_name: name }
+                    : result,
+                ),
+            }),
+          }),
+        }),
+      }),
+    }),
     where: jest.fn().mockReturnValue({
       selectAll: jest.fn().mockReturnValue({
         executeTakeFirst: jest.fn().mockReturnValue(result),
       }),
-      // GET /expenditures/{id} also looks up the submitter and project names.
       select: jest.fn().mockReturnValue({
         executeTakeFirst: jest.fn().mockReturnValue(name ? { name } : undefined),
       }),
@@ -1008,22 +1026,17 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
     };
   }
 
-  // Sets up selectFrom (existing + updated lookups) and updateTable chains.
+  // The route is one UPDATE ... RETURNING: no row back means no such id, so
+  // `existing: null` is how this expresses "nothing to update".
   function mockExpenditureForPatch(existing: Record<string, unknown> | null, updated?: Record<string, unknown>) {
-    mockDb.selectFrom.mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: (jest.fn() as any)
-            .mockResolvedValueOnce(existing)
-            .mockResolvedValueOnce(updated ?? existing),
-        }),
-      }),
-    });
-
     mockDb.updateTable.mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({
-          execute: (jest.fn() as any).mockResolvedValue(undefined),
+          returningAll: jest.fn().mockReturnValue({
+            executeTakeFirst: (jest.fn() as any).mockResolvedValue(
+              existing === null ? undefined : (updated ?? existing),
+            ),
+          }),
         }),
       }),
     });
@@ -1111,18 +1124,13 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
 
   test('200: admin notes are persisted alongside the status', async () => {
     const setSpy: any = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({ execute: (jest.fn() as any).mockResolvedValue(undefined) }),
-    });
-    mockDb.selectFrom.mockReturnValue({
       where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: (jest.fn() as any)
-            .mockResolvedValueOnce({ expenditure_id: 5, status: 'pending' })
-            .mockResolvedValueOnce({
-              expenditure_id: 5,
-              status: 'needs_more_info',
-              admin_notes: 'Need the itemised receipt',
-            }),
+        returningAll: jest.fn().mockReturnValue({
+          executeTakeFirst: (jest.fn() as any).mockResolvedValue({
+            expenditure_id: 5,
+            status: 'needs_more_info',
+            admin_notes: 'Need the itemised receipt',
+          }),
         }),
       }),
     });

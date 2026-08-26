@@ -82,18 +82,14 @@ function mockExistingUserForPatch(updated?: Record<string, unknown>) {
     profile_image: null,
   };
 
-  mockDb.selectFrom.mockReturnValue({
-    where: jest.fn().mockReturnValue({
-      selectAll: jest.fn().mockReturnValue({
-        executeTakeFirst: (jest.fn() as any).mockResolvedValue(updated ?? existing),
-      }),
-    }),
-  });
-
+  // patchUser writes and reads back in one statement, so the row the handler
+  // answers with is the one the UPDATE's RETURNING produces.
   mockDb.updateTable.mockReturnValue({
     set: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({
-        execute: (jest.fn() as any).mockResolvedValue(undefined),
+        returningAll: jest.fn().mockReturnValue({
+          executeTakeFirst: (jest.fn() as any).mockResolvedValue(updated ?? existing),
+        }),
       }),
     }),
   });
@@ -490,10 +486,13 @@ describe('PATCH /users/{userId} unit tests', () => {
 
   describe('Success Cases', () => {
     test('404: returns 404 when user does not exist', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: (jest.fn() as any).mockResolvedValue(null),
+      // Nothing matched the id, so the UPDATE returns no row.
+      mockDb.updateTable.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returningAll: jest.fn().mockReturnValue({
+              executeTakeFirst: (jest.fn() as any).mockResolvedValue(undefined),
+            }),
           }),
         }),
       });

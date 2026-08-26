@@ -19,7 +19,10 @@
 INSERT INTO branch.users (name, email, is_admin) VALUES
 ('Ashley Duggan', 'ashley@branch.org', TRUE),
 ('Renee Reddy', 'renee@branch.org', TRUE),
-('Nour Shoreibah', 'nour@branch.org', TRUE);
+('Nour Shoreibah', 'nour@branch.org', TRUE),
+('Sam Okafor', 'sam@branch.org', FALSE),
+('Priya Raman', 'priya@branch.org', FALSE),
+('Diego Alvarez', 'diego@branch.org', FALSE);
 
 INSERT INTO branch.projects (name, description, total_budget, start_date, end_date, currency) VALUES
 ('Clinician Communication Study', 'Study of clinician-patient communication patterns', 500000, '2025-01-01', '2026-01-01', 'USD'),
@@ -38,21 +41,21 @@ INSERT INTO branch.project_donations (donor_id, project_id, amount, donated_at) 
 (3, 3, 90000, '2025-06-20');
 
 INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours) VALUES
-(1, 1, 'Director', '2025-01-01', 100.00),
-(1, 2, 'Director', '2025-02-01', 80.00),
-(2, 3, 'Student', '2025-03-15', 60.00);
+(1, 4, 'Director', '2025-01-01', 100.00),
+(1, 5, 'Director', '2025-02-01', 80.00),
+(2, 6, 'Student', '2025-03-15', 60.00);
 
 -- Statuses are load-bearing too. Totals, charts and reports count 'approved'
 -- rows only, so the seed keeps one denied and one pending row: they give the
 -- admin review queue something to show, and they keep the dashboard honest
 -- about what it excludes. 14000 of the 18000 below is approved spend.
 INSERT INTO branch.expenditures (project_id, entered_by, amount, category, description, status, spent_on) VALUES
-(1, 1, 5000, 'Travel', 'Domestic conference attendance', 'approved', '2025-02-10'),
-(1, 1, 4200, 'Travel Foreign', 'International collaborator meeting in London', 'approved', '2025-03-22'),
-(2, 2, 3000, 'General', 'Recording device supplies', 'approved', '2025-04-05'),
-(2, 2, 1500, 'Visitor / Honorarium', 'Guest lecturer honorarium', 'denied', '2025-05-18'),
-(3, 3, 2500, 'General', 'Educational materials', 'pending', '2025-07-12'),
-(3, 3, 1800, 'Travel', 'Local outreach travel', 'approved', '2025-08-03');
+(1, 4, 5000, 'Travel', 'Domestic conference attendance', 'approved', '2025-02-10'),
+(1, 4, 4200, 'Travel Foreign', 'International collaborator meeting in London', 'approved', '2025-03-22'),
+(2, 5, 3000, 'General', 'Recording device supplies', 'approved', '2025-04-05'),
+(2, 5, 1500, 'Visitor / Honorarium', 'Guest lecturer honorarium', 'denied', '2025-05-18'),
+(3, 6, 2500, 'General', 'Educational materials', 'pending', '2025-07-12'),
+(3, 6, 1800, 'Travel', 'Local outreach travel', 'approved', '2025-08-03');
 
 INSERT INTO branch.reports (project_id, title, object_url) VALUES
 (1, 'Clinician Communication Study Report', 'https://s3.amazonaws.com/branch-reports/clinician_communication_study_report.pdf'),

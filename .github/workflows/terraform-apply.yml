@@ -145,7 +145,7 @@ jobs:
       - name: Configure AWS credentials (write apply role via OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::489881683177:role/branch-ci-apply
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/branch-ci-apply
           aws-region: us-east-2
 
       - name: Terraform Init

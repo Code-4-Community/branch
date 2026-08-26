@@ -2,7 +2,7 @@
 
 BRANCH is a non-profit accounting platform (projects, donors, donations, expenditures, reports, users). Nx-managed monorepo: Next.js frontend + AWS Lambda backend microservices + Terraform infra + custom tooling + GitHub Actions automation.
 
-> **Ignore two README.md files when learning the repo.** The root `README.md` is upstream `terraform-docs` boilerplate (not about BRANCH). `apps/frontend/README.md` is `create-next-app` boilerplate. Neither describes this project. AGENTS.md files are the source of truth.
+> **Ignore `apps/frontend/README.md`** — it is `create-next-app` boilerplate and does not describe this project. The root `README.md` is real but intentionally shallow (orientation + quick start); AGENTS.md files remain the source of truth.
 
 > **Keep these docs current.** If a change alters architecture or an established convention — new/removed service or shared package, changed auth/data-access/routing pattern, new build/deploy/CI flow, renamed or moved key paths — update the relevant `AGENTS.md` in the **same PR**. These files are the source of truth for both humans and AI agents; stale docs are worse than none. Pure feature work that follows existing patterns does not need a doc change.
 
@@ -18,7 +18,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 | `shared/rbac/` | `@branch/rbac` — **the** authorization policy, shared by lambdas + frontend | `shared/rbac/README.md` |
 | `shared/lambda-auth/` | `@branch/lambda-auth` — runtime Cognito auth/authz pkg | see backend doc |
 | `shared/lambda-http/` | `@branch/lambda-http` — route table, dispatch, permission enforcement | see backend doc |
-| `infrastructure/` | Terraform: `aws/`, `github/`, `test/` | `infrastructure/AGENTS.md` |
+| `infrastructure/` | Terraform: `aws/`, `github/`, `preview/`, `preview-shared/`, `test/` | `infrastructure/AGENTS.md` |
 | `.github/workflows/` | CI/CD + PR review bot | `.github/AGENTS.md` |
 
 ## Stack
@@ -35,7 +35,7 @@ Four `file:`-linked packages dedupe code across the repo:
 - **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). It is the **single declaration** of those DTOs: `@branch/lambda-auth` depends on this package and re-exports them, so never add a second copy anywhere. `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
 - **`@branch/rbac`** (`shared/rbac/`) — the authorization policy, as one table of rules plus a pure `can`/`authorize`. **The lambdas and the frontend both evaluate this module**, so a disabled button and the 403 behind it cannot disagree. It is the only place a permission is defined; do not re-derive one from `isAdmin` in a component or a controller. Read `shared/rbac/README.md` — it carries the role matrix — before changing who may do what.
 - **`@branch/lambda-auth`** (`shared/lambda-auth/`) — runtime auth: `authenticateRequest(db, event)`, `extractToken(event)`, `loadRbacSubject(db, ctx)` (one query for the caller's memberships, which is also what `GET /auth/me` ships to the browser). Lambdas wrap it in their local `auth.ts`.
-- **`@branch/lambda-http`** (`shared/lambda-http/`) — runtime routing: `dispatch(event, { prefix, routes, resolveAuth })` replaces the old per-lambda if-chain handler with a declarative `Route[]` table (`routes.ts`). Every route declares `access: 'public' | 'authenticated'` or a `permission`, and dispatch enforces it before the controller runs; the union has no default arm, so omitting the gate is a type error. Also exports `json`, `parseBody`, `requirePermission`, `createAuthResolver`. Depends on `@branch/rbac`'s and `@branch/lambda-auth`'s `dist/`, so build those first (`.github/actions/build-shared-packages` does it in order). See `apps/backend/lambdas/AGENTS.md`.
+- **`@branch/lambda-http`** (`shared/lambda-http/`) — runtime routing: `dispatch(event, { prefix, routes, resolveAuth })` replaces the old per-lambda if-chain handler with a declarative `Route[]` table (`routes.ts`). Every route declares `access: 'public' | 'authenticated'` or a `permission`, and dispatch enforces it before the controller runs; the union has no default arm, so omitting the gate is a type error. Also exports `json`, `parseBody`, `requirePermission`, `createAuthResolver`. Depends on `@branch/rbac`'s and `@branch/lambda-auth`'s `dist/`, so build those first (`.github/actions/build-shared-packages` discovers `shared/*/` and builds in `@branch`-dep order). See `apps/backend/lambdas/AGENTS.md`.
 
 ## Root commands
 
