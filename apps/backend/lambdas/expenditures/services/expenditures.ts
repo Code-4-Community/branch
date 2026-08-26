@@ -153,6 +153,14 @@ export async function updateExpenditure(id: number, values: ExpenditureEdit) {
     .executeTakeFirst();
 }
 
+export async function getUserContact(userId: number) {
+  return db
+    .selectFrom('branch.users')
+    .where('user_id', '=', userId)
+    .select(['name', 'email'])
+    .executeTakeFirst();
+}
+
 /** Returns the updated row, or `undefined` when no row carries that id. */
 export async function updateExpenditureStatus(
   id: number,
