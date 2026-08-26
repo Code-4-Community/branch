@@ -743,13 +743,13 @@ describe('Expenditures integration tests', () => {
 
     test('sends an approval email to the seeded submitter', async () => {
       mockAuthenticateRequest.mockResolvedValue(adminUser);
-      const id = await firstExpenditureId(1); // entered_by = 1 → ashley@branch.org
+      const id = await firstExpenditureId(1); // entered_by = 4 → sam@branch.org
     
       const res = await handler(patchStatusEvent(id, { status: 'approved' }));
     
       expect(res.statusCode).toBe(200);
       expect(mockSendExpenseStatusEmail).toHaveBeenCalledWith(
-        expect.objectContaining({ to: 'ashley@branch.org', status: 'approved' }),
+        expect.objectContaining({ to: 'sam@branch.org', status: 'approved' }),
       );
     });
     
