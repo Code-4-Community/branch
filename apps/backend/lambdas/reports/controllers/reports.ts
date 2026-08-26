@@ -12,6 +12,7 @@ import {
   objectUrlFor,
   keyFromObjectUrl,
   reportKeyPrefix,
+  getObjectSize,
 } from '../report-service';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
@@ -87,6 +88,11 @@ export const generateReport: RouteHandler = async ({ event }) => {
     return json(400, { message: `report_type must be one of: ${REPORT_TYPES.join(', ')}` });
   }
 
+  // Optional. Falls back to the auto-generated "<project> — <date>" title
+  // below when omitted or blank, so this is fully backward compatible with
+  // any caller that never sends it.
+  const customTitle = typeof body.title === 'string' ? body.title.trim() : '';
+
   const reportData = await fetchReportData(projectId);
   if (!reportData) {
     return json(404, { message: 'Project not found' });
@@ -108,7 +114,7 @@ export const generateReport: RouteHandler = async ({ event }) => {
     return json(500, { message: 'Failed to upload report' });
   }
 
-  const title = `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+  const title = customTitle || `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
   const record = await saveReportRecord(projectId, objectUrl, title, reportType);
 
   return json(201, {
@@ -165,7 +171,7 @@ export const listReports: RouteHandler = async ({ event }) => {
       : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').limit(limit).offset(offset).execute();
 
     return json(200, {
-      data: reports,
+      data: await withSizes(reports),
       pagination: { page, limit, totalItems, totalPages },
     });
   }
@@ -309,3 +315,8 @@ export const deleteReport: RouteHandler = async ({ params, path, method }) => {
 
   return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id }, fileDeleted });
 };
+
+async function withSizes<T extends { object_url: string }>(rows: T[]) {
+  const sizes = await Promise.all(rows.map((r) => getObjectSize(r.object_url)));
+  return rows.map((r, i) => ({ ...r, file_size: sizes[i] }));
+}

@@ -193,42 +193,40 @@ describe('ReportsPage', () => {
         await user.click(screen.getByRole('button', { name: /^generate$/i }));
         const dialog = await screen.findByRole('dialog');
 
-        await user.click(within(dialog).getByRole('button', { name: /^generate$/i }));
+        // The inner Generate button starts disabled (generateProjectId is empty
+        // until the projects query resolves and the default-selection effect
+        // runs). Clicking before that finishes is a silent no-op, so wait for
+        // it to enable rather than racing the effect.
+        const dialogGenerateButton = within(dialog).getByRole('button', { name: /^generate$/i });
+        await waitFor(() => expect(dialogGenerateButton).not.toBeDisabled());
+
+        await user.click(dialogGenerateButton);
 
         await waitFor(() => {
             expect(apiFetch).toHaveBeenCalledWith(
                 '/reports/generate',
                 expect.objectContaining({
                     method: 'POST',
-                    body: JSON.stringify({ project_id: 1, file_type: 'pdf' }),
+                    // report_type is always sent (defaults to 'technical'), and
+                    // title is only included when a report name was entered --
+                    // neither field is set in this test, so the body carries
+                    // exactly these three keys, not just project_id/file_type.
+                    body: JSON.stringify({ project_id: 1, file_type: 'pdf', report_type: 'technical' }),
                 }),
             );
         });
     });
 
-    it('opens the Upload New Report modal when New Report is clicked', async () => {
+    it('opens the Upload New Report modal when Upload Report is clicked', async () => {
         const user = userEvent.setup();
         mockApiFetchImplementation();
         render(<ReportsPage />);
 
         await screen.findByText('Clinician Communication Study Report');
 
-        await user.click(screen.getByRole('button', { name: /new report/i }));
+        await user.click(screen.getByRole('button', { name: /upload report/i }));
 
         const dialog = await screen.findByRole('dialog');
         expect(within(dialog).getByText('Upload New Report')).toBeInTheDocument();
-    });
-
-    it('switches to the Schedule tab and shows the not-implemented message', async () => {
-        const user = userEvent.setup();
-        mockApiFetchImplementation();
-        render(<ReportsPage />);
-
-        await screen.findByText('Clinician Communication Study Report');
-
-        await user.click(screen.getByRole('button', { name: /schedule/i }));
-
-        expect(await screen.findByText('Schedule view not yet implemented.')).toBeInTheDocument();
-        expect(screen.queryByText('Clinician Communication Study Report')).not.toBeInTheDocument();
     });
 });

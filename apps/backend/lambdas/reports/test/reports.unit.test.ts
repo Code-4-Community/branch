@@ -28,6 +28,9 @@ const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
   PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+  GetObjectCommand: jest
+    .fn()
+    .mockImplementation((params: unknown) => ({ __type: 'GetObject', ...(params as object) })),
   DeleteObjectCommand: jest
     .fn()
     .mockImplementation((params: unknown) => ({ __type: 'DeleteObject', ...(params as object) })),
@@ -47,6 +50,7 @@ jest.mock('../report-service', () => ({
     const prefix = 'https://bucket.s3.us-east-2.amazonaws.com/';
     return objectUrl.startsWith(prefix) ? objectUrl.slice(prefix.length) : null;
   }),
+  getObjectSize: jest.fn(async () => null),
 }));
 
 import { handler } from '../handler';
@@ -187,6 +191,56 @@ describe('POST /reports unit tests', () => {
     const res = await handler(postEvent({ project_id: 1 }));
     expect(res.statusCode).toBe(403);
   });
+
+  test('400: invalid report_type returns 400', async () => {
+    const res = await handler(postEvent({ project_id: 1, report_type: 'summary' }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toContain('report_type');
+  });
+
+  test('201: report_type=narrative is accepted and passed through to saveReportRecord', async () => {
+    mockReportService.saveReportRecord.mockResolvedValue({
+      report_id: 1,
+      report_type: 'narrative',
+      object_url: 'https://s3.example.com/reports/1/ts.pdf',
+    });
+    const res = await handler(postEvent({ project_id: 1, report_type: 'narrative' }));
+    expect(res.statusCode).toBe(201);
+    expect(JSON.parse(res.body).report_type).toBe('narrative');
+    expect(mockReportService.saveReportRecord).toHaveBeenCalledWith(
+      1,
+      expect.any(String),
+      expect.any(String),
+      'narrative',
+    );
+  });
+
+  test('201: a provided title is used as-is instead of the auto-generated one', async () => {
+    const res = await handler(postEvent({ project_id: 1, title: 'Q3 Board Report' }));
+    expect(res.statusCode).toBe(201);
+    expect(mockReportService.saveReportRecord).toHaveBeenCalledWith(
+      1,
+      expect.any(String),
+      'Q3 Board Report',
+      'technical',
+    );
+  });
+
+  test('201: a blank/whitespace title falls back to the auto-generated title', async () => {
+    const res = await handler(postEvent({ project_id: 1, title: '    ' }));
+    expect(res.statusCode).toBe(201);
+    const [, , titleArg] = mockReportService.saveReportRecord.mock.calls[0];
+    expect(titleArg).toContain('Test');
+    expect(titleArg).not.toBe('    ');
+  });
+
+  test('201: an omitted title falls back to the auto-generated "<project> — <date>" title', async () => {
+    const res = await handler(postEvent({ project_id: 1 }));
+    expect(res.statusCode).toBe(201);
+    const [, , titleArg] = mockReportService.saveReportRecord.mock.calls[0];
+    expect(titleArg).toContain('Test');
+    expect(titleArg).toContain('—');
+  });
 });
 
 describe('GET /reports unit tests', () => {
@@ -249,6 +303,51 @@ describe('GET /reports unit tests', () => {
         queryStringParameters: {},
       });
       expect(res.statusCode).toBe(404);
+    });
+
+  });
+
+  // withSizes() is only invoked on the paginated branch of listReports (both
+  // page and limit present) -- the unpaginated branch returns raw rows with no
+  // file_size at all, so these live under Pagination rather than Response format.
+  describe('File sizes (paginated results only)', () => {
+    function mockPaginatedQuery(rows: typeof fakeReports) {
+      mockDb.selectFrom.mockReturnValueOnce({
+        select: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue({ count: String(rows.length) } as any),
+        }),
+      });
+      mockDb.selectFrom.mockReturnValueOnce({
+        selectAll: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              offset: jest.fn().mockReturnValue({
+                execute: jest.fn().mockReturnValue(rows as any),
+              }),
+            }),
+          }),
+        }),
+      });
+    }
+
+    test('200: each report includes file_size sourced from getObjectSize', async () => {
+      mockPaginatedQuery([fakeReports[0]]);
+      mockReportService.getObjectSize.mockResolvedValue(4096);
+
+      const res = await handler(getEvent({ page: '1', limit: '1' }));
+      expect(res.statusCode).toBe(200);
+      const json = JSON.parse(res.body);
+      expect(json.data[0].file_size).toBe(4096);
+      expect(mockReportService.getObjectSize).toHaveBeenCalledWith(fakeReports[0].object_url);
+    });
+
+    test('200: file_size is null when getObjectSize cannot resolve the object', async () => {
+      mockPaginatedQuery([fakeReports[0]]);
+      mockReportService.getObjectSize.mockResolvedValue(null);
+
+      const res = await handler(getEvent({ page: '1', limit: '1' }));
+      const json = JSON.parse(res.body);
+      expect(json.data[0].file_size).toBeNull();
     });
   });
 
@@ -419,6 +518,27 @@ describe('GET /reports/upload-url unit tests', () => {
       expect(res.statusCode).toBe(400);
       expect(JSON.parse(res.body).message).toBe('projectId must be a positive integer');
     });
+
+    test('400: path traversal in fileName is stripped down to the basename, not treated as a path', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: '../../../etc/passwd.pdf', projectId: '1' }));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.objectUrl).toContain('passwd.pdf');
+      expect(body.objectUrl).not.toContain('..');
+      expect(body.objectUrl).not.toContain('etc/passwd');
+    });
+
+    test('400: a fileName with no alphanumeric characters after sanitization is rejected', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: '....', projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Invalid fileName');
+    });
+
+    test('400: a fileName made only of disallowed symbols is rejected as invalid, not as an unsupported extension', async () => {
+      const res = await handler(uploadUrlEvent({ fileName: '***.***', projectId: '1' }));
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).message).toBe('Invalid fileName');
+    });
   });
 
   describe('Business logic', () => {
@@ -486,6 +606,35 @@ describe('Route precedence', () => {
     // generateReport-specific validation, not createReport's 'title is required'.
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).message).toBe('project_id is required');
+  });
+
+  // /reports/{id}/download and /reports/{id} share the numeric-id segment, so
+  // the three-segment download route must be matched before the two-segment
+  // getReport route swallows it as an id lookup with a trailing extra segment.
+  test('GET /reports/{id}/download reaches downloadReport, not the /reports/{id} controller', async () => {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue({
+            report_id: 5,
+            project_id: 1,
+            object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/gen.pdf',
+          } as any),
+        }),
+      }),
+    });
+    const res = await handler({
+      rawPath: '/reports/5/download',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+      queryStringParameters: {},
+    });
+    // downloadReport-specific shape (downloadUrl/expiresIn), not getReport's
+    // { ok, route: 'GET /reports/{id}', body } envelope.
+    expect(res.statusCode).toBe(200);
+    const json = JSON.parse(res.body);
+    expect(json.downloadUrl).toBeDefined();
+    expect(json.route).toBeUndefined();
   });
 });
 
@@ -741,6 +890,93 @@ describe('GET /reports/{id} unit tests', () => {
   });
 });
 
+describe('GET /reports/{id}/download unit tests', () => {
+  function downloadEvent(id: string) {
+    return {
+      rawPath: `/reports/${id}/download`,
+      requestContext: { http: { method: 'GET' } },
+      headers: { Authorization: 'Bearer fake-token' },
+    };
+  }
+
+  const storedReport = {
+    report_id: 5,
+    project_id: 2,
+    title: 'Test Report',
+    object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/2/gen.pdf',
+    report_type: 'technical',
+    date_created: new Date('2025-01-01'),
+  };
+
+  function setupReportMock(report: Record<string, unknown> | undefined) {
+    mockDb.selectFrom = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        selectAll: jest.fn().mockReturnValue({
+          executeTakeFirst: jest.fn().mockReturnValue(report as any),
+        }),
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthenticateRequest.mockResolvedValue(adminAuthContext);
+    setupReportMock(storedReport);
+  });
+
+  describe('Validation', () => {
+    test('404: non-numeric id falls through to catch-all', async () => {
+      const res = await handler(downloadEvent('abc'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('404: negative id falls through to catch-all', async () => {
+      const res = await handler(downloadEvent('-5'));
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('Authentication', () => {
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(downloadEvent('5'));
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).message).toBe('Authentication required');
+    });
+  });
+
+  describe('Business logic', () => {
+    test('404: report does not exist', async () => {
+      setupReportMock(undefined);
+      const res = await handler(downloadEvent('999'));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Report not found');
+    });
+
+    test('403: a non-admin cannot download a report', async () => {
+      mockAuthenticateRequest.mockResolvedValue(nonAdminAuthContext);
+      const res = await handler(downloadEvent('5'));
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
+    });
+
+    test('409: a report whose object_url cannot be resolved into a key under its project prefix is rejected', async () => {
+      setupReportMock({ ...storedReport, object_url: 'https://not-our-bucket.example.com/other/file.pdf' });
+      const res = await handler(downloadEvent('5'));
+      expect(res.statusCode).toBe(409);
+      expect(JSON.parse(res.body).message).toBe('Report is not stored in the reports bucket');
+    });
+
+    test('200: returns a signed downloadUrl and expiresIn for a valid report', async () => {
+      const res = await handler(downloadEvent('5'));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.downloadUrl).toBe('https://presigned.example.com/upload');
+      expect(body.expiresIn).toBe(900);
+    });
+  });
+});
+
 describe('DELETE /reports/{id} unit tests', () => {
   function idEvent(method: 'GET' | 'DELETE', id: string) {
     return {
@@ -844,6 +1080,15 @@ describe('DELETE /reports/{id} unit tests', () => {
       mockMemberships.push({ project_id: 2, role: 'Director' });
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(403);
+    });
+
+    test('200: a report with no object_url deletes cleanly, fileDeleted is true, and S3 is never called', async () => {
+      setupReportMock({ ...fakeReport, object_url: null });
+      const res = await handler(idEvent('DELETE', '5'));
+
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).fileDeleted).toBe(true);
+      expect(mockS3Send).not.toHaveBeenCalled();
     });
 
     describe('the generated file goes with the row', () => {

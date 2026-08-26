@@ -30,6 +30,7 @@ jest.mock('@aws-sdk/client-s3', () => ({
     send: jest.fn().mockReturnValue({} as any),
   })),
   PutObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
+  GetObjectCommand: jest.fn().mockImplementation((params: unknown) => params),
 }));
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn().mockReturnValue('https://presigned.example.com/upload' as any),
@@ -405,6 +406,56 @@ describe('Reports e2e tests', () => {
     });
   });
 
+  describe('GET /reports/{id}/download', () => {
+    function downloadEvent(id: string | number) {
+      return {
+        rawPath: `/reports/${id}/download`,
+        requestContext: { http: { method: 'GET' } },
+        headers: { Authorization: 'Bearer fake-token' },
+      };
+    }
+
+    test('200: returns a signed downloadUrl and expiresIn for a report stored under its project prefix', async () => {
+      // Seed rows aren't guaranteed to sit under reports/<projectId>/ for the
+      // current REPORTS_BUCKET_NAME, so create a report with a known-good
+      // objectUrl first (same pattern as the POST /reports suite) and
+      // download that one rather than assuming anything about seed data.
+      const fakeObjectUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/dl-test-report.pdf';
+      const createRes = await handler({
+        rawPath: '/reports',
+        requestContext: { http: { method: 'POST' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: {},
+        body: JSON.stringify({ title: 'Download Test', projectId: 1, objectUrl: fakeObjectUrl }),
+      });
+      expect(createRes.statusCode).toBe(201);
+      const createdId = JSON.parse(createRes.body).report_id;
+
+      const res = await handler(downloadEvent(createdId));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.downloadUrl).toBe('https://presigned.example.com/upload');
+      expect(body.expiresIn).toBe(900);
+    });
+
+    test('404: non-numeric id falls through to catch-all', async () => {
+      const res = await handler(downloadEvent('abc'));
+      expect(res.statusCode).toBe(404);
+    });
+
+    test('404: unknown id returns 404', async () => {
+      const res = await handler(downloadEvent(99999));
+      expect(res.statusCode).toBe(404);
+      expect(JSON.parse(res.body).message).toBe('Report not found');
+    });
+
+    test('401: unauthenticated request is rejected', async () => {
+      mockAuthenticateRequest.mockResolvedValue({ isAuthenticated: false });
+      const res = await handler(downloadEvent(1));
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   describe('DELETE /reports/{id}', () => {
     function idEvent(method: 'GET' | 'DELETE', id: string | number) {
       return {
@@ -470,6 +521,23 @@ describe('Reports e2e tests', () => {
         expect(result.rows[0].count).toBe(totalBefore - 1);
       } finally {
         client2.release();
+      }
+    });
+
+    test('200: deleting a report whose object_url is not under the reports bucket still deletes the row, fileDeleted false', async () => {
+      // Seed report 5's object_url ('https://s3.amazonaws.com/reports/b.pdf' or
+      // similar legacy-style URL) may not resolve via keyFromObjectUrl against
+      // the current REPORTS_BUCKET_NAME; either way the row must go.
+      const res = await handler(idEvent('DELETE', 2));
+      expect(res.statusCode).toBe(200);
+      expect(typeof JSON.parse(res.body).fileDeleted).toBe('boolean');
+
+      const client = await pool.connect();
+      try {
+        const result = await client.query('SELECT * FROM branch.reports WHERE report_id = 2');
+        expect(result.rows.length).toBe(0);
+      } finally {
+        client.release();
       }
     });
   });
