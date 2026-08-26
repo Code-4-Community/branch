@@ -17,7 +17,7 @@ Application infra. Providers: AWS 6.14.1, Infisical.
 - `s3.tf` — private reports bucket + versioned/encrypted lambda-deployments bucket. The reports bucket was public-read until the lambda role gained `s3:GetObject`; reports are now served only through the presigned `GET /reports/{id}/download`, so nothing may reintroduce a public bucket policy.
 - `frontend_hosting.tf` — static frontend: private S3 bucket + CloudFront (OAC) with an SPA fallback (403/404 → `/index.html`) and an index-rewrite CloudFront Function. The Next.js app is exported (`output: 'export'`) and synced to S3 by the `frontend-deploy` workflow.
 - `oidc.tf` — GitHub OIDC provider + `branch-ci-plan` (read-only) / `branch-ci-apply` (write, `production` env only) roles for CI.
-- `secrets.tf`, `variables.tf` — Infisical data sources (`/aws/rds`, `/sentry`, `/grafana`).
+- `secrets.tf`, `variables.tf` — Infisical datasources (`/aws/rds`, `/sentry`, `/grafana`).
 
 ### `github/` (state key `github/terraform.tfstate`)
 Repo + automation config. Providers: integrations/github ~6.6, Infisical.
