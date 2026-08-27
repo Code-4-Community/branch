@@ -150,6 +150,23 @@ locals {
   ])
 }
 
+# Lambda creates these itself on first invoke, with retention set to "never
+# expire" -- so without declaring them the logs bill grows forever. They already
+# exist, hence the import.
+resource "aws_cloudwatch_log_group" "lambda" {
+  for_each = local.lambda_functions
+
+  name              = "/aws/lambda/branch-${each.key}"
+  retention_in_days = 30
+}
+
+import {
+  for_each = local.lambda_functions
+
+  to = aws_cloudwatch_log_group.lambda[each.key]
+  id = "/aws/lambda/branch-${each.key}"
+}
+
 # Minimal placeholder that will be replaced by GitHub Actions on first deployment
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
