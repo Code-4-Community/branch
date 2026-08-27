@@ -8,7 +8,7 @@ import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
 import db from '../db';
-import { fetchReportData } from '../report-service';
+import { fetchReportData, keyFromObjectUrl, objectUrlFor, reportKeyPrefix } from '../report-service';
 
 const pool = new Pool({
   host: 'localhost',
@@ -64,5 +64,60 @@ describe('fetchReportData', () => {
     const data = await fetchReportData(1);
     const total = data!.expenditures.reduce((sum, e) => sum + parseFloat(e.amount), 0);
     expect(total).toBe(1000);
+  });
+});
+
+// keyFromObjectUrl/objectUrlFor are pure functions but depend on
+// REPORTS_BUCKET_NAME and AWS_REGION at call time, so each test sets its own
+// env rather than relying on a shared beforeAll value.
+describe('objectUrlFor / keyFromObjectUrl', () => {
+  const ORIGINAL_BUCKET = process.env.REPORTS_BUCKET_NAME;
+  const ORIGINAL_REGION = process.env.AWS_REGION;
+
+  beforeEach(() => {
+    process.env.REPORTS_BUCKET_NAME = 'bucket';
+    process.env.AWS_REGION = 'us-east-2';
+  });
+
+  afterAll(() => {
+    process.env.REPORTS_BUCKET_NAME = ORIGINAL_BUCKET;
+    process.env.AWS_REGION = ORIGINAL_REGION;
+  });
+
+  test('objectUrlFor and keyFromObjectUrl round-trip a key', () => {
+    const key = `${reportKeyPrefix(1)}report.pdf`;
+    const url = objectUrlFor(key);
+    expect(keyFromObjectUrl(url)).toBe(key);
+  });
+
+  test('a region-less legacy host still resolves the key, for rows written before objectUrlFor', () => {
+    const legacyUrl = 'https://bucket.s3.amazonaws.com/reports/1/old-report.pdf';
+    expect(keyFromObjectUrl(legacyUrl)).toBe('reports/1/old-report.pdf');
+  });
+
+  test('a non-https URL is rejected', () => {
+    const httpUrl = 'http://bucket.s3.us-east-2.amazonaws.com/reports/1/report.pdf';
+    expect(keyFromObjectUrl(httpUrl)).toBeNull();
+  });
+
+  test('a URL pointed at a different bucket entirely is rejected', () => {
+    const otherBucketUrl = 'https://someone-elses-bucket.s3.us-east-2.amazonaws.com/reports/1/report.pdf';
+    expect(keyFromObjectUrl(otherBucketUrl)).toBeNull();
+  });
+
+  test('a malformed percent-encoded path is caught and returns null rather than throwing', () => {
+    const malformedUrl = 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/%ZZbad.pdf';
+    expect(() => keyFromObjectUrl(malformedUrl)).not.toThrow();
+    expect(keyFromObjectUrl(malformedUrl)).toBeNull();
+  });
+
+  test('a completely invalid URL string returns null rather than throwing', () => {
+    expect(() => keyFromObjectUrl('not a url at all')).not.toThrow();
+    expect(keyFromObjectUrl('not a url at all')).toBeNull();
+  });
+
+  test('an empty path (just the bucket root) returns null', () => {
+    const rootUrl = 'https://bucket.s3.us-east-2.amazonaws.com/';
+    expect(keyFromObjectUrl(rootUrl)).toBeNull();
   });
 });

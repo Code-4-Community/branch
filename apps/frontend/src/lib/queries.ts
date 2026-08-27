@@ -194,3 +194,13 @@ export function queriesForRoute(
 ): QuerySpec[] {
   return routeQueries[normalizePath(pathname)]?.(search) ?? [];
 }
+
+export function reportsAllQuery(): QuerySpec<ReportRow[]> {
+  return {
+    queryKey: ['reports', 'all'] as const,
+    queryFn: async () => {
+      const res = await authedFetch<Paginated<ReportRow>>('/reports', { method: 'GET' });
+      return res.data ?? [];
+    },
+  };
+}

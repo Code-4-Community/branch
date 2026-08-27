@@ -1,5 +1,5 @@
 import db from './db';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import type { TDocumentDefinitions, Content, TableCell } from 'pdfmake/interfaces';
 import {
   Document,
@@ -547,4 +547,16 @@ export async function saveReportRecord(
     .executeTakeFirstOrThrow();
 
   return { report_id: row.report_id, object_url: row.object_url, report_type: row.report_type };
+}
+
+export async function getObjectSize(objectUrl: string): Promise<number | null> {
+  const key = keyFromObjectUrl(objectUrl);
+  if (!key) return null;
+  try {
+    const head = await s3.send(new HeadObjectCommand({ Bucket: getBucketName(), Key: key }));
+    return head.ContentLength ?? null;
+  } catch (err) {
+    console.error('Failed to read object size', key, err);
+    return null;
+  }
 }
