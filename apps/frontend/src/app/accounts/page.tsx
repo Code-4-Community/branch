@@ -16,7 +16,6 @@ import { User } from '@/types';
 export default function AccountsPage() {
   const api = useApi();
   const { user: currentUser } = useAuth();
-
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
