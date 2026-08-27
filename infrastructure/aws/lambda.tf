@@ -150,9 +150,7 @@ locals {
   ])
 }
 
-# Lambda creates these itself on first invoke, with retention set to "never
-# expire" -- so without declaring them the logs bill grows forever. They already
-# exist, hence the import.
+# Lambda creates these itself with never-expire retention; imported since they exist.
 resource "aws_cloudwatch_log_group" "lambda" {
   for_each = local.lambda_functions
 

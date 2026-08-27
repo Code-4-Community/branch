@@ -55,10 +55,6 @@ jobs:
       # created so far is orphaned and the workspace stays locked. The wreckage is
       # a REST API with no `prod` stage, which answers every request with a bare 403
       # carrying no CORS headers -- reaching the browser as an opaque CORS error.
-      # Shared with `teardown`: both drive terraform against the same pr-<N>
-      # workspace, so a separate group per job let a merge fire both at once and
-      # race the DynamoDB state lock. The loser dies on
-      # ConditionalCheckFailedException and the stack leaks.
       group: preview-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     environment: preview
@@ -310,10 +306,7 @@ jobs:
       (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'test-environment'))
     runs-on: ubuntu-latest
     concurrency:
-      # Same group as `deploy` + never cancel: a teardown must always run to
-      # completion, and must never run *alongside* a deploy for the same PR --
-      # they share one terraform workspace. Repeated teardowns (unlabel then
-      # close) queue and no-op on the missing workspace.
+      # Same group as `deploy`: they share one terraform workspace.
       group: preview-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     environment: preview
@@ -361,14 +354,10 @@ jobs:
           terraform workspace select default
           terraform workspace delete "pr-${PR}"
 
-      # always(): if the destroy above failed we still want the frontend and logs
-      # cleaned, rather than compounding a half-destroyed stack with leaked objects.
       - name: Delete frontend prefix + invalidate
         if: always()
         run: |
-          # The trailing slash is load-bearing: `--recursive` treats the argument
-          # as a prefix, so "pr-29" would also match pr-290/, pr-291/ ... and wipe
-          # the frontends of unrelated live previews.
+          # Trailing slash required: without it "pr-29" also matches pr-290/, pr-291/.
           aws s3 rm "s3://${{ steps.shared.outputs.bucket }}/pr-${PR}/" --recursive || true
           if [ -n "${{ steps.shared.outputs.dist_id }}" ] && [ "${{ steps.shared.outputs.dist_id }}" != "None" ]; then
             aws cloudfront create-invalidation \
@@ -376,9 +365,7 @@ jobs:
               --paths "/pr-${PR}/*" --no-cli-pager >/dev/null || true
           fi
 
-      # Lambda auto-creates these on first invoke, so they are not in terraform
-      # state and `terraform destroy` cannot remove them. Left alone they persist
-      # for every PR ever previewed, with never-expire retention.
+      # Not in terraform state, so `terraform destroy` cannot remove them.
       - name: Delete preview log groups
         if: always()
         run: |
@@ -395,9 +382,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Must reflect the real outcome: this previously reported success
-            // unconditionally, so a failed destroy left a live stack behind and
-            // told the PR it had been cleaned up.
             const ok = process.env.OUTCOME === 'success';
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,

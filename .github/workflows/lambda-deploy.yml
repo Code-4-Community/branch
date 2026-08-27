@@ -276,10 +276,7 @@ jobs:
       # plenty: anything older than the last few migrations is better served by
       # point-in-time recovery (backup_retention_period = 7 in
       # infrastructure/aws/main.tf).
-      # Gate on the step having RUN, not having SUCCEEDED: create-db-snapshot comes
-      # before `wait db-snapshot-available`, so a wait that times out leaves a real
-      # snapshot behind on a step marked failed. Gating on success skipped pruning
-      # in exactly the case that created an extra snapshot.
+      # Gate on RAN, not SUCCEEDED: the snapshot exists before the `wait` can fail.
       - name: Prune old pre-migration snapshots (keep 5)
         if: always() && steps.snapshot.outcome != 'skipped'
         continue-on-error: true
