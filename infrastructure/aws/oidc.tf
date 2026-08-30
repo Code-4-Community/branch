@@ -45,17 +45,30 @@ resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# terraform plan is read-only except that it acquires the DynamoDB state lock.
 resource "aws_iam_role_policy" "ci_plan_state_lock" {
   name = "tfstate-lock"
   role = aws_iam_role.ci_plan.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-      Resource = "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/terraform-state-lock"
-    }]
+    Statement = [
+      {
+        Sid      = "DynamoLock"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+        Resource = "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/terraform-state-lock"
+      },
+      {
+        Sid    = "S3Lock"
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = [
+          "arn:aws:s3:::c4c-neu-terraform-state-files/aws/terraform.tfstate.tflock",
+          "arn:aws:s3:::c4c-neu-terraform-state-files/github/terraform.tfstate.tflock",
+          "arn:aws:s3:::c4c-neu-terraform-state-files/preview-shared/terraform.tfstate.tflock",
+          "arn:aws:s3:::c4c-neu-terraform-state-files/test/terraform.tfstate.tflock",
+        ]
+      },
+    ]
   })
 }
 
