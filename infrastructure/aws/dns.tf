@@ -18,6 +18,12 @@ locals {
   attach_dns = local.create_dns && var.enable_custom_domain
   api_domain = local.create_dns ? "api.${var.app_domain}" : ""
 
+  create_zone = local.create_dns && !var.use_existing_hosted_zone
+  lookup_zone = local.create_dns && var.use_existing_hosted_zone
+
+  zone_id           = local.create_zone ? one(aws_route53_zone.app[*].zone_id) : one(data.aws_route53_zone.app[*].zone_id)
+  zone_name_servers = local.create_zone ? one(aws_route53_zone.app[*].name_servers) : one(data.aws_route53_zone.app[*].name_servers)
+
   # Where the app actually answers right now. Falls back to the CloudFront
   # domain so links in the Cognito emails (cognito.tf) work before the custom
   # domain is attached, and follow it automatically once it is.
@@ -25,9 +31,16 @@ locals {
 }
 
 resource "aws_route53_zone" "app" {
-  count = local.create_dns ? 1 : 0
+  count = local.create_zone ? 1 : 0
 
   name = var.app_domain
+}
+
+data "aws_route53_zone" "app" {
+  count = local.lookup_zone ? 1 : 0
+
+  name         = var.app_domain
+  private_zone = false
 }
 
 # CloudFront only accepts certificates from us-east-1, whatever region the rest
@@ -63,7 +76,7 @@ resource "aws_route53_record" "frontend_cert_validation" {
     o.domain_name => o
   } : {}
 
-  zone_id         = aws_route53_zone.app[0].zone_id
+  zone_id         = local.zone_id
   name            = each.value.resource_record_name
   type            = each.value.resource_record_type
   records         = [each.value.resource_record_value]
@@ -77,7 +90,7 @@ resource "aws_route53_record" "api_cert_validation" {
     o.domain_name => o
   } : {}
 
-  zone_id         = aws_route53_zone.app[0].zone_id
+  zone_id         = local.zone_id
   name            = each.value.resource_record_name
   type            = each.value.resource_record_type
   records         = [each.value.resource_record_value]
@@ -122,7 +135,7 @@ resource "aws_api_gateway_base_path_mapping" "api" {
 resource "aws_route53_record" "frontend" {
   count = local.attach_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = var.app_domain
   type    = "A"
 
@@ -136,7 +149,7 @@ resource "aws_route53_record" "frontend" {
 resource "aws_route53_record" "api" {
   count = local.attach_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = local.api_domain
   type    = "A"
 
@@ -148,8 +161,8 @@ resource "aws_route53_record" "api" {
 }
 
 output "app_domain_nameservers" {
-  description = "Nameservers for the app subdomain; add these as NS records at the registrar"
-  value       = local.create_dns ? aws_route53_zone.app[0].name_servers : []
+  description = "Nameservers for the app domain; set these at the registrar, or ignore when the domain is registered in Route 53 Domains"
+  value       = local.create_dns ? local.zone_name_servers : []
 }
 
 output "app_url" {
