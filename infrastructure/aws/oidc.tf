@@ -45,25 +45,15 @@ resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# terraform plan is read-only except that it acquires the state lock. Both lock
-# backends are granted so the S3 `use_lockfile` cutover can land afterwards: the
-# plan role must already be able to write .tflock before any backend.tf switches
-# to it, or the plan that introduces the switch cannot lock and blocks its own
-# merge. The DynamoDB half goes away with that cutover.
+# terraform plan is read-only except that it writes the S3 lock object beside the
+# state (`use_lockfile`). ReadOnlyAccess already covers reading the state; these
+# are the root modules the plan workflow can run.
 resource "aws_iam_role_policy" "ci_plan_state_lock" {
   name = "tfstate-lock"
   role = aws_iam_role.ci_plan.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      {
-        Sid      = "DynamoLock"
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-        Resource = "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/terraform-state-lock"
-      },
-      # ReadOnlyAccess already covers reading the state itself; these are the
-      # root modules the plan workflow can run.
       {
         Sid    = "S3Lock"
         Effect = "Allow"
@@ -227,6 +217,8 @@ resource "aws_iam_role_policy" "ci_preview" {
       # `env:` workspace_key_prefix the state object is
       # env:/pr-<N>/preview/terraform.tfstate (NOT preview/...). ListBucket is
       # unconditioned so `terraform workspace list` (lists the env:/ prefix) works.
+      # The `use_lockfile` .tflock object sits beside the state, so these same
+      # prefixes cover locking.
       {
         Sid      = "PreviewTfStateList"
         Effect   = "Allow"
@@ -241,12 +233,6 @@ resource "aws_iam_role_policy" "ci_preview" {
           "arn:aws:s3:::c4c-neu-terraform-state-files/preview/*",
           "arn:aws:s3:::c4c-neu-terraform-state-files/env:/pr-*/preview/*",
         ]
-      },
-      {
-        Sid      = "PreviewTfStateLock"
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-        Resource = "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/terraform-state-lock"
       },
     ]
   })
