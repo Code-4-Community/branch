@@ -45,9 +45,6 @@ resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# terraform plan is read-only except that it writes the S3 lock object beside the
-# state (`use_lockfile`). ReadOnlyAccess already covers reading the state; these
-# are the root modules the plan workflow can run.
 resource "aws_iam_role_policy" "ci_plan_state_lock" {
   name = "tfstate-lock"
   role = aws_iam_role.ci_plan.id
@@ -217,8 +214,6 @@ resource "aws_iam_role_policy" "ci_preview" {
       # `env:` workspace_key_prefix the state object is
       # env:/pr-<N>/preview/terraform.tfstate (NOT preview/...). ListBucket is
       # unconditioned so `terraform workspace list` (lists the env:/ prefix) works.
-      # The `use_lockfile` .tflock object sits beside the state, so these same
-      # prefixes cover locking.
       {
         Sid      = "PreviewTfStateList"
         Effect   = "Allow"
