@@ -110,15 +110,14 @@ interface AuthContextValue {
 /*
  * Deliberately absent: register / verifyEmail / resendCode.
  *
- * The backend still serves POST /auth/register, /auth/verify-email and
- * /auth/resend-code, but BRANCH has no self-serve signup by design. It is an
- * internal tool with an admin-managed roster, and `is_admin` lives in Postgres —
- * a self-registered user would authenticate but have no meaningful authorization.
- * Onboarding is admin-invite instead: an admin creates a `branch.users` row with
- * a NULL `cognito_sub`, and the invitee's first registration claims it (see
- * claim-on-register in lambdas/auth/handler.ts). AdminCreateUser with a
- * temporary password works too — that path returns NEW_PASSWORD_REQUIRED, which
- * the login page handles, and marks the email verified server-side so no
+ * BRANCH has no self-serve signup by design. It is an internal tool with an
+ * admin-managed roster, and `is_admin` lives in Postgres — a self-registered
+ * user would authenticate but have no meaningful authorization. The backend no
+ * longer serves /auth/register, /auth/verify-email or /auth/resend-code at all:
+ * the pool sets allow_admin_create_user_only, so Cognito SignUp is refused.
+ * Onboarding is admin-invite via POST /users, which calls AdminCreateUser with a
+ * temporary password — that path returns NEW_PASSWORD_REQUIRED, which the login
+ * page handles, and marks the email verified server-side so no
  * verification-code screen is needed.
  *
  * Please don't re-add these to the context without a matching UI; they were

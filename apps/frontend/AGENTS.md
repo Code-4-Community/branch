@@ -83,7 +83,7 @@ Tests: `test/rbac.ts` has `adminSubject` / `directorSubject` / `memberSubject` a
 
 **Challenges.** `login()` returns `{ status: 'authenticated' }` or `{ status: 'challenge', ... }`. `NEW_PASSWORD_REQUIRED` is handled by the login page; the other challenge names are plumbed through `respondToChallenge` and become reachable if MFA is switched on in `infrastructure/aws/cognito.tf`, needing only a UI step.
 
-**No self-serve signup.** The backend still serves `/auth/register`, `/auth/verify-email` and `/auth/resend-code`, but the frontend deliberately does not expose them — see the comment in `AuthContext.tsx`. Onboarding is admin-invite.
+**No self-serve signup.** The pool is admin-create-only, so `/auth/register`, `/auth/verify-email` and `/auth/resend-code` do not exist — see the comment in `AuthContext.tsx`. Onboarding is admin-invite via `POST /users`.
 
 ## Styling
 
