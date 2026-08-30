@@ -88,7 +88,6 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
     sms_message          = "Your BRANCH verification code is {####}"
   }
 
-  # SES once var.enable_ses_email is true; Cognito's shared sender until then.
   email_configuration {
     email_sending_account = local.ses_email ? "DEVELOPER" : "COGNITO_DEFAULT"
     from_email_address    = local.ses_email ? "BRANCH <${local.ses_from_address}>" : null

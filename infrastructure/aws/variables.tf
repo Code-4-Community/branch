@@ -19,8 +19,7 @@ variable "enable_custom_domain" {
   default     = false
 }
 
-# Keep false until DKIM shows Verified in SES and the account is out of the SES
-# sandbox -- flipping it early makes every invitation fail to send.
+# Keep false until DKIM is Verified and the account is out of the SES sandbox.
 variable "enable_ses_email" {
   description = "Send Cognito invitations from SES on var.app_domain instead of Cognito's shared sender"
   type        = bool
