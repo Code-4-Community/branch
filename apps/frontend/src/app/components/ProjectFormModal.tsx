@@ -74,13 +74,7 @@ function validate(values: ProjectFormValues): FieldErrors {
 
   if (!values.startDate) errors.startDate = 'Please select a valid date';
 
-  // End date is optional (open-ended / still in progress). When one is given,
-  // it must not precede the start date.
-  if (
-    values.endDate &&
-    values.startDate &&
-    values.endDate < values.startDate
-  ) {
+  if (values.endDate && values.startDate && values.endDate < values.startDate) {
     errors.endDate = 'Please select a date AFTER the start date';
   }
 
