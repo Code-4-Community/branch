@@ -1,7 +1,7 @@
 variable "aws_account_id" {
   description = "AWS account hosting the BRANCH infrastructure; published as vars.AWS_ACCOUNT_ID"
   type        = string
-  default     = "489881683177"
+  default     = "404813129370"
 }
 
 variable "repository_collaborators" {
