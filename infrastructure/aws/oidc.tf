@@ -56,10 +56,10 @@ resource "aws_iam_role_policy" "ci_plan_state_lock" {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = [
-          "arn:aws:s3:::c4c-neu-terraform-state-files/aws/terraform.tfstate.tflock",
-          "arn:aws:s3:::c4c-neu-terraform-state-files/github/terraform.tfstate.tflock",
-          "arn:aws:s3:::c4c-neu-terraform-state-files/preview-shared/terraform.tfstate.tflock",
-          "arn:aws:s3:::c4c-neu-terraform-state-files/test/terraform.tfstate.tflock",
+          "arn:aws:s3:::branch-tf-state/aws/terraform.tfstate.tflock",
+          "arn:aws:s3:::branch-tf-state/github/terraform.tfstate.tflock",
+          "arn:aws:s3:::branch-tf-state/preview-shared/terraform.tfstate.tflock",
+          "arn:aws:s3:::branch-tf-state/test/terraform.tfstate.tflock",
         ]
       },
     ]
@@ -218,15 +218,15 @@ resource "aws_iam_role_policy" "ci_preview" {
         Sid      = "PreviewTfStateList"
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = "arn:aws:s3:::c4c-neu-terraform-state-files"
+        Resource = "arn:aws:s3:::branch-tf-state"
       },
       {
         Sid    = "PreviewTfState"
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = [
-          "arn:aws:s3:::c4c-neu-terraform-state-files/preview/*",
-          "arn:aws:s3:::c4c-neu-terraform-state-files/env:/pr-*/preview/*",
+          "arn:aws:s3:::branch-tf-state/preview/*",
+          "arn:aws:s3:::branch-tf-state/env:/pr-*/preview/*",
         ]
       },
     ]
