@@ -52,12 +52,6 @@ resource "aws_iam_role_policy" "ci_plan_state_lock" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "DynamoLock"
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-        Resource = "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/terraform-state-lock"
-      },
-      {
         Sid    = "S3Lock"
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
@@ -234,12 +228,6 @@ resource "aws_iam_role_policy" "ci_preview" {
           "arn:aws:s3:::c4c-neu-terraform-state-files/preview/*",
           "arn:aws:s3:::c4c-neu-terraform-state-files/env:/pr-*/preview/*",
         ]
-      },
-      {
-        Sid      = "PreviewTfStateLock"
-        Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-        Resource = "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/terraform-state-lock"
       },
     ]
   })

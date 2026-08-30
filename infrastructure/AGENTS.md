@@ -4,7 +4,7 @@ Terraform for BRANCH. Five independent root modules, each with its own S3-backed
 
 The one exception is bootstrapping a new AWS account: CI assumes `branch-ci-apply`, which `aws/` itself creates, so the first apply in an empty account has to be local with admin credentials.
 
-Common to all modules: Terraform **1.13.0** (`.terraform-version`, tfenv), state in S3 bucket `c4c-neu-terraform-state-files` (region `us-east-2`, DynamoDB lock table `terraform-state-lock`, encrypted). Infisical workspace `d1ee8b80-118c-4daf-ae84-31da43261b76`.
+Common to all modules: Terraform **1.13.0** (`.terraform-version`, tfenv), state in S3 bucket `c4c-neu-terraform-state-files` (region `us-east-2`, encrypted, S3-native locking via `use_lockfile`). A working directory initialized before the DynamoDB-to-S3 lock cutover needs `terraform init -reconfigure` once. Infisical workspace `d1ee8b80-118c-4daf-ae84-31da43261b76`.
 
 ## Modules
 
