@@ -17,6 +17,11 @@ locals {
   create_dns = var.app_domain != ""
   attach_dns = local.create_dns && var.enable_custom_domain
   api_domain = local.create_dns ? "api.${var.app_domain}" : ""
+
+  # Where the app actually answers right now. Falls back to the CloudFront
+  # domain so links in the Cognito emails (cognito.tf) work before the custom
+  # domain is attached, and follow it automatically once it is.
+  app_url = local.attach_dns ? "https://${var.app_domain}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
 }
 
 resource "aws_route53_zone" "app" {
@@ -148,8 +153,8 @@ output "app_domain_nameservers" {
 }
 
 output "app_url" {
-  description = "Public URL of the app once the custom domain is attached"
-  value       = local.attach_dns ? "https://${var.app_domain}" : null
+  description = "Public URL of the app: the custom domain when attached, else the CloudFront domain"
+  value       = local.app_url
 }
 
 output "api_url" {
