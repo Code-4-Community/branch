@@ -107,6 +107,7 @@
 | [aws_iam_policy_document.ci_preview_assume](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.frontend_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/region) | data source |
+| [aws_route53_zone.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/route53_zone) | data source |
 | [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
 | [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
@@ -116,13 +117,14 @@
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_app_domain"></a> [app\_domain](#input\_app\_domain) | Subdomain serving the app; delegated to Route 53 from the registrar | `string` | `""` | no |
+| <a name="input_app_domain"></a> [app\_domain](#input\_app\_domain) | Domain serving the app; apex or subdomain, resolved by a Route 53 zone | `string` | `""` | no |
 | <a name="input_dmarc_report_email"></a> [dmarc\_report\_email](#input\_dmarc\_report\_email) | Mailbox receiving DMARC aggregate reports; the rua tag is omitted when empty | `string` | `""` | no |
 | <a name="input_enable_custom_domain"></a> [enable\_custom\_domain](#input\_enable\_custom\_domain) | Attach the custom domain to CloudFront and API Gateway | `bool` | `false` | no |
 | <a name="input_enable_ses_email"></a> [enable\_ses\_email](#input\_enable\_ses\_email) | Send Cognito invitations from SES on var.app\_domain instead of Cognito's shared sender | `bool` | `false` | no |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
+| <a name="input_use_existing_hosted_zone"></a> [use\_existing\_hosted\_zone](#input\_use\_existing\_hosted\_zone) | Adopt the Route 53 zone that Route 53 Domains created at registration instead of creating one | `bool` | `false` | no |
 
 ## Outputs
 
@@ -130,7 +132,7 @@
 |------|-------------|
 | <a name="output_api_gateway_url"></a> [api\_gateway\_url](#output\_api\_gateway\_url) | The URL of the API Gateway |
 | <a name="output_api_url"></a> [api\_url](#output\_api\_url) | Public URL of the API once the custom domain is attached |
-| <a name="output_app_domain_nameservers"></a> [app\_domain\_nameservers](#output\_app\_domain\_nameservers) | Nameservers for the app subdomain; add these as NS records at the registrar |
+| <a name="output_app_domain_nameservers"></a> [app\_domain\_nameservers](#output\_app\_domain\_nameservers) | Nameservers for the app domain; set these at the registrar, or ignore when the domain is registered in Route 53 Domains |
 | <a name="output_app_url"></a> [app\_url](#output\_app\_url) | Public URL of the app: the custom domain when attached, else the CloudFront domain |
 | <a name="output_ci_apply_role_arn"></a> [ci\_apply\_role\_arn](#output\_ci\_apply\_role\_arn) | OIDC role for terraform-apply / lambda-deploy (write, production env only) |
 | <a name="output_ci_migrate_role_arn"></a> [ci\_migrate\_role\_arn](#output\_ci\_migrate\_role\_arn) | OIDC role for the db migrate job (production-db env only) |
