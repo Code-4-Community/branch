@@ -25,7 +25,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 - **Frontend:** Next.js 15.5 (App Router, Turbopack), React 19, Chakra UI v3 + Tailwind v4, JWT-in-localStorage auth.
 - **Backend:** AWS Lambda (Node 20), TypeScript, Kysely + PostgreSQL, AWS Cognito auth. Each service is self-contained, deployed as `branch-{service}`.
-- **Infra:** Terraform 1.13.0, state in S3 (`c4c-neu-terraform-state-files`) + DynamoDB lock, secrets via Infisical. Frontend is a static export on S3 + CloudFront (SPA); backend on Lambda + API Gateway; RDS Postgres 17.
+- **Infra:** Terraform 1.13.0, state in S3 (`c4c-neu-terraform-state-files`, S3-native locking), secrets via Infisical. Frontend is a static export on S3 + CloudFront (SPA); backend on Lambda + API Gateway; RDS Postgres 17.
 - **Monorepo:** Nx 16 (nx-cloud cache). Per-app `package.json` (not a single workspace install) — backend lambdas and frontend each `npm ci` independently.
 
 ## Shared packages (critical)

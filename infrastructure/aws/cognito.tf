@@ -1,3 +1,16 @@
+# Bodies for the pool's two email templates. Table layout and inline styles
+# only -- Outlook drops flex, grid and <style> blocks. The logo is served from
+# the app origin and alt-texts to the wordmark for clients that block images.
+locals {
+  invite_email_html = templatefile("${path.module}/templates/invite-email.html.tftpl", {
+    app_url = local.app_url
+  })
+
+  verification_email_html = templatefile("${path.module}/templates/verification-email.html.tftpl", {
+    app_url = local.app_url
+  })
+}
+
 # Cognito User Pool for BRANCH application
 resource "aws_cognito_user_pool" "branch_user_pool" {
   name = "branch-user-pool"
@@ -50,19 +63,35 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
   }
 
   # Disable self-signup — accounts are created by admins only
+  #
+  # {username} renders the pool-generated UUID, not the address, because
+  # username_attributes is email. It survives only inside an HTML comment
+  # because Cognito rejects an invite template that omits it.
   admin_create_user_config {
     allow_admin_create_user_only = true
 
     invite_message_template {
-      email_subject = "Your BRANCH Accounting Platform Invitation"
-      email_message = "You have been invited to the BRANCH Accounting Platform. Your username is {username} and temporary password is {####}. Log in and set a new password to get started."
-      sms_message   = "BRANCH invite: username {username}, temp password {####}."
+      email_subject = "Welcome to BRANCH — your account is ready"
+      email_message = local.invite_email_html
+      sms_message   = "BRANCH temporary password: {####}. Sign in with your email address. ({username})"
     }
   }
 
-  # Email configuration (using Cognito default for now)
+  # One template serves both the sign-up code (POST /auth/verify-email) and the
+  # forgot-password code (POST /auth/forgot-password), so the copy stays neutral
+  # between them. Must remain CONFIRM_WITH_CODE: the auth lambda calls
+  # ConfirmSignUpCommand with a code, not a link.
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+    email_subject        = "Your BRANCH verification code"
+    email_message        = local.verification_email_html
+    sms_message          = "Your BRANCH verification code is {####}"
+  }
+
   email_configuration {
-    email_sending_account = "COGNITO_DEFAULT"
+    email_sending_account = local.ses_email ? "DEVELOPER" : "COGNITO_DEFAULT"
+    from_email_address    = local.ses_email ? "BRANCH <${local.ses_from_address}>" : null
+    source_arn            = one(aws_ses_domain_identity_verification.app[*].arn)
   }
 
   # AUDIT, not ENFORCED: every sign-in is proxied through the auth lambda, so all

@@ -29,7 +29,7 @@ on:
 # mid-apply is unrecoverable (see `deploy`).
 # A single shared group would let a push (e.g. right after removing the label)
 # cancel an in-flight teardown, leaking the stack. Separate groups + the
-# DynamoDB state lock (which serializes any overlapping terraform) keep cleanup
+# S3 state lock (which serializes any overlapping terraform) keep cleanup
 # reliable regardless of event ordering.
 env:
   LABEL: test-environment
@@ -51,7 +51,7 @@ jobs:
       # Back-to-back commits: the newest run supersedes older PENDING runs but never
       # kills one already in flight. This job runs `terraform apply`, and cancelling
       # that mid-apply cannot be recovered from: the runner is killed before
-      # Terraform persists state or releases its DynamoDB lock, so everything it had
+      # Terraform persists state or releases its S3 lock, so everything it had
       # created so far is orphaned and the workspace stays locked. The wreckage is
       # a REST API with no `prod` stage, which answers every request with a bare 403
       # carrying no CORS headers -- reaching the browser as an opaque CORS error.

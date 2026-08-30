@@ -18,3 +18,16 @@ variable "enable_custom_domain" {
   type        = bool
   default     = false
 }
+
+# Keep false until DKIM is Verified and the account is out of the SES sandbox.
+variable "enable_ses_email" {
+  description = "Send Cognito invitations from SES on var.app_domain instead of Cognito's shared sender"
+  type        = bool
+  default     = false
+}
+
+variable "dmarc_report_email" {
+  description = "Mailbox receiving DMARC aggregate reports; the rua tag is omitted when empty"
+  type        = string
+  default     = ""
+}
