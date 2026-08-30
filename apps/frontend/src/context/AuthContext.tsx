@@ -110,18 +110,9 @@ interface AuthContextValue {
 /*
  * Deliberately absent: register / verifyEmail / resendCode.
  *
- * BRANCH has no self-serve signup by design. It is an internal tool with an
- * admin-managed roster, and `is_admin` lives in Postgres — a self-registered
- * user would authenticate but have no meaningful authorization. The backend no
- * longer serves /auth/register, /auth/verify-email or /auth/resend-code at all:
- * the pool sets allow_admin_create_user_only, so Cognito SignUp is refused.
- * Onboarding is admin-invite via POST /users, which calls AdminCreateUser with a
- * temporary password — that path returns NEW_PASSWORD_REQUIRED, which the login
- * page handles, and marks the email verified server-side so no
- * verification-code screen is needed.
- *
- * Please don't re-add these to the context without a matching UI; they were
- * previously exposed here and called from nowhere.
+ * The pool is admin-create-only, so those endpoints no longer exist. Onboarding
+ * is POST /users -> AdminCreateUser, which returns NEW_PASSWORD_REQUIRED to the
+ * login page and verifies the email server-side.
  */
 
 /** Raw shape of POST /auth/login and /auth/respond-challenge (PascalCase). */
