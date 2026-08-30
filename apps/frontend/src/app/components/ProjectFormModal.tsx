@@ -74,15 +74,14 @@ function validate(values: ProjectFormValues): FieldErrors {
 
   if (!values.startDate) errors.startDate = 'Please select a valid date';
 
-  // The "in progress" checkbox is what makes an end date optional, so the two
-  // are validated together rather than independently.
-  if (!values.inProgress) {
-    if (
-      !values.endDate ||
-      (values.startDate && values.endDate < values.startDate)
-    ) {
-      errors.endDate = 'Please select a date AFTER the start date';
-    }
+  // End date is optional (open-ended / still in progress). When one is given,
+  // it must not precede the start date.
+  if (
+    values.endDate &&
+    values.startDate &&
+    values.endDate < values.startDate
+  ) {
+    errors.endDate = 'Please select a date AFTER the start date';
   }
 
   if (values.members.length === 0) {

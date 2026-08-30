@@ -87,6 +87,53 @@ function renderEdit() {
   );
 }
 
+function renderCreate() {
+  return render(
+    <ProjectFormModal open onClose={jest.fn()} onSaved={jest.fn()} />,
+  );
+}
+
+async function pickDate(label: string, day: number) {
+  const heading = screen.getByText(new RegExp(`^${label}`));
+  fireEvent.click(
+    within(heading.parentElement as HTMLElement).getByRole('button'),
+  );
+  const dialog = await screen.findByRole('dialog', {
+    name: `Choose ${label}`,
+    hidden: true,
+  });
+  const buttons = within(dialog).getAllByRole('button', {
+    name: String(day),
+    hidden: true,
+  });
+  const inMonth =
+    buttons.find((button) => !button.className.includes('opacity-50')) ??
+    buttons[0];
+  fireEvent.click(inMonth);
+}
+
+async function fillCreateForm(opts?: { startDay?: number; endDay?: number }) {
+  fireEvent.change(screen.getByPlaceholderText('Enter project name'), {
+    target: { value: 'Wells' },
+  });
+  fireEvent.change(screen.getByPlaceholderText('Enter total funding'), {
+    target: { value: '1000' },
+  });
+  fireEvent.change(
+    screen.getByPlaceholderText('Enter a short project description here'),
+    { target: { value: 'Dig wells' } },
+  );
+
+  await pickDate('Start Date', opts?.startDay ?? 15);
+  if (opts?.endDay != null) {
+    await pickDate('End Date', opts.endDay);
+  }
+
+  const search = await screen.findByLabelText('Assigned Staff');
+  fireEvent.change(search, { target: { value: 'Ada' } });
+  fireEvent.click(await screen.findByRole('option', { name: 'Ada Lovelace' }));
+}
+
 beforeEach(() => {
   mockFetch.mockReset();
   mockFetch.mockImplementation((path: string) => {
@@ -178,6 +225,37 @@ describe('ProjectFormModal staff roles', () => {
     ).toBeInTheDocument();
     expect(
       mockFetch.mock.calls.some(([, init]) => init?.method === 'PUT'),
+    ).toBe(false);
+  });
+});
+
+describe('ProjectFormModal end date', () => {
+  it('lets you create a project without an end date', async () => {
+    renderCreate();
+    await fillCreateForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(
+        mockFetch.mock.calls.some(([, init]) => init?.method === 'POST'),
+      ).toBe(true);
+    });
+    expect(savedBody().end_date).toBeNull();
+    expect(
+      screen.queryByText('Please select a date AFTER the start date'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('still rejects an end date before the start date', async () => {
+    renderCreate();
+    await fillCreateForm({ startDay: 20, endDay: 10 });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(
+      await screen.findByText('Please select a date AFTER the start date'),
+    ).toBeInTheDocument();
+    expect(
+      mockFetch.mock.calls.some(([, init]) => init?.method === 'POST'),
     ).toBe(false);
   });
 });
