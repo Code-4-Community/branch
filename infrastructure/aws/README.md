@@ -117,7 +117,7 @@
 | <a name="output_api_gateway_url"></a> [api\_gateway\_url](#output\_api\_gateway\_url) | The URL of the API Gateway |
 | <a name="output_api_url"></a> [api\_url](#output\_api\_url) | Public URL of the API once the custom domain is attached |
 | <a name="output_app_domain_nameservers"></a> [app\_domain\_nameservers](#output\_app\_domain\_nameservers) | Nameservers for the app subdomain; add these as NS records at the registrar |
-| <a name="output_app_url"></a> [app\_url](#output\_app\_url) | Public URL of the app once the custom domain is attached |
+| <a name="output_app_url"></a> [app\_url](#output\_app\_url) | Public URL of the app: the custom domain when attached, else the CloudFront domain |
 | <a name="output_ci_apply_role_arn"></a> [ci\_apply\_role\_arn](#output\_ci\_apply\_role\_arn) | OIDC role for terraform-apply / lambda-deploy (write, production env only) |
 | <a name="output_ci_migrate_role_arn"></a> [ci\_migrate\_role\_arn](#output\_ci\_migrate\_role\_arn) | OIDC role for the db migrate job (production-db env only) |
 | <a name="output_ci_plan_role_arn"></a> [ci\_plan\_role\_arn](#output\_ci\_plan\_role\_arn) | OIDC role for terraform-plan (read-only) |
