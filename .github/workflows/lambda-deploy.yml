@@ -276,8 +276,9 @@ jobs:
       # plenty: anything older than the last few migrations is better served by
       # point-in-time recovery (backup_retention_period = 7 in
       # infrastructure/aws/main.tf).
+      # Gate on RAN, not SUCCEEDED: the snapshot exists before the `wait` can fail.
       - name: Prune old pre-migration snapshots (keep 5)
-        if: always() && steps.snapshot.outcome == 'success'
+        if: always() && steps.snapshot.outcome != 'skipped'
         continue-on-error: true
         run: |
           aws rds describe-db-snapshots --snapshot-type manual \

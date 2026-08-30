@@ -51,6 +51,7 @@
 | [aws_cloudfront_distribution.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudfront_distribution) | resource |
 | [aws_cloudfront_function.rewrite_index](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudfront_function) | resource |
 | [aws_cloudfront_origin_access_control.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudfront_origin_access_control) | resource |
+| [aws_cloudwatch_log_group.lambda](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudwatch_log_group) | resource |
 | [aws_cognito_user_pool.branch_user_pool](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool) | resource |
 | [aws_cognito_user_pool_client.branch_client](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool_client) | resource |
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |

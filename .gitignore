@@ -5,6 +5,7 @@ dist
 tmp
 /out-tsc
 lambda.zip
+lambda-placeholder.zip
 
 # dependencies
 node_modules
