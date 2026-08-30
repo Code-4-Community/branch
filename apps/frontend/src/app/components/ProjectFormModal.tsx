@@ -78,10 +78,6 @@ function validate(values: ProjectFormValues): FieldErrors {
     errors.endDate = 'Please select a date AFTER the start date';
   }
 
-  if (values.members.length === 0) {
-    errors.members = 'Select AT LEAST 1 staff member for the project';
-  }
-
   return errors;
 }
 
@@ -336,13 +332,10 @@ export default function ProjectFormModal({
 
                 <StaffPicker
                   label="Assigned Staff"
-                  required
                   options={staff}
                   isLoading={staffLoading}
                   value={values.members}
                   onChange={(v) => update('members', v)}
-                  isError={showError('members')}
-                  errorMessage={errors.members}
                   disabled={saving}
                 />
 

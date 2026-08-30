@@ -237,9 +237,9 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
   }
 
   try {
-    // Creating the project and its roster together: a project that saved
-    // without its staff would look complete but fail the form's own
-    // "at least one staff member" rule on the next read.
+    // Creating the project and its roster together so a partial save cannot
+    // leave a project without the staff the caller picked. The roster may be
+    // empty — admins reach every project through `users.is_admin`.
     const inserted = await db.transaction().execute(async (trx) => {
       const row = await trx
         .insertInto('branch.projects')

@@ -208,7 +208,7 @@ describe('ProjectFormModal staff roles', () => {
     ]);
   });
 
-  it('drops a removed member from the roster it saves', async () => {
+  it('saves an empty roster, since admins reach every project anyway', async () => {
     renderEdit();
 
     const list = await screen.findByRole('list', {
@@ -220,12 +220,12 @@ describe('ProjectFormModal staff roles', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(
-      await screen.findByText('Select AT LEAST 1 staff member for the project'),
-    ).toBeInTheDocument();
-    expect(
-      mockFetch.mock.calls.some(([, init]) => init?.method === 'PUT'),
-    ).toBe(false);
+    await waitFor(() => {
+      expect(
+        mockFetch.mock.calls.some(([, init]) => init?.method === 'PUT'),
+      ).toBe(true);
+    });
+    expect(savedBody().members).toEqual([]);
   });
 });
 

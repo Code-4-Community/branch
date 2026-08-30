@@ -3,12 +3,18 @@ variable "infisical_workspace_id" {
   default = "d1ee8b80-118c-4daf-ae84-31da43261b76"
 }
 
-# Empty means no DNS resources at all. Set to e.g. accounting.branchinitiative.com
-# to create the zone and certificates.
+# Empty means no DNS resources at all. Set to e.g. branchaccounting.com to create
+# the zone and certificates.
 variable "app_domain" {
-  description = "Subdomain serving the app; delegated to Route 53 from the registrar"
+  description = "Domain serving the app; apex or subdomain, resolved by a Route 53 zone"
   type        = string
   default     = ""
+}
+
+variable "use_existing_hosted_zone" {
+  description = "Adopt the Route 53 zone that Route 53 Domains created at registration instead of creating one"
+  type        = bool
+  default     = false
 }
 
 # Keep false until the subdomain's NS records resolve -- ACM validates over public
