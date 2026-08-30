@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket       = "c4c-neu-terraform-state-files"
+    bucket       = "branch-tf-state"
     key          = "test/terraform.tfstate"
     region       = "us-east-2"
     use_lockfile = true

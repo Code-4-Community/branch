@@ -150,19 +150,12 @@ locals {
   ])
 }
 
-# Lambda creates these itself with never-expire retention; imported since they exist.
+# Pinned to 30d; Lambda would otherwise create these itself with never-expire retention.
 resource "aws_cloudwatch_log_group" "lambda" {
   for_each = local.lambda_functions
 
   name              = "/aws/lambda/branch-${each.key}"
   retention_in_days = 30
-}
-
-import {
-  for_each = local.lambda_functions
-
-  to = aws_cloudwatch_log_group.lambda[each.key]
-  id = "/aws/lambda/branch-${each.key}"
 }
 
 # Minimal placeholder that will be replaced by GitHub Actions on first deployment
