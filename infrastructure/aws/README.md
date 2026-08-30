@@ -73,8 +73,14 @@
 | [aws_lambda_permission.api_gateway_permissions](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/lambda_permission) | resource |
 | [aws_route53_record.api](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
 | [aws_route53_record.api_cert_validation](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.dmarc](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
 | [aws_route53_record.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
 | [aws_route53_record.frontend_cert_validation](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.ses_dkim](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.ses_mail_from_mx](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.ses_mail_from_spf](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.ses_verification](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
+| [aws_route53_record.spf](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_record) | resource |
 | [aws_route53_zone.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/route53_zone) | resource |
 | [aws_s3_bucket.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
@@ -86,6 +92,10 @@
 | [aws_s3_bucket_versioning.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_versioning) | resource |
 | [aws_s3_object.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_object) | resource |
 | [aws_security_group.rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/security_group) | resource |
+| [aws_ses_domain_dkim.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_dkim) | resource |
+| [aws_ses_domain_identity.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_identity) | resource |
+| [aws_ses_domain_identity_verification.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_identity_verification) | resource |
+| [aws_ses_domain_mail_from.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_mail_from) | resource |
 | [aws_vpc_security_group_egress_rule.rds_all](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_egress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.rds_postgres](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [archive_file.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
@@ -95,6 +105,7 @@
 | [aws_iam_policy_document.ci_plan_assume](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.ci_preview_assume](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_iam_policy_document.frontend_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
+| [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/region) | data source |
 | [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
 | [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
 | [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
@@ -105,7 +116,9 @@
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_app_domain"></a> [app\_domain](#input\_app\_domain) | Subdomain serving the app; delegated to Route 53 from the registrar | `string` | `""` | no |
+| <a name="input_dmarc_report_email"></a> [dmarc\_report\_email](#input\_dmarc\_report\_email) | Mailbox receiving DMARC aggregate reports; the rua tag is omitted when empty | `string` | `""` | no |
 | <a name="input_enable_custom_domain"></a> [enable\_custom\_domain](#input\_enable\_custom\_domain) | Attach the custom domain to CloudFront and API Gateway | `bool` | `false` | no |
+| <a name="input_enable_ses_email"></a> [enable\_ses\_email](#input\_enable\_ses\_email) | Send Cognito invitations from SES on var.app\_domain instead of Cognito's shared sender | `bool` | `false` | no |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |
@@ -131,4 +144,5 @@
 | <a name="output_frontend_cloudfront_distribution_id"></a> [frontend\_cloudfront\_distribution\_id](#output\_frontend\_cloudfront\_distribution\_id) | CloudFront distribution id (for cache invalidation in CI) |
 | <a name="output_frontend_cloudfront_domain"></a> [frontend\_cloudfront\_domain](#output\_frontend\_cloudfront\_domain) | Public URL of the frontend |
 | <a name="output_reports_bucket_name"></a> [reports\_bucket\_name](#output\_reports\_bucket\_name) | Name of the S3 bucket for generated reports |
+| <a name="output_ses_from_address"></a> [ses\_from\_address](#output\_ses\_from\_address) | From address used for Cognito mail once enable\_ses\_email is true |
 <!-- END_TF_DOCS -->
