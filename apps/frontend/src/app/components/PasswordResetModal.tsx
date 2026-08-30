@@ -8,7 +8,6 @@ import TextInputField from './TextInputField';
 import { PASSWORD_RULE, PASSWORD_RULE_MESSAGE } from './SetPasswordForm';
 import { useApi } from '@/hooks/useApi';
 
-/** The design tints the header and footer with Core Black/100 at 50%. */
 const CHROME_BG =
   'color-mix(in srgb, var(--color-black-100) 50%, var(--color-core-white))';
 
@@ -19,12 +18,6 @@ interface PasswordResetModalProps {
   onSuccess: () => void;
 }
 
-/**
- * Completes Cognito's forgot-password flow from the profile page. The pool
- * emails a code (`CONFIRM_WITH_CODE`), not a link, so this is the only place a
- * signed-in user can type that code — `/reset-password` is a public route and
- * AuthGate would bounce them off it.
- */
 export default function PasswordResetModal({
   open,
   email,

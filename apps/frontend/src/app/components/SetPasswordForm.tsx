@@ -26,10 +26,6 @@ interface SetPasswordFormProps {
   /** Server-side error surfaced by the caller. */
   error?: string | null;
   isLoading?: boolean;
-  /**
-   * Cognito's forgot-password email carries a code, not a link. When true, the
-   * form collects that code and passes it as the second argument to `onSubmit`.
-   */
   includeCode?: boolean;
 }
 
