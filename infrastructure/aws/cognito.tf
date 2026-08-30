@@ -1,3 +1,62 @@
+# Bodies for the pool's two email templates. Table layout and inline styles
+# only -- Outlook drops flex, grid and <style> blocks. The logo is served from
+# the app origin (local.app_url, dns.tf) and alt-texts to the wordmark for
+# clients that block images.
+locals {
+  invite_email_html = <<-EOT
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EAEFEB;padding:24px 0;font-family:Helvetica,Arial,sans-serif;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background-color:#FFFFFF;border-radius:8px;">
+          <tr><td style="background-color:#2D6138;padding:20px 28px;border-radius:8px 8px 0 0;">
+            <img src="${local.app_url}/branch-logo.png" alt="BRANCH" width="40" height="40" style="vertical-align:middle;border:0;">
+            <span style="color:#FFFFFF;font-size:20px;font-weight:bold;letter-spacing:2px;vertical-align:middle;padding-left:12px;">BRANCH</span>
+          </td></tr>
+          <tr><td style="padding:28px;color:#2B2B2B;font-size:15px;line-height:1.6;">
+            <h1 style="margin:0 0 16px;font-size:20px;color:#2D6138;">Your account is ready</h1>
+            <p style="margin:0 0 16px;">You have been invited to the BRANCH accounting platform.</p>
+            <p style="margin:0 0 8px;">Sign in with the email address this message was sent to, using this temporary password:</p>
+            <p style="margin:0 0 24px;padding:12px 16px;background-color:#EAEFEB;border-radius:6px;font-family:monospace;font-size:18px;letter-spacing:1px;">{####}</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+              <tr><td style="background-color:#2D6138;border-radius:6px;">
+                <a href="${local.app_url}/login" style="display:inline-block;padding:12px 28px;color:#FFFFFF;font-size:15px;font-weight:bold;text-decoration:none;">Sign in to BRANCH</a>
+              </td></tr>
+            </table>
+            <p style="margin:0;">You will be asked to choose a new password the first time you sign in. This temporary password expires in 7 days.</p>
+          </td></tr>
+          <tr><td style="padding:0 28px 24px;color:#57805F;font-size:12px;line-height:1.5;">
+            <p style="margin:0 0 6px;">If the button does not work, paste this into your browser:<br><a href="${local.app_url}/login" style="color:#2D6138;">${local.app_url}/login</a></p>
+            <p style="margin:0;">Not expecting this invitation? You can ignore this email.</p>
+            <!-- {username} -->
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  EOT
+
+  verification_email_html = <<-EOT
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EAEFEB;padding:24px 0;font-family:Helvetica,Arial,sans-serif;">
+      <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background-color:#FFFFFF;border-radius:8px;">
+          <tr><td style="background-color:#2D6138;padding:20px 28px;border-radius:8px 8px 0 0;">
+            <img src="${local.app_url}/branch-logo.png" alt="BRANCH" width="40" height="40" style="vertical-align:middle;border:0;">
+            <span style="color:#FFFFFF;font-size:20px;font-weight:bold;letter-spacing:2px;vertical-align:middle;padding-left:12px;">BRANCH</span>
+          </td></tr>
+          <tr><td style="padding:28px;color:#2B2B2B;font-size:15px;line-height:1.6;">
+            <h1 style="margin:0 0 16px;font-size:20px;color:#2D6138;">Your verification code</h1>
+            <p style="margin:0 0 8px;">Enter this code in BRANCH to continue:</p>
+            <p style="margin:0 0 24px;padding:12px 16px;background-color:#EAEFEB;border-radius:6px;font-family:monospace;font-size:24px;letter-spacing:4px;">{####}</p>
+            <p style="margin:0;">The code is single-use. Nothing changes on your account until it is entered.</p>
+          </td></tr>
+          <tr><td style="padding:0 28px 24px;color:#57805F;font-size:12px;line-height:1.5;">
+            <p style="margin:0 0 6px;"><a href="${local.app_url}/login" style="color:#2D6138;">${local.app_url}</a></p>
+            <p style="margin:0;">Did not request this code? You can ignore this email.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  EOT
+}
+
 # Cognito User Pool for BRANCH application
 resource "aws_cognito_user_pool" "branch_user_pool" {
   name = "branch-user-pool"
@@ -50,14 +109,29 @@ resource "aws_cognito_user_pool" "branch_user_pool" {
   }
 
   # Disable self-signup — accounts are created by admins only
+  #
+  # {username} renders the pool-generated UUID, not the address, because
+  # username_attributes is email. It survives only inside an HTML comment
+  # because Cognito rejects an invite template that omits it.
   admin_create_user_config {
     allow_admin_create_user_only = true
 
     invite_message_template {
-      email_subject = "Your BRANCH Accounting Platform Invitation"
-      email_message = "You have been invited to the BRANCH Accounting Platform. Your username is {username} and temporary password is {####}. Log in and set a new password to get started."
-      sms_message   = "BRANCH invite: username {username}, temp password {####}."
+      email_subject = "Welcome to BRANCH — your account is ready"
+      email_message = local.invite_email_html
+      sms_message   = "BRANCH temporary password: {####}. Sign in with your email address. ({username})"
     }
+  }
+
+  # One template serves both the sign-up code (POST /auth/verify-email) and the
+  # forgot-password code (POST /auth/forgot-password), so the copy stays neutral
+  # between them. Must remain CONFIRM_WITH_CODE: the auth lambda calls
+  # ConfirmSignUpCommand with a code, not a link.
+  verification_message_template {
+    default_email_option = "CONFIRM_WITH_CODE"
+    email_subject        = "Your BRANCH verification code"
+    email_message        = local.verification_email_html
+    sms_message          = "Your BRANCH verification code is {####}"
   }
 
   # Email configuration (using Cognito default for now)
