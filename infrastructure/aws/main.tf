@@ -20,12 +20,7 @@ resource "aws_db_instance" "branch_rds" {
   password                   = data.infisical_secrets.rds_folder.secrets["password"].value
   skip_final_snapshot        = true
 
-  # 1, not 7: the account is on the AWS free tier plan, which rejects longer
-  # retention with FreeTierRestrictionError. Raise it once the plan is upgraded --
-  # this is the backstop for CI-applied migrations. backup_window is deliberately
-  # unset: AWS rejects a backup window that overlaps the maintenance window, and
-  # neither is managed here, so pinning one guesses against the other. Pin both or
-  # neither.
+  # 1 is the free tier max; backup_window stays unset (AWS rejects overlap with the maintenance window).
   backup_retention_period = 1
 
   # Per-statement timing, so a slow endpoint can be diagnosed from data instead
