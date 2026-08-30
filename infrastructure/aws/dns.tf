@@ -18,8 +18,6 @@ locals {
   attach_dns = local.create_dns && var.enable_custom_domain
   api_domain = local.create_dns ? "api.${var.app_domain}" : ""
 
-  # Registering through Route 53 Domains creates the zone for us; creating a
-  # second one here would leave two zones with different nameservers.
   create_zone = local.create_dns && !var.use_existing_hosted_zone
   lookup_zone = local.create_dns && var.use_existing_hosted_zone
 
