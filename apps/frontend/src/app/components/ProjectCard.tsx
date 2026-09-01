@@ -68,7 +68,7 @@ export default function ProjectCard(props: ProjectCardProps) {
                 across a row. */}
             <h4 className="line-clamp-2 break-words">{props.name}</h4>
 
-            <div className="flex min-w-0 flex-row items-stretch !gap-4 @max-[240px]:flex-col @max-[240px]:!gap-2">
+            <div className="flex min-w-0 flex-row items-center !gap-4 @max-[240px]:flex-col @max-[240px]:!gap-2">
                 <StatColumn
                     icon={<LuDollarSign aria-hidden />}
                     label="Budget"
@@ -79,7 +79,7 @@ export default function ProjectCard(props: ProjectCardProps) {
                     }
                 />
                 <div
-                    className="!w-px shrink-0 self-stretch !bg-black-300 @max-[240px]:hidden"
+                    className="!h-14 !w-px shrink-0 self-center !bg-black-300 @max-[240px]:hidden"
                     aria-hidden
                 />
                 <StatColumn
