@@ -40,7 +40,7 @@ function StatColumn({
     grow?: boolean;
 }) {
     return (
-        <div className={`flex min-w-0 flex-col !gap-2 ${grow ? 'flex-1' : 'shrink'}`}>
+        <div className={`flex min-w-0 flex-col justify-center !gap-2 ${grow ? 'flex-1' : 'shrink'}`}>
             <div className="flex flex-row items-center !gap-2">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center text-core-black [&>svg]:h-full [&>svg]:w-full">
                     {icon}
@@ -68,7 +68,7 @@ export default function ProjectCard(props: ProjectCardProps) {
                 across a row. */}
             <h4 className="line-clamp-2 break-words">{props.name}</h4>
 
-            <div className="flex min-w-0 flex-row items-center !gap-4 @max-[240px]:flex-col @max-[240px]:!gap-2">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] items-center !gap-4 @max-[240px]:grid-cols-1 @max-[240px]:!gap-2">
                 <StatColumn
                     icon={<LuDollarSign aria-hidden />}
                     label="Budget"
@@ -79,7 +79,7 @@ export default function ProjectCard(props: ProjectCardProps) {
                     }
                 />
                 <div
-                    className="!h-14 !w-px shrink-0 self-center !bg-black-300 @max-[240px]:hidden"
+                    className="!h-20 !w-px shrink-0 !bg-black-300 @max-[240px]:hidden"
                     aria-hidden
                 />
                 <StatColumn
