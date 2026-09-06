@@ -109,6 +109,22 @@ resource "aws_iam_role_policy" "lambda_ses_send" {
   })
 }
 
+# Resource "*" until the DSQL cluster exists; scope to its ARN then.
+resource "aws_iam_role_policy" "lambda_dsql_connect" {
+  name = "branch-lambda-dsql-connect"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "LambdaDsqlConnect"
+      Effect   = "Allow"
+      Action   = ["dsql:DbConnectAdmin"]
+      Resource = "*"
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 

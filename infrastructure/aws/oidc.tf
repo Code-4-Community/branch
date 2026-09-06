@@ -45,6 +45,12 @@ resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
+# Plan needs dsql read access; ReadOnlyAccess is not guaranteed to include it.
+resource "aws_iam_role_policy_attachment" "ci_plan_dsql_readonly" {
+  role       = aws_iam_role.ci_plan.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonAuroraDSQLReadOnlyAccess"
+}
+
 resource "aws_iam_role_policy" "ci_plan_state_lock" {
   name = "tfstate-lock"
   role = aws_iam_role.ci_plan.id
