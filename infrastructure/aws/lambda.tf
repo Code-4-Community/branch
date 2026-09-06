@@ -109,6 +109,24 @@ resource "aws_iam_role_policy" "lambda_ses_send" {
   })
 }
 
+# Aurora DSQL authenticates with an IAM token instead of a password. Granted
+# ahead of the cluster so the migration PR does not also have to change IAM.
+# Resource is "*" until the cluster exists; scope it to the cluster ARN then.
+resource "aws_iam_role_policy" "lambda_dsql_connect" {
+  name = "branch-lambda-dsql-connect"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "LambdaDsqlConnect"
+      Effect   = "Allow"
+      Action   = ["dsql:DbConnectAdmin"]
+      Resource = "*"
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 
