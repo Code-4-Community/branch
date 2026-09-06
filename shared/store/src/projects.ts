@@ -1,20 +1,23 @@
-import type { Insertable, Selectable, Transaction, Updateable } from 'kysely'
-import type { DB } from '@branch/types'
+import type { Selectable, Transaction } from 'kysely'
+import type { DB, NewProject, ProjectEdit, ProjectMemberInput } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump, seedProjectRollup } from './rollups'
 
 type Project = Selectable<DB['branch.projects']>
 
-export type MemberInput = { user_id: number; role?: string | null }
-
 /**
- * Replaces the roster wholesale. An omitted role keeps whatever the member
- * already held, so a caller that only reorders members does not reset roles.
+ * Replaces a project's roster wholesale. Delete-then-insert rather than a diff:
+ * the set is small and bounded by the staff list.
+ *
+ * An entry with no `role` keeps the role that member already held. The staff
+ * picker submits bare ids, and "Director" is derived from these rows, so
+ * defaulting them all to the fallback would make every ordinary project edit
+ * strip the project's directors of their role.
  */
 async function syncMemberships(
   trx: Transaction<DB>,
   projectId: number,
-  members: MemberInput[],
+  members: ProjectMemberInput[],
   defaultRole: string,
 ): Promise<void> {
   const existing = await trx
@@ -44,8 +47,8 @@ async function syncMemberships(
 }
 
 export async function createProject(
-  values: Insertable<DB['branch.projects']>,
-  members: MemberInput[],
+  values: NewProject,
+  members: ProjectMemberInput[],
   defaultRole: string,
 ): Promise<Project> {
   return tx(async (trx) => {
@@ -62,8 +65,8 @@ export async function createProject(
 
 export async function updateProject(
   id: number,
-  values: Updateable<DB['branch.projects']>,
-  members: MemberInput[] | undefined,
+  values: ProjectEdit,
+  members: ProjectMemberInput[] | undefined,
   defaultRole: string,
 ): Promise<Project | undefined> {
   return tx(async (trx) => {

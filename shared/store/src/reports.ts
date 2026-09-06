@@ -1,13 +1,11 @@
-import type { Insertable, Selectable } from 'kysely'
-import type { DB } from '@branch/types'
+import type { Selectable } from 'kysely'
+import type { DB, NewReport } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump } from './rollups'
 
 type Report = Selectable<DB['branch.reports']>
 
-export async function recordReport(
-  values: Insertable<DB['branch.reports']>,
-): Promise<Report> {
+export async function recordReport(values: NewReport): Promise<Report> {
   return tx(async (trx) => {
     const row = await trx
       .insertInto('branch.reports')

@@ -25,6 +25,21 @@ export const db: ReadOnlyDb = writeDb
 
 export { recordExpenditure, editExpenditure, removeExpenditure } from './expenditures'
 export { recordDonation, removeDonation, createDonor, removeDonor } from './donations'
-export { createProject, updateProject, removeProject, type MemberInput } from './projects'
+export { createProject, updateProject, removeProject } from './projects'
 export { recordReport, removeReport } from './reports'
-export { createUser, updateUser, removeUser } from './users'
+export { createUser, updateUser, claimUser, removeUser } from './users'
+
+// The write DTOs are declared in @branch/types alongside the row types; re-exported
+// so a caller needs only one import to write a row.
+export type {
+  NewExpenditure,
+  ExpenditureEdit,
+  NewDonation,
+  NewDonor,
+  NewReport,
+  NewProject,
+  ProjectEdit,
+  NewUser,
+  UserEdit,
+  ProjectMemberInput,
+} from '@branch/types'

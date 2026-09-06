@@ -9,7 +9,7 @@ import {
   ResendConfirmationCodeCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, reportError, serverError } from '@branch/lambda-http';
-import db from '../db';
+import { db, claimUser } from '@branch/store';
 import { cognitoClient, USER_POOL_CLIENT_ID, USER_POOL_ID, validatePassword } from '../services/cognito';
 
 export async function handleRegister(event: any): Promise<APIGatewayProxyResult> {
@@ -125,15 +125,10 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
             );
             const sub = cognitoUser.UserAttributes?.find((a) => a.Name === 'sub')?.Value;
             if (sub && cognitoUser.UserStatus === 'CONFIRMED') {
-              const linkResult = await db
-                .updateTable('branch.users')
-                .set({ cognito_sub: sub })
-                .where('user_id', '=', claimingUserId)
-                .where('cognito_sub', 'is', null)
-                .executeTakeFirst();
+              const linked = await claimUser(claimingUserId, { cognito_sub: sub });
               // A concurrent claim already took this row; do not delete the
               // pre-existing Cognito user, it may back a working account.
-              if (linkResult.numUpdatedRows > 0n) {
+              if (linked > 0n) {
                 return json(200, {
                   message: 'Existing account linked',
                   claimed: true,
@@ -187,16 +182,14 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
       // claim one an admin already approved. The cognito_sub IS NULL predicate
       // makes a concurrent claim a no-op rather than an overwrite;
       // UNIQUE(cognito_sub) is the backstop.
-      const claimResult = await db
-        .updateTable('branch.users')
-        .set({ cognito_sub: cognitoUserSub, name: name.trim() })
-        .where('user_id', '=', claimingUserId)
-        .where('cognito_sub', 'is', null)
-        .executeTakeFirst();
+      const claimed = await claimUser(claimingUserId, {
+        cognito_sub: cognitoUserSub,
+        name: name.trim(),
+      });
 
       // No-op claim: the Cognito sub we just created would reference no row, so
       // every later login would fail. Undo the Cognito user instead.
-      if (claimResult.numUpdatedRows === 0n) {
+      if (claimed === 0n) {
         console.error('Invitation already claimed for user_id:', claimingUserId);
         await rollbackCognitoUser();
         return json(409, {

@@ -1,13 +1,11 @@
-import type { Insertable, Selectable, Updateable } from 'kysely'
-import type { DB } from '@branch/types'
+import type { Selectable } from 'kysely'
+import type { DB, ExpenditureEdit, NewExpenditure } from '@branch/types'
 import { tx } from './tx'
 import { expenditureRollupAdd, expenditureRollupRemove } from './rollups'
 
 type Expenditure = Selectable<DB['branch.expenditures']>
 
-export async function recordExpenditure(
-  values: Insertable<DB['branch.expenditures']>,
-): Promise<Expenditure> {
+export async function recordExpenditure(values: NewExpenditure): Promise<Expenditure> {
   return tx(async (trx) => {
     const row = await trx
       .insertInto('branch.expenditures')
@@ -26,7 +24,7 @@ export async function recordExpenditure(
  */
 export async function editExpenditure(
   id: number,
-  values: Updateable<DB['branch.expenditures']>,
+  values: ExpenditureEdit,
 ): Promise<Expenditure | undefined> {
   return tx(async (trx) => {
     const before = await trx

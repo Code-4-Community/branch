@@ -1,5 +1,5 @@
-import type { Insertable, Selectable } from 'kysely'
-import type { DB } from '@branch/types'
+import type { Selectable } from 'kysely'
+import type { DB, NewDonation, NewDonor } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump } from './rollups'
 
@@ -9,9 +9,7 @@ type Donation = Selectable<DB['branch.project_donations']>
 // survives; Number() would round at the edges of the type.
 const negate = (amount: string) => (amount.startsWith('-') ? amount.slice(1) : `-${amount}`)
 
-export async function recordDonation(
-  values: Insertable<DB['branch.project_donations']>,
-): Promise<Donation> {
+export async function recordDonation(values: NewDonation): Promise<Donation> {
   return tx(async (trx) => {
     const row = await trx
       .insertInto('branch.project_donations')
@@ -46,7 +44,7 @@ export async function removeDonation(id: number): Promise<bigint> {
 }
 
 export async function createDonor(
-  values: Insertable<DB['branch.donors']>,
+  values: NewDonor,
 ): Promise<Selectable<DB['branch.donors']>> {
   return tx(async (trx) =>
     trx.insertInto('branch.donors').values(values).returningAll().executeTakeFirstOrThrow(),

@@ -1,4 +1,4 @@
-import db from './db';
+import { db, recordReport } from '@branch/store';
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import type { TDocumentDefinitions, Content, TableCell } from 'pdfmake/interfaces';
 import {
@@ -535,16 +535,12 @@ export async function saveReportRecord(
   title: string,
   reportType: 'technical' | 'narrative' = 'technical',
 ): Promise<{ report_id: number; object_url: string; report_type: string }> {
-  const row = await db
-    .insertInto('branch.reports')
-    .values({
-      project_id: projectId,
-      object_url: objectUrl,
-      title,
-      report_type: reportType,
-    })
-    .returning(['report_id', 'object_url', 'report_type'])
-    .executeTakeFirstOrThrow();
+  const row = await recordReport({
+    project_id: projectId,
+    object_url: objectUrl,
+    title,
+    report_type: reportType,
+  });
 
   return { report_id: row.report_id, object_url: row.object_url, report_type: row.report_type };
 }

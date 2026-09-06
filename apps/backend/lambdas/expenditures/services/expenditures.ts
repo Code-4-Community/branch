@@ -3,7 +3,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
-import db from '../db';
+import { db, recordExpenditure, editExpenditure, removeExpenditure } from '@branch/store';
 import type { ExpenditureStatus } from '../validation-utils';
 import { applyExpenditureScope, type ExpenditureScope } from './scope';
 
@@ -115,7 +115,7 @@ export async function findExpenditureWithNames(id: number) {
 }
 
 export async function insertExpenditure(values: Insertable<DB['branch.expenditures']>): Promise<void> {
-  await db.insertInto('branch.expenditures').values(values).executeTakeFirst();
+  await recordExpenditure(values);
 }
 
 export async function findExpenditureById(id: number) {
@@ -123,8 +123,7 @@ export async function findExpenditureById(id: number) {
 }
 
 export async function deleteExpenditureById(id: number): Promise<bigint> {
-  const deleted = await db.deleteFrom('branch.expenditures').where('expenditure_id', '=', id).execute();
-  return deleted[0]?.numDeletedRows ?? 0n;
+  return removeExpenditure(id);
 }
 
 /**
@@ -145,12 +144,7 @@ export type ExpenditureEdit = Pick<
  */
 export async function updateExpenditure(id: number, values: ExpenditureEdit) {
   if (Object.keys(values).length === 0) return undefined;
-  return db
-    .updateTable('branch.expenditures')
-    .set(values)
-    .where('expenditure_id', '=', id)
-    .returningAll()
-    .executeTakeFirst();
+  return editExpenditure(id, values);
 }
 
 export async function getUserContact(userId: number) {
@@ -167,12 +161,10 @@ export async function updateExpenditureStatus(
   status: ExpenditureStatus,
   adminNotes: string | undefined,
 ) {
-  return db
-    .updateTable('branch.expenditures')
-    .set(adminNotes === undefined ? { status } : { status, admin_notes: adminNotes })
-    .where('expenditure_id', '=', id)
-    .returningAll()
-    .executeTakeFirst();
+  return editExpenditure(
+    id,
+    adminNotes === undefined ? { status } : { status, admin_notes: adminNotes },
+  );
 }
 
 export async function presignUploadUrl(projectId: number, fileName: string): Promise<{ uploadUrl: string; objectUrl: string }> {

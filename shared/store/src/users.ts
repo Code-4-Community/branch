@@ -1,11 +1,11 @@
-import type { Insertable, Selectable, Updateable } from 'kysely'
-import type { DB } from '@branch/types'
+import type { Selectable } from 'kysely'
+import type { DB, NewUser, UserEdit } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump } from './rollups'
 
 type User = Selectable<DB['branch.users']>
 
-export async function createUser(values: Insertable<DB['branch.users']>): Promise<User> {
+export async function createUser(values: NewUser): Promise<User> {
   return tx(async (trx) =>
     trx.insertInto('branch.users').values(values).returningAll().executeTakeFirstOrThrow(),
   )
@@ -13,7 +13,7 @@ export async function createUser(values: Insertable<DB['branch.users']>): Promis
 
 export async function updateUser(
   id: number,
-  values: Updateable<DB['branch.users']>,
+  values: UserEdit,
 ): Promise<User | undefined> {
   return tx(async (trx) =>
     trx
@@ -23,6 +23,25 @@ export async function updateUser(
       .returningAll()
       .executeTakeFirst(),
   )
+}
+
+/**
+ * Links a Cognito identity to an invited row, only while that row has none.
+ *
+ * The `cognito_sub IS NULL` predicate is the whole point: it makes a concurrent
+ * claim a no-op rather than an overwrite of a working account. Returns the
+ * number of rows updated so the caller can tell the two apart.
+ */
+export async function claimUser(userId: number, values: UserEdit): Promise<bigint> {
+  return tx(async (trx) => {
+    const result = await trx
+      .updateTable('branch.users')
+      .set(values)
+      .where('user_id', '=', userId)
+      .where('cognito_sub', 'is', null)
+      .executeTakeFirst()
+    return result.numUpdatedRows
+  })
 }
 
 /**
