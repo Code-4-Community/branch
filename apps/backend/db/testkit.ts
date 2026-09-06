@@ -196,6 +196,118 @@ async function truncateAll(client: Queryable): Promise<string> {
 export async function resetData(client: Queryable): Promise<void> {
   await client.query(await truncateAll(client));
   await client.query(seedSql());
+  // TRUNCATE emptied the rollups and seed.sql only writes base rows. The row
+  // triggers used to refill them; since 20260906215733 nothing does.
+  await reconcileRollups(client);
+}
+
+/**
+ * What the rollups would hold if recomputed from the base tables. Identical
+ * aggregation to the backfill in 20260823055243. One definition, so the
+ * test-time assertion and the `reconcile` command cannot drift apart.
+ */
+const EXPECTED_EXPENDITURE_ROLLUP = `
+  SELECT project_id,
+         date_trunc('month', spent_on)::date AS month,
+         category,
+         status,
+         SUM(amount) AS total_amount,
+         COUNT(*)::int AS expenditure_count
+    FROM ${SCHEMA}.expenditures
+   GROUP BY project_id, date_trunc('month', spent_on)::date, category, status`;
+
+const EXPECTED_PROJECT_ROLLUP = `
+  SELECT p.project_id,
+         COALESCE(m.c, 0)     AS member_count,
+         COALESCE(d.total, 0) AS total_donated,
+         COALESCE(d.c, 0)     AS donation_count,
+         COALESCE(r.c, 0)     AS report_count
+    FROM ${SCHEMA}.projects p
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.project_memberships GROUP BY project_id) m
+           ON m.project_id = p.project_id
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c, SUM(amount) AS total FROM ${SCHEMA}.project_donations GROUP BY project_id) d
+           ON d.project_id = p.project_id
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.reports GROUP BY project_id) r
+           ON r.project_id = p.project_id`;
+
+/**
+ * Rows describing every way the stored rollups disagree with the base tables.
+ * Empty means consistent.
+ *
+ * A zero-count expenditure_rollup row and a missing one are treated as equal:
+ * expenditure_rollup_remove decrements without deleting, so emptying a grain
+ * leaves (0, 0) behind by design.
+ */
+export async function findRollupDrift(client: Queryable): Promise<string[]> {
+  const expenditures = await client.query(`
+    WITH expected AS (${EXPECTED_EXPENDITURE_ROLLUP})
+    SELECT 'expenditure_rollup project=' || COALESCE(e.project_id, a.project_id)
+           || ' month=' || COALESCE(e.month, a.month)
+           || ' status=' || COALESCE(e.status, a.status)
+           || ' category=' || COALESCE(e.category, a.category, '<null>')
+           || ' expected=' || COALESCE(e.total_amount, 0) || '/' || COALESCE(e.expenditure_count, 0)
+           || ' actual='   || COALESCE(a.total_amount, 0) || '/' || COALESCE(a.expenditure_count, 0) AS drift
+      FROM expected e
+      FULL OUTER JOIN ${SCHEMA}.expenditure_rollup a
+        ON a.project_id = e.project_id
+       AND a.month = e.month
+       AND a.status = e.status
+       AND (a.category IS NULL) = (e.category IS NULL)
+       AND COALESCE(a.category, '') = COALESCE(e.category, '')
+     WHERE COALESCE(a.expenditure_count, 0) <> COALESCE(e.expenditure_count, 0)
+        OR COALESCE(a.total_amount, 0) <> COALESCE(e.total_amount, 0)`);
+
+  const projects = await client.query(`
+    WITH expected AS (${EXPECTED_PROJECT_ROLLUP})
+    SELECT 'project_rollup project=' || e.project_id
+           || ' expected=' || e.member_count || '/' || e.total_donated || '/' || e.donation_count || '/' || e.report_count
+           || ' actual='   || COALESCE(a.member_count::text, 'ROW MISSING')
+           || '/' || COALESCE(a.total_donated::text, '-')
+           || '/' || COALESCE(a.donation_count::text, '-')
+           || '/' || COALESCE(a.report_count::text, '-') AS drift
+      FROM expected e
+      LEFT JOIN ${SCHEMA}.project_rollup a ON a.project_id = e.project_id
+     WHERE a.project_id IS NULL
+        OR a.member_count <> e.member_count
+        OR a.total_donated <> e.total_donated
+        OR a.donation_count <> e.donation_count
+        OR a.report_count <> e.report_count`);
+
+  return [...(expenditures.rows ?? []), ...(projects.rows ?? [])].map(
+    (row) => row.drift as string,
+  );
+}
+
+/**
+ * Call in `afterEach`. The row triggers used to make this true by construction;
+ * now @branch/store does, so any write path that forgets a rollup -- including a
+ * cascade nobody thought to guard -- fails the test that touched it.
+ */
+export async function assertRollupsConsistent(client: Queryable): Promise<void> {
+  const drift = await findRollupDrift(client);
+  if (drift.length > 0) {
+    throw new Error(
+      `rollups disagree with the base tables:\n  ${drift.join('\n  ')}`,
+    );
+  }
+}
+
+/** Rebuilds both rollup tables from the base tables. */
+export async function reconcileRollups(client: Queryable): Promise<void> {
+  await client.query(`DELETE FROM ${SCHEMA}.expenditure_rollup`);
+  await client.query(
+    `INSERT INTO ${SCHEMA}.expenditure_rollup
+       (project_id, month, category, status, total_amount, expenditure_count)
+     SELECT project_id, month, category, status, total_amount, expenditure_count
+       FROM (${EXPECTED_EXPENDITURE_ROLLUP}) AS expected`,
+  );
+  await client.query(`DELETE FROM ${SCHEMA}.project_rollup`);
+  await client.query(
+    `INSERT INTO ${SCHEMA}.project_rollup
+       (project_id, member_count, total_donated, donation_count, report_count)
+     SELECT project_id, member_count, total_donated, donation_count, report_count
+       FROM (${EXPECTED_PROJECT_ROLLUP}) AS expected`,
+  );
 }
 
 /**
