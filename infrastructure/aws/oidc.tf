@@ -45,8 +45,7 @@ resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# ReadOnlyAccess does not reliably cover dsql:*, and a plan that cannot read a
-# resource it manages fails.
+# Plan needs dsql read access; ReadOnlyAccess is not guaranteed to include it.
 resource "aws_iam_role_policy_attachment" "ci_plan_dsql_readonly" {
   role       = aws_iam_role.ci_plan.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonAuroraDSQLReadOnlyAccess"
