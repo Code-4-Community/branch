@@ -18,6 +18,7 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 | `shared/rbac/` | `@branch/rbac` — **the** authorization policy, shared by lambdas + frontend | `shared/rbac/README.md` |
 | `shared/lambda-auth/` | `@branch/lambda-auth` — runtime Cognito auth/authz pkg | see backend doc |
 | `shared/lambda-http/` | `@branch/lambda-http` — route table, dispatch, permission enforcement | see backend doc |
+| `shared/lambda-telemetry/` | `@branch/lambda-telemetry` — OTLP metrics + structured logs to Grafana Cloud | `shared/lambda-telemetry/README.md` |
 | `infrastructure/` | Terraform: `aws/`, `github/`, `preview/`, `preview-shared/`, `test/` | `infrastructure/AGENTS.md` |
 | `.github/workflows/` | CI/CD + PR review bot | `.github/AGENTS.md` |
 
@@ -30,12 +31,13 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 ## Shared packages (critical)
 
-Four `file:`-linked packages dedupe code across the repo:
+Five `file:`-linked packages dedupe code across the repo:
 
 - **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). It is the **single declaration** of those DTOs: `@branch/lambda-auth` depends on this package and re-exports them, so never add a second copy anywhere. `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
 - **`@branch/rbac`** (`shared/rbac/`) — the authorization policy, as one table of rules plus a pure `can`/`authorize`. **The lambdas and the frontend both evaluate this module**, so a disabled button and the 403 behind it cannot disagree. It is the only place a permission is defined; do not re-derive one from `isAdmin` in a component or a controller. Read `shared/rbac/README.md` — it carries the role matrix — before changing who may do what.
 - **`@branch/lambda-auth`** (`shared/lambda-auth/`) — runtime auth: `authenticateRequest(db, event)`, `extractToken(event)`, `loadRbacSubject(db, ctx)` (one query for the caller's memberships, which is also what `GET /auth/me` ships to the browser). Lambdas wrap it in their local `auth.ts`.
-- **`@branch/lambda-http`** (`shared/lambda-http/`) — runtime routing: `dispatch(event, { prefix, routes, resolveAuth })` replaces the old per-lambda if-chain handler with a declarative `Route[]` table (`routes.ts`). Every route declares `access: 'public' | 'authenticated'` or a `permission`, and dispatch enforces it before the controller runs; the union has no default arm, so omitting the gate is a type error. Also exports `json`, `parseBody`, `requirePermission`, `createAuthResolver`. Depends on `@branch/rbac`'s and `@branch/lambda-auth`'s `dist/`, so build those first (`.github/actions/build-shared-packages` discovers `shared/*/` and builds in `@branch`-dep order). See `apps/backend/lambdas/AGENTS.md`.
+- **`@branch/lambda-http`** (`shared/lambda-http/`) — runtime routing: `dispatch(event, { prefix, routes, resolveAuth })` replaces the old per-lambda if-chain handler with a declarative `Route[]` table (`routes.ts`). Every route declares `access: 'public' | 'authenticated'` or a `permission`, and dispatch enforces it before the controller runs; the union has no default arm, so omitting the gate is a type error. Also exports `json`, `parseBody`, `requirePermission`, `createAuthResolver`. Depends on `@branch/rbac`'s, `@branch/lambda-auth`'s and `@branch/lambda-telemetry`'s `dist/`, so build those first (`.github/actions/build-shared-packages` discovers `shared/*/` and builds in `@branch`-dep order). See `apps/backend/lambdas/AGENTS.md`.
+- **`@branch/lambda-telemetry`** (`shared/lambda-telemetry/`) — dependency, runtime observability: OTLP metrics and structured logs to Grafana Cloud. `dispatch()` calls it, so **every route in every service already reports** latency, status, cold starts, auth refusals and query duration, and emits one access log per request; controllers only add domain metrics (`recordEvent(METRICS.LOGIN, …)`). It is the only consumer of the `OTEL_EXPORTER_OTLP_*` env vars Terraform sets. With no endpoint configured the OTel SDK is never loaded, so local dev and tests are unaffected. Read `shared/lambda-telemetry/README.md` before adding a metric — the label-cardinality rules there are not optional.
 
 ## Root commands
 

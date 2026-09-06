@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@branch/lambda-auth": "file:../lambda-auth",
+    "@branch/lambda-telemetry": "file:../lambda-telemetry",
     "@branch/rbac": "file:../rbac"
   },
   "devDependencies": {

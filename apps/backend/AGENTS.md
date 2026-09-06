@@ -52,10 +52,11 @@ http://localhost:3000/<service>/health
 
 ## Shared packages
 
-All three linked via `file:` deps in each lambda's `package.json`:
+All four linked via `file:` deps in each lambda's `package.json`:
 - `@branch/types` (`../../../../shared/types`) — devDependency, types only. Must stay a dependency-free leaf: `@branch/lambda-auth` depends on it.
 - `@branch/lambda-auth` (`../../../../shared/lambda-auth`) — dependency, runtime auth. Build it (`npm run build` in `shared/lambda-auth`) when its source changes; lambdas consume `dist/`. It depends on `@branch/types` and re-exports the auth DTOs from there, so those types have exactly one declaration; changing `shared/lambda-auth/package.json` deps invalidates every lambda's `package-lock.json`, so regenerate all six.
-- `@branch/lambda-http` (`../../../../shared/lambda-http`) — dependency, runtime routing: `dispatch(event, { prefix, routes, resolveAuth })` plus `json`/`parseBody`/`requirePermission`/`createAuthResolver`. Every lambda's `handler.ts` is a 5-line call into it; each lambda's own `routes.ts` supplies the `Route[]` table, and every route in it declares a `permission` or an `access` level that dispatch enforces. Depends on `@branch/rbac`'s and `@branch/lambda-auth`'s `dist/`, so build those first. See `lambdas/AGENTS.md`.
+- `@branch/lambda-http` (`../../../../shared/lambda-http`) — dependency, runtime routing: `dispatch(event, { prefix, routes, resolveAuth })` plus `json`/`parseBody`/`requirePermission`/`createAuthResolver`. Every lambda's `handler.ts` is a 5-line call into it; each lambda's own `routes.ts` supplies the `Route[]` table, and every route in it declares a `permission` or an `access` level that dispatch enforces. Depends on `@branch/rbac`'s, `@branch/lambda-auth`'s and `@branch/lambda-telemetry`'s `dist/`, so build those first. See `lambdas/AGENTS.md`.
+- `@branch/lambda-telemetry` (`../../../../shared/lambda-telemetry`) — dependency, runtime metrics + structured logs over OTLP to Grafana Cloud. Wired into `dispatch()` (RED metrics, cold starts, auth refusals, access log) and into each `db.ts` via `log: kyselyTelemetryLog` (query duration, slow/failed query lines). Controllers add domain counters with `recordEvent`/`recordValue`. Inert unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, which is why local dev and tests need no collector.
 
 ## Deploy
 
@@ -69,6 +70,8 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 ## Env vars (lambdas)
 
 `DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` (or `COGNITO_APP_CLIENT_ID`), `REPORTS_BUCKET_NAME` (reports, expenditures and projects — one bucket holds both the `reports/` and `receipts/` prefixes, and all three delete out of it), `AWS_REGION` (default `us-east-2`, Lambda-reserved — never set it in Terraform).
+
+Observability adds `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_HEADERS` (read by `@branch/lambda-telemetry`; absent means no export at all, which is the local and test default) and the optional `LOG_LEVEL`.
 
 **Anything a lambda reads from `process.env` must be declared in the `environment` block of `infrastructure/aws/lambda.tf`.** That block is authoritative and is deliberately not in `lifecycle.ignore_changes`, so a value set by hand in the console is deleted on the next apply. Locally the Cognito values must be the real shared dev-pool IDs (`apps/backend/.env`) — auth talks to the real pool for JWKS and `InitiateAuth` — but no AWS credentials are needed, because every Cognito API on the sign-in path is unsigned.
 

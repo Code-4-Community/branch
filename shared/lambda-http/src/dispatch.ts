@@ -1,10 +1,31 @@
 import type { APIGatewayProxyResult } from 'aws-lambda';
 import { authorize } from '@branch/rbac';
+import {
+  enrichRequestContext,
+  flushTelemetry,
+  logger,
+  recordAuthFailure,
+  recordColdStart,
+  recordRequest,
+  recordUnhandledError,
+  runWithRequestContext,
+} from '@branch/lambda-telemetry';
+import type { RequestContext } from '@branch/lambda-telemetry';
 import { json } from './response';
 import { matchPattern } from './match';
 import { ANONYMOUS_AUTH } from './authz';
 import { reportError } from './errors';
 import type { DispatchOptions, RequestAuth, Route } from './types';
+
+/** Flipped by the first invocation this container serves. */
+let firstInvocation = true;
+
+/**
+ * The route label attached to metrics and logs. Always a *pattern*, never a
+ * concrete path — `/donors/42` as a label would give Prometheus one series per
+ * donor.
+ */
+const UNMATCHED_ROUTE = 'unmatched';
 
 /**
  * Route a Lambda event to the first matching route and return its response.
@@ -18,52 +39,124 @@ import type { DispatchOptions, RequestAuth, Route } from './types';
  * Handles OPTIONS preflight, `/<prefix>/health`, authentication, the route's
  * declared permission, 404 and 500 centrally. A controller that runs has
  * already cleared its route's gate.
+ *
+ * Also the one place the backend is instrumented: every request produces a
+ * duration histogram sample, a counter increment and an access log, and the
+ * buffered telemetry is flushed before the handler returns.
  */
 export async function dispatch(
   event: any,
   { prefix, routes, resolveAuth }: DispatchOptions,
 ): Promise<APIGatewayProxyResult> {
-  // Hoisted out of the try so the catch can name the route that failed.
-  const rawPath: string = event?.rawPath || event?.path || '/';
-  let path = rawPath.replace(/\/+$/, '') || '/';
-  const method = (
-    event?.requestContext?.http?.method ||
-    event?.httpMethod ||
-    'GET'
+  const startedAt = Date.now();
+  const coldStart = firstInvocation;
+  firstInvocation = false;
+
+  const rawPath = String(event?.rawPath || event?.path || '/');
+  const method = String(
+    event?.requestContext?.http?.method || event?.httpMethod || 'GET',
   ).toUpperCase();
 
-  try {
-    // Canonicalize to `/<prefix>...` when the prefix was stripped (dev-server).
-    const base = `/${prefix}`;
-    if (path !== base && !path.startsWith(`${base}/`)) {
-      path = path === '/' ? base : base + path;
-    }
-
-    if (method === 'OPTIONS') return json(200, {});
-
-    if (path === `${base}/health` && method === 'GET') {
-      return json(200, { ok: true, timestamp: new Date().toISOString() });
-    }
-
-    for (const route of routes) {
-      if (route.method.toUpperCase() !== method) continue;
-      const params = matchPattern(route.pattern, path);
-      if (!params) continue;
-
-      const gate = await enforce(route, event, resolveAuth);
-      if ('response' in gate) return gate.response;
-
-      return await route.handler({ event, params, method, path, auth: gate.auth });
-    }
-
-    return json(404, { message: 'Not Found', path, method });
-  } catch (err) {
-    console.error('Lambda error:', err);
-    // The layer's wrapHandler only records throws, and catching here is what
-    // gets API Gateway a JSON 500 instead of a 502 -- so hand it over by hand.
-    reportError(err, { method, path });
-    return json(500, { message: 'Internal Server Error' });
+  // Canonicalize to `/<prefix>...` when the prefix was stripped (dev-server).
+  const base = `/${prefix}`;
+  let path = rawPath.replace(/\/+$/, '') || '/';
+  if (path !== base && !path.startsWith(`${base}/`)) {
+    path = path === '/' ? base : base + path;
   }
+
+  const context: RequestContext = {
+    requestId: event?.requestContext?.requestId,
+    service: prefix,
+    method,
+    path,
+    coldStart,
+  };
+
+  return runWithRequestContext(context, async () => {
+    if (coldStart) recordColdStart();
+
+    let response: APIGatewayProxyResult;
+    try {
+      response = await route(event, { prefix, routes, resolveAuth }, { base, path, method });
+    } catch (err) {
+      logger.error('Unhandled error', { error: err });
+      recordUnhandledError(method, context.route ?? UNMATCHED_ROUTE);
+      // The layer's wrapHandler only records throws, and catching here is what
+      // gets API Gateway a JSON 500 instead of a 502 -- so hand it over by hand.
+      reportError(err, { method, path });
+      response = json(500, { message: 'Internal Server Error' });
+    }
+
+    await complete(context, response, startedAt);
+    return response;
+  });
+}
+
+interface Target {
+  base: string;
+  path: string;
+  method: string;
+}
+
+async function route(
+  event: any,
+  { routes, resolveAuth }: DispatchOptions,
+  { base, path, method }: Target,
+): Promise<APIGatewayProxyResult> {
+  if (method === 'OPTIONS') {
+    enrichRequestContext({ route: 'preflight' });
+    return json(200, {});
+  }
+
+  if (path === `${base}/health` && method === 'GET') {
+    enrichRequestContext({ route: `${base}/health` });
+    return json(200, { ok: true, timestamp: new Date().toISOString() });
+  }
+
+  for (const candidate of routes) {
+    if (candidate.method.toUpperCase() !== method) continue;
+    const params = matchPattern(candidate.pattern, path);
+    if (!params) continue;
+
+    enrichRequestContext({ route: candidate.pattern });
+
+    const gate = await enforce(candidate, event, resolveAuth);
+    if ('response' in gate) return gate.response;
+
+    enrichRequestContext({ userId: userIdOf(gate.auth) });
+    return await candidate.handler({ event, params, method, path, auth: gate.auth });
+  }
+
+  enrichRequestContext({ route: UNMATCHED_ROUTE });
+  return json(404, { message: 'Not Found', path, method });
+}
+
+/**
+ * Record the request and ship everything buffered.
+ *
+ * Lambda freezes the container as soon as the handler returns, so a flush that
+ * does not happen here never happens at all.
+ */
+async function complete(
+  context: RequestContext,
+  response: APIGatewayProxyResult,
+  startedAt: number,
+): Promise<void> {
+  const durationMs = Date.now() - startedAt;
+  const statusCode = response.statusCode;
+  const route = context.route ?? UNMATCHED_ROUTE;
+
+  recordRequest({ method: context.method, route, statusCode, durationMs });
+
+  // Health checks are the majority of traffic on an idle stack; counting them is
+  // useful, narrating them is not.
+  const level = route.endsWith('/health') ? 'debug' : statusCode >= 500 ? 'error' : 'info';
+  logger[level]('Request served', {
+    'http.response.status_code': statusCode,
+    durationMs,
+  });
+
+  await flushTelemetry();
 }
 
 type Gate = { auth: RequestAuth } | { response: APIGatewayProxyResult };
@@ -81,22 +174,31 @@ async function enforce(
     const err = new Error(
       `Route ${route.method} ${route.pattern} is guarded but the service passed no resolveAuth`,
     );
-    console.error(err.message);
+    logger.error(err.message, { error: err });
     reportError(err);
     return { response: json(500, { message: 'Internal Server Error' }) };
   }
 
   const auth = await resolveAuth(event);
   if (!auth.context.isAuthenticated) {
+    recordAuthFailure(route.method.toUpperCase(), route.pattern, 'unauthenticated');
     return { response: json(401, { message: 'Authentication required' }) };
   }
 
   if (route.permission) {
     const decision = authorize(auth.subject, route.permission);
     if (!decision.allowed) {
+      recordAuthFailure(route.method.toUpperCase(), route.pattern, 'forbidden');
       return { response: json(403, { message: decision.reason ?? 'Forbidden' }) };
     }
   }
 
   return { auth };
+}
+
+/** The caller's `branch.users` id, for the access log. Anonymous routes have none. */
+function userIdOf(auth: RequestAuth): string | undefined {
+  const user = auth.context.user;
+  const id = user?.dbUser?.userId ?? user?.userId;
+  return id === undefined ? undefined : String(id);
 }

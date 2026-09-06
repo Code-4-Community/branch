@@ -1,5 +1,6 @@
 import { json, parseBody, requirePermission, RouteHandler, serverError } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
+import { METRICS, recordEvent } from '@branch/lambda-telemetry';
 import { sql, type SqlBool } from 'kysely';
 import db from '../db';
 import { ProjectValidationUtils } from '../validation-utils';
@@ -177,6 +178,10 @@ export const deleteProject: RouteHandler = async ({ params }) => {
   // which is the single largest source of unreferenced objects.
   const filesDeleted = await deleteProjectObjects(Number(id));
 
+  // A cascade delete takes expenditures, reports and their S3 objects with it,
+  // so this is worth being able to correlate against on a dashboard.
+  recordEvent(METRICS.PROJECT_CHANGED, { action: 'deleted' });
+
   return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id }, filesDeleted });
 };
 
@@ -251,6 +256,7 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
       return row;
     });
 
+    recordEvent(METRICS.PROJECT_CHANGED, { action: 'created', staffed: members.length > 0 });
     return json(201, inserted);
   } catch (e) {
     return serverError(e, 'Failed to create project');

@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
+import { METRICS, recordEvent } from '@branch/lambda-telemetry';
 import { resolveProfileImage } from '../photos';
 import {
   cognitoClient,
@@ -58,10 +59,14 @@ export async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
     const response = await cognitoClient.send(new InitiateAuthCommand(params));
 
     if (response.AuthenticationResult) {
+      recordEvent(METRICS.LOGIN, { outcome: 'success' });
       return authResultResponse(response.AuthenticationResult);
     }
 
     if (response.ChallengeName) {
+      // The challenge name is a small fixed set, so it is safe as a label.
+      recordEvent(METRICS.LOGIN, { outcome: 'challenge', challenge: response.ChallengeName });
+
       // MFA_SETUP cannot be answered by RespondToAuthChallenge alone -- it needs
       // AssociateSoftwareToken/VerifySoftwareToken enrollment, which is not
       // built yet. Return the Session anyway so a future enrollment endpoint can
@@ -81,6 +86,9 @@ export async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
       'Unexpected response from authentication service',
     );
   } catch (error: any) {
+    // A spike here is the credential-stuffing signal. The address is
+    // deliberately not a label: it is PII and unbounded cardinality.
+    recordEvent(METRICS.LOGIN, { outcome: 'failure', 'error.type': error?.name ?? 'Unknown' });
     return mapCognitoAuthError(error, 'login');
   }
 }
