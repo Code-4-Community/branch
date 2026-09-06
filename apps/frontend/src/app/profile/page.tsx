@@ -12,6 +12,7 @@ import LoadingState from '../components/LoadingState';
 import ProfilePhoto from '../components/ProfilePhoto';
 import ProjectCard from '../components/ProjectCard';
 import TextInputField from '../components/TextInputField';
+import PasswordResetModal from '../components/PasswordResetModal';
 import TwoFactorModal from '../components/TwoFactorModal';
 import UpdatePhotoModal from '../components/UpdatePhotoModal';
 import { useAuth } from '@/context/AuthContext';
@@ -53,6 +54,7 @@ export default function ProfilePage() {
 
   const [resetNotice, setResetNotice] = useState<string | null>(null);
   const [isSendingReset, setSendingReset] = useState(false);
+  const [isResetOpen, setResetOpen] = useState(false);
 
   const userId = authUser?.userId;
 
@@ -122,7 +124,7 @@ export default function ProfilePage() {
     setSendingReset(true);
     try {
       await api.post('/auth/forgot-password', { email });
-      setResetNotice(`We sent a reset link to ${email}.`);
+      setResetOpen(true);
     } catch (err) {
       setResetNotice(
         err instanceof Error ? err.message : 'Could not send the reset email',
@@ -208,7 +210,7 @@ export default function ProfilePage() {
 
                     <div className="flex flex-col !gap-2">
                       <h5>Password</h5>
-                      <p>We will email you a link to securely reset your password</p>
+                      <p>We will email you a verification code to reset your password</p>
                       <div className="flex flex-wrap items-center !gap-4">
                         <Button
                           variant="secondary"
@@ -316,6 +318,13 @@ export default function ProfilePage() {
         userId={userId}
         onClose={() => setPhotoOpen(false)}
         onUpdated={handlePhotoUpdated}
+      />
+
+      <PasswordResetModal
+        open={isResetOpen}
+        email={profile?.email ?? ''}
+        onClose={() => setResetOpen(false)}
+        onSuccess={() => setResetNotice('Your password has been changed.')}
       />
 
       <TwoFactorModal
