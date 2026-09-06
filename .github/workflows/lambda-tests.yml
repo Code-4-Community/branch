@@ -193,7 +193,7 @@ jobs:
               fail=1
             fi
             if printf '%s\n' "$sql" | grep -inE '^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+(branch\.)?users\b'; then
-              echo "::warning file=$f::inserting users in a migration puts rows in PRODUCTION. Seeded users with a NULL cognito_sub are claimable by POST /auth/register, so this can hand someone an account. Dev seed rows belong in apps/backend/db/seed.sql."
+              echo "::warning file=$f::inserting users in a migration puts rows in PRODUCTION. Dev seed rows belong in apps/backend/db/seed.sql."
             fi
           done
           exit $fail

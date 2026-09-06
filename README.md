@@ -54,9 +54,9 @@ any environment is bootstrapped in SQL:
 cd apps/backend && make grant-admin EMAIL=you@example.com
 ```
 
-Accounts are invitation-only: a `branch.users` row with `cognito_sub IS NULL` is a
-pending invitation, and `POST /auth/register` claims it. A Cognito user created
-out of band has no matching row and will be rejected.
+Accounts are admin-created: `POST /users` calls Cognito `AdminCreateUser` and writes
+the `branch.users` row with its `cognito_sub`. There is no self-serve signup. A
+Cognito user created out of band has no matching row and will be rejected.
 
 ## Documentation
 

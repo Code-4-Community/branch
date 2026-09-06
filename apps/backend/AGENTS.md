@@ -34,7 +34,7 @@ Defaults work without `.env` (DB: branch_dev/password@postgres:5432/branch_db). 
 
 **Shared dev-server (single service iteration)** — from a lambda dir (`npm run dev`). All lambdas register on **port 3000**; first one started owns the server, others register via `POST /_register`. Routes dispatch by first path segment:
 ```
-http://localhost:3000/auth/register
+http://localhost:3000/auth/login
 http://localhost:3000/donors            # GET /
 http://localhost:3000/<service>/swagger # Swagger UI from openapi.yaml
 http://localhost:3000/<service>/health
@@ -78,11 +78,9 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 
 **`branch.users.is_admin` is the single source of truth for admin.** There is no promotion from a Cognito group, and no pre-token-generation trigger, so `is_admin` is not a JWT claim — `GET /auth/me` is the only way a client can learn it.
 
-**Account provisioning is invitation-only.** A `branch.users` row with `cognito_sub IS NULL` is a pending invitation, created by `db/seed.sql` or by admin `POST /users` (ADMIN-gated). `POST /auth/register` is public, so it deliberately **cannot create a row** — it only claims an existing invitation, setting `cognito_sub` and never touching `is_admin`. An email with no pending invitation gets 403 `INVITATION_REQUIRED`; an already-claimed one gets 409.
+**Account provisioning is admin-only.** There is no self-serve signup: the pool sets `allow_admin_create_user_only`, so Cognito `SignUp` is refused, and `/auth/register`, `/auth/verify-email` and `/auth/resend-code` no longer exist. Admin `POST /users` (ADMIN-gated) calls `AdminCreateUser`, which mails a temporary password, and inserts the `branch.users` row with `cognito_sub` already set.
 
-The 403 is intentionally identical whether or not the address exists, so registration cannot be used to enumerate staff emails.
-
-This is the real control, not the Cognito pool config: `authenticateRequest` rejects any Cognito identity whose `sub` has no `branch.users` row, so a Cognito user created out of band is inert. Full flow: admin `POST /users` → invitee `POST /auth/register` with that email → `POST /auth/verify-email` with the emailed code → `POST /auth/login`.
+`authenticateRequest` rejects any Cognito identity whose `sub` has no `branch.users` row, so a Cognito user created out of band is inert — and a `branch.users` row with a NULL `cognito_sub` can never sign in. Full flow: admin `POST /users` → invitee `POST /auth/login` with the temporary password → `POST /auth/respond-challenge` to satisfy `NEW_PASSWORD_REQUIRED`.
 
 **Bootstrapping the first admin** is a manual SQL statement in every environment, because `is_admin` can only be set by an existing admin: `make grant-admin EMAIL=…` locally, or the equivalent `UPDATE` against RDS in production.
 
