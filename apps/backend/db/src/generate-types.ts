@@ -54,8 +54,7 @@ async function main(): Promise<void> {
       // in all six lambdas.
       '--include-pattern',
       'branch.*',
-      // kysely-codegen skips kysely_migration% by name and knows nothing about
-      // Flyway, so without this the history table becomes a shared DB type.
+      // kysely-codegen only skips kysely_migration% by name, not Flyway's table.
       '--exclude-pattern',
       `branch.${HISTORY_TABLE}`,
       '--out-file',

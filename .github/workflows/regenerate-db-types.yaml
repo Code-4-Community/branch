@@ -139,8 +139,7 @@ jobs:
             echo "Applying db/migrations"
             npm run migrate --prefix apps/backend/db
 
-            # Flyway records what it applied, not which files it applied; the
-            # type generator refuses a schema the current migrations did not build.
+            # Type generation refuses a schema without this marker.
             npm run fingerprint --prefix apps/backend/db
 
             echo "Verifying schema application"

@@ -1,28 +1,13 @@
 #!/bin/sh
-# Runs the Flyway CLI against the database src/config.ts would connect to, with
-# the settings this repo needs. The Makefile, CI and the migrator container all
-# go through here, so the configuration exists once.
-#
-#   ./flyway.sh migrate
-#   ./flyway.sh info
-#   ./flyway.sh validate
-#
-# Uses the flyway on PATH (the migrator image has one) and otherwise the pinned
-# image, so a laptop and a CI runner need docker and nothing else.
 set -eu
 
 FLYWAY_IMAGE=flyway/flyway:13.5.0-alpine
 DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-# Adopting the pre-Flyway database: everything at or below this version is
-# already applied on production, so Flyway baselines instead of re-running it.
-# It is the last migration that shipped under kysely's Migrator and never moves;
-# a new migration sorts above it and applies normally.
+# Last migration applied under kysely; already on production, so Flyway baselines here.
 BASELINE_VERSION=20260906215733
 
-# Same precedence as src/config.ts: DATABASE_URL wins, otherwise the discrete
-# DB_* vars with the docker-compose defaults. Percent-encoded credentials in
-# DATABASE_URL are not decoded -- pass those through DB_USER/DB_PASSWORD.
+# Percent-encoded credentials in DATABASE_URL are not decoded -- use DB_USER/DB_PASSWORD.
 if [ -n "${DATABASE_URL:-}" ]; then
   rest=${DATABASE_URL#*://}
   case "$rest" in
@@ -44,8 +29,6 @@ else
   db_name=${DB_NAME:-branch_db}
 fi
 
-# TLS, mirroring src/config.ts: a CA bundle means full verification (CI reaches
-# RDS over the public internet), DB_SSL alone means encrypted-but-unverified.
 ca_path=${DB_SSL_CA:-}
 if [ -n "$ca_path" ]; then
   ssl='?sslmode=verify-full&sslrootcert='
@@ -55,13 +38,7 @@ else
   ssl=''
 fi
 
-# -outOfOrder: two contributors' migrations sometimes merge out of timestamp
-#   order (Alice authors first, Bob merges first). Without it the next deploy
-#   fails and can only be unblocked by hand-editing the history table.
-# -cleanDisabled: `flyway clean` drops the schema. Nothing here ever wants it,
-#   and it is one typo away from production.
-# -placeholders.async: empty on PostgreSQL, ASYNC on Aurora DSQL, which has no
-#   synchronous CREATE INDEX. Keeps one migration corpus valid on both engines.
+# outOfOrder: PRs merge out of timestamp order. async: Aurora DSQL has no synchronous CREATE INDEX.
 add_flags() {
   set -- \
     "-locations=filesystem:$1" \
@@ -87,8 +64,6 @@ else
     ssl="${ssl}/rds-ca.pem"
     ca_mount="--volume=$ca_path:/rds-ca.pem:ro"
   fi
-  # --network=host so localhost:5432 means the same thing inside the container
-  # as outside it -- that is where compose and the CI postgres service listen.
   # shellcheck disable=SC2046
   set -- docker run --rm --network=host \
     --volume="$DB_DIR/migrations:/db/migrations:ro" \
@@ -97,8 +72,7 @@ else
     $(add_flags /db/migrations) "$@"
 fi
 
-# Credentials go through the environment, never argv: `docker run` arguments are
-# visible to every process on the host, and Flyway echoes its own command line.
+# Credentials via environment, never argv: `docker run` args are world-visible.
 FLYWAY_URL="jdbc:postgresql://${db_host}:${db_port}/${db_name}${ssl}"
 FLYWAY_USER=$db_user
 FLYWAY_PASSWORD=$db_password

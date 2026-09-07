@@ -44,10 +44,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      # Applies db/migrations to a virgin database and loads the dev seed rows
-      # the tests expect. Through testkit rather than Flyway: the tests build the
-      # schema that way too (ensureSchema/resetData), and the `checks` job below
-      # runs the real Flyway migration once instead of six times over.
       - name: Build the schema and seed
         working-directory: apps/backend/db
         run: npm ci --no-audit --no-fund && npm run reset
@@ -120,8 +116,7 @@ jobs:
           esac
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
-      # Keyed by Flyway version rather than by path: what production's schema
-      # history pins is the version, its checksum and its script name.
+      # Keyed by version, not path: that is what Flyway's history pins.
       - name: Applied migrations are immutable
         if: steps.base.outputs.sha != ''
         env:
@@ -131,8 +126,7 @@ jobs:
           MB=$(git merge-base "$BASE" HEAD)
           TAB=$(printf '\t')
 
-          # version<TAB>blob<TAB>filename, sorted by version so `join` can pair
-          # the two revisions up.
+          # version<TAB>blob<TAB>name, sorted because `join` requires sorted input.
           list() {
             git ls-tree -r "$1" -- "$DIR" | while read -r _ _ sha path; do
               name=$(basename "$path")
@@ -151,8 +145,7 @@ jobs:
             fail=1
           fi
 
-          # The rename check applies only once a name is in Flyway form:
-          # adopting Flyway renamed every file exactly once.
+          # Rename check only for V-names: adopting Flyway renamed every file once.
           join -t"$TAB" -j1 "$RUNNER_TEMP/was.tsv" "$RUNNER_TEMP/now.tsv" > "$RUNNER_TEMP/both.tsv"
           awk -F'\t' -v dir="$DIR" '
             $2 != $4 {
@@ -227,12 +220,7 @@ jobs:
           done
           exit $fail
 
-      # Advisory until the Aurora DSQL cutover: the corpus still contains the
-      # plpgsql the rollup migration later dropped, so linting all of it can
-      # only ever fail. New migrations are what we can keep clean.
-      #
-      # Only added files, and with the placeholder substituted -- dsql-lint
-      # parses SQL, and `${async}` is not SQL.
+      # Advisory: the existing corpus still holds plpgsql the DSQL cutover drops.
       - name: Aurora DSQL compatibility (advisory)
         if: steps.base.outputs.sha != ''
         continue-on-error: true

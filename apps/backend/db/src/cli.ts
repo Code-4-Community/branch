@@ -52,9 +52,7 @@ function newMigration(name?: string): void {
   }
 
   // UTC YYYYMMDDHHMMSS, generated so nobody hand-types one: collisions between
-  // concurrent PRs are then effectively impossible. `V<version>__<description>`
-  // is Flyway's naming scheme -- the double underscore is the separator, and it
-  // cannot be omitted.
+  // concurrent PRs are then effectively impossible.
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const file = path.join(MIGRATIONS_DIR, `V${stamp}__${name}.sql`);
 
@@ -102,10 +100,6 @@ async function main(): Promise<void> {
         await resetData(client);
         console.log('schema rebuilt from migrations and reseeded');
       });
-    // Flyway records what it applied, not which files were on disk when it ran.
-    // `make types` refuses to generate from a schema the current migrations did
-    // not build, so a real migrate run has to leave the same marker
-    // rebuildSchema() does.
     case 'fingerprint':
       return withClient(async (client) => {
         await stampFingerprint(client);

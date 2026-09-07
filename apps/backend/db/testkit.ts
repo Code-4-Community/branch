@@ -74,10 +74,6 @@ export const HISTORY_TABLE = 'flyway_schema_history';
  * local database, the next `make migrate` would baseline at the adoption
  * version and re-apply every migration written since, failing on "already
  * exists".
- *
- * checksum is left NULL on purpose. Flyway only compares checksums it recorded
- * itself, and nothing validates a test database, so computing Flyway's CRC32
- * here would be a second implementation to keep in step for no benefit.
  */
 export async function stampLedger(client: Queryable): Promise<void> {
   await client.query(
@@ -98,8 +94,7 @@ export async function stampLedger(client: Queryable): Promise<void> {
        ON ${SCHEMA}.${HISTORY_TABLE} (success)`,
   );
 
-  // V<version>__<description>.sql -- Flyway stores the description with the
-  // underscores turned back into spaces.
+  // Flyway stores the description with the underscores turned back into spaces.
   const rows = migrationFiles()
     .map((file, index) => {
       const [version, description] = file

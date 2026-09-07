@@ -162,7 +162,7 @@ jobs:
     # reviewers: a pending approval here would strand a merged PR with its schema
     # applied and its lambda code undeployed.
     environment: production-db
-    # kysely takes a pg advisory lock, but serialize anyway so two merges in a row
+    # Flyway locks the history table, but serialize anyway so two merges in a row
     # queue instead of racing -- and never cancel a half-run migration.
     concurrency:
       group: db-migrate-prod
@@ -230,14 +230,6 @@ jobs:
           echo "pending=${pending:-1}" >> "$GITHUB_OUTPUT"
           echo "$pending migration(s) pending"
 
-      # V0000__baseline_schema is idempotent, but "idempotent" is one typo away
-      # from DROP SCHEMA, and production is never built by running it -- Flyway
-      # baselines over the schema that is already there.
-      #
-      # An empty target therefore means DB_HOST is not the database we think it
-      # is. A pending baseline on a database Flyway is already tracking means the
-      # history and the schema have drifted apart. Refuse either way rather than
-      # guess. See apps/backend/db/README.md.
       - name: Refuse to execute the baseline against production
         run: |
           if jq -e '.allSchemasEmpty' info.json > /dev/null; then
