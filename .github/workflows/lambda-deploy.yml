@@ -7,6 +7,7 @@ on:
       - 'apps/backend/lambdas/**'
       - 'shared/types/**'
       - 'shared/lambda-http/**'
+      - 'shared/store/**'
       - 'apps/backend/db/migrations/**'
   workflow_dispatch:
     inputs:
@@ -42,7 +43,7 @@ jobs:
           migrate=false
           code=false
           grep -q '^apps/backend/db/migrations/' <<<"$changed_files" && migrate=true
-          grep -qE '^(apps/backend/lambdas/|shared/types/|shared/lambda-http/)' <<<"$changed_files" && code=true
+          grep -qE '^(apps/backend/lambdas/|shared/types/|shared/lambda-http/|shared/store/)' <<<"$changed_files" && code=true
 
           # workflow_dispatch has no meaningful diff: apply everything, or
           # migrations only when explicitly asked (recovery / manual re-run).

@@ -17,7 +17,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -30,7 +30,7 @@ jest.mock('../auth', () => {
 });
 
 import { handler } from '../handler';
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<
@@ -91,7 +91,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
+  await closeConnection();
 });
 
 const stored = (members: Array<{ user_id: number; role: string }>) =>

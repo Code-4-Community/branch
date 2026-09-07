@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
-jest.mock('../db');
+jest.mock('@branch/store');
 // Memberships the mocked session should appear to have. Named `mock*` so it can
 // be referenced from the jest.mock factory below.
 const mockMemberships: Array<{ project_id: number; role: string }> = [];
@@ -54,11 +54,13 @@ jest.mock('../report-service', () => ({
 }));
 
 import { handler } from '../handler';
-import db from '../db';
+import { db, recordReport, removeReport } from '@branch/store';
 import { authenticateRequest } from '../auth';
 import * as reportService from '../report-service';
 
 const mockDb = db as any;
+const mockRecordReport = recordReport as jest.MockedFunction<typeof recordReport>;
+const mockRemoveReport = removeReport as jest.MockedFunction<typeof removeReport>;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockReportService = reportService as jest.Mocked<typeof reportService>;
 function getEvent(queryStringParameters?: Record<string, string>) {
@@ -652,13 +654,7 @@ describe('POST /reports unit tests', () => {
   }
 
   function setupInsertMock(report: Record<string, unknown>) {
-    mockDb.insertInto = jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returningAll: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(report as any),
-        }),
-      }),
-    });
+    mockRecordReport.mockResolvedValue(report as never);
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
@@ -774,15 +770,16 @@ describe('POST /reports unit tests', () => {
 
     test('201: title is trimmed before inserting', async () => {
       let capturedValues: Record<string, unknown> = {};
-      mockDb.insertInto = jest.fn().mockReturnValue({
-        values: jest.fn().mockImplementation((vals: any) => {
-          capturedValues = vals;
-          return {
-            returningAll: jest.fn().mockReturnValue({
-              executeTakeFirst: jest.fn().mockReturnValue({ report_id: 1, project_id: 1, title: vals.title, object_url: fakeObjectUrl, report_type: 'technical', date_created: new Date() } as any),
-            }),
-          };
-        }),
+      mockRecordReport.mockImplementation(async (vals: any) => {
+        capturedValues = vals;
+        return {
+          report_id: 1,
+          project_id: 1,
+          title: vals.title,
+          object_url: fakeObjectUrl,
+          report_type: 'technical',
+          date_created: new Date(),
+        } as never;
       });
 
       await handler(postEvent({ title: '  My Report  ', projectId: 1, objectUrl: fakeObjectUrl }));
@@ -1006,11 +1003,7 @@ describe('DELETE /reports/{id} unit tests', () => {
   }
 
   function setupDeleteMock(numDeletedRows: bigint) {
-    mockDb.deleteFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        execute: jest.fn().mockReturnValue([{ numDeletedRows }]),
-      }),
-    });
+    mockRemoveReport.mockResolvedValue(numDeletedRows);
   }
 
   beforeEach(() => {
@@ -1047,7 +1040,7 @@ describe('DELETE /reports/{id} unit tests', () => {
 
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Report not found');
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveReport).not.toHaveBeenCalled();
     });
 
     test('403: a non-admin cannot delete a report', async () => {
@@ -1056,7 +1049,7 @@ describe('DELETE /reports/{id} unit tests', () => {
 
       expect(res.statusCode).toBe(403);
       expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveReport).not.toHaveBeenCalled();
     });
 
     test('404: row already gone by the time delete executes (race condition)', async () => {
@@ -1130,13 +1123,9 @@ describe('DELETE /reports/{id} unit tests', () => {
 
       test('the row is deleted before the object', async () => {
         const order: string[] = [];
-        mockDb.deleteFrom = jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            execute: jest.fn(() => {
-              order.push('row');
-              return [{ numDeletedRows: 1n }];
-            }),
-          }),
+        mockRemoveReport.mockImplementation(async () => {
+          order.push('row');
+          return 1n;
         });
         mockS3Send.mockImplementation(async () => {
           order.push('object');

@@ -35,35 +35,29 @@ const mockUpdateResult = jest.fn();
 const mockSet = jest.fn();
 const mockValues = jest.fn();
 
-jest.mock('../db', () => {
+jest.mock('@branch/store', () => {
   const selectChain: any = {
     where: () => selectChain,
     selectAll: () => selectChain,
     select: () => selectChain,
     executeTakeFirst: (...a: unknown[]) => mockExecuteTakeFirst(...a),
   };
-  const updateChain: any = {
-    set: (...a: unknown[]) => {
-      mockSet(...a);
-      return updateChain;
-    },
-    where: () => updateChain,
-    execute: (...a: unknown[]) => mockExecute(...a),
-    executeTakeFirst: (...a: unknown[]) => mockUpdateResult(...a),
-  };
-  const insertChain: any = {
-    values: (...a: unknown[]) => {
-      mockValues(...a);
-      return insertChain;
-    },
-    execute: (...a: unknown[]) => mockExecute(...a),
-  };
   return {
     __esModule: true,
-    default: {
-      selectFrom: () => selectChain,
-      updateTable: () => updateChain,
-      insertInto: () => insertChain,
+    db: { selectFrom: () => selectChain },
+    // claimUser carries the `cognito_sub IS NULL` guard; the tests assert on the
+    // values it was handed and on how many rows it claimed.
+    claimUser: (_id: unknown, values: unknown) => {
+      mockSet(values);
+      return mockUpdateResult();
+    },
+    updateUser: (_id: unknown, values: unknown) => {
+      mockSet(values);
+      return mockUpdateResult();
+    },
+    createUser: (...a: unknown[]) => {
+      mockValues(...a);
+      return mockExecute();
     },
   };
 });
@@ -94,7 +88,7 @@ const TOKENS = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockUpdateResult.mockResolvedValue({ numUpdatedRows: 1n });
+  mockUpdateResult.mockResolvedValue(1n);
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   jest.spyOn(console, 'log').mockImplementation(() => undefined);

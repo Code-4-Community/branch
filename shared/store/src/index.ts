@@ -23,6 +23,11 @@ export type ReadOnlyDb = Omit<
 
 export const db: ReadOnlyDb = writeDb
 
+/** Closes the pool. Test teardown; a lambda never calls this. */
+export function closeConnection(): Promise<void> {
+  return writeDb.destroy()
+}
+
 export { recordExpenditure, editExpenditure, removeExpenditure } from './expenditures'
 export { recordDonation, removeDonation, createDonor, removeDonor } from './donations'
 export { createProject, updateProject, removeProject } from './projects'

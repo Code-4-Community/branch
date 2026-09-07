@@ -7,7 +7,7 @@ import { describe, test, expect, beforeAll, beforeEach, afterAll } from '@jest/g
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 import { fetchReportData, keyFromObjectUrl, objectUrlFor, reportKeyPrefix } from '../report-service';
 
 const pool = new Pool({
@@ -49,7 +49,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
+  await closeConnection();
 });
 
 describe('fetchReportData', () => {
