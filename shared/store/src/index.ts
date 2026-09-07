@@ -2,11 +2,6 @@ import type { Kysely } from 'kysely'
 import type { DB } from '@branch/types'
 import { writeDb } from './connection'
 
-/**
- * Every mutating entry point is stripped, so a controller physically cannot
- * write without going through an operation below. That is what keeps the rollup
- * tables correct now that the row triggers are gone.
- */
 export type ReadOnlyDb = Omit<
   Kysely<DB>,
   | 'insertInto'
@@ -23,7 +18,6 @@ export type ReadOnlyDb = Omit<
 
 export const db: ReadOnlyDb = writeDb
 
-/** Closes the pool. Test teardown; a lambda never calls this. */
 export function closeConnection(): Promise<void> {
   return writeDb.destroy()
 }
@@ -34,8 +28,6 @@ export { createProject, updateProject, removeProject } from './projects'
 export { recordReport, removeReport } from './reports'
 export { createUser, updateUser, claimUser, removeUser } from './users'
 
-// The write DTOs are declared in @branch/types alongside the row types; re-exported
-// so a caller needs only one import to write a row.
 export type {
   NewExpenditure,
   ExpenditureEdit,

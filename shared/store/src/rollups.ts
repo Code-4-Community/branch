@@ -1,12 +1,6 @@
 import { sql, type Selectable, type Transaction } from 'kysely'
 import type { DB } from '@branch/types'
 
-/**
- * Replaces the row triggers dropped in 20260906_move_rollups_to_application.
- * The arithmetic still lives in the three LANGUAGE sql functions those triggers
- * called; only the INSERT/UPDATE/DELETE dispatch moved up here.
- */
-
 export type ExpenditureGrain = Pick<
   Selectable<DB['branch.expenditures']>,
   'project_id' | 'spent_on' | 'category' | 'status' | 'amount'
@@ -51,7 +45,6 @@ export async function projectRollupBump(
   )`.execute(trx)
 }
 
-/** Was the projects_rollup_seed AFTER INSERT trigger. */
 export async function seedProjectRollup(
   trx: Transaction<DB>,
   projectId: number,

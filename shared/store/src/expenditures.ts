@@ -17,11 +17,6 @@ export async function recordExpenditure(values: NewExpenditure): Promise<Expendi
   })
 }
 
-/**
- * Reads the row before updating it: the rollup grain is keyed on project, month,
- * status and category, so the old values are needed to back the old bucket out.
- * The trigger this replaced got OLD for free.
- */
 export async function editExpenditure(
   id: number,
   values: ExpenditureEdit,

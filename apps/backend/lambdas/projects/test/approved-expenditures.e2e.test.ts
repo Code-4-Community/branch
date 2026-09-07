@@ -83,7 +83,6 @@ beforeEach(async () => {
         (1, 1, 1000, 'Travel', 'needs info', 'needs_more_info', CURRENT_DATE)
     `);
     await client.query(`UPDATE branch.projects SET end_date = '2099-12-31' WHERE end_date IS NOT NULL`);
-    // Raw fixture SQL does not maintain the rollups; put them back in step.
     await reconcileRollups(client);
   } finally {
     client.release();

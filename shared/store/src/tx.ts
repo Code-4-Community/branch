@@ -2,8 +2,7 @@ import type { Transaction } from 'kysely'
 import type { DB } from '@branch/types'
 import { writeDb } from './connection'
 
-// Postgres serialization_failure / deadlock_detected, plus the codes Aurora DSQL
-// raises at commit time under optimistic concurrency control.
+// Postgres serialization_failure/deadlock, plus Aurora DSQL's commit-time OCC codes.
 const RETRYABLE = new Set(['40001', '40P01', 'OC000', 'OC001'])
 
 function isRetryable(err: unknown): boolean {
@@ -13,10 +12,6 @@ function isRetryable(err: unknown): boolean {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/**
- * Runs `fn` in one transaction, retrying the WHOLE transaction on a commit-time
- * conflict. Retrying only the rollup half would double-count the base write.
- */
 export async function tx<T>(
   fn: (trx: Transaction<DB>) => Promise<T>,
   attempts = 3,

@@ -196,16 +196,9 @@ async function truncateAll(client: Queryable): Promise<string> {
 export async function resetData(client: Queryable): Promise<void> {
   await client.query(await truncateAll(client));
   await client.query(seedSql());
-  // TRUNCATE emptied the rollups and seed.sql only writes base rows. The row
-  // triggers used to refill them; since 20260906215733 nothing does.
   await reconcileRollups(client);
 }
 
-/**
- * What the rollups would hold if recomputed from the base tables. Identical
- * aggregation to the backfill in 20260823055243. One definition, so the
- * test-time assertion and the `reconcile` command cannot drift apart.
- */
 const EXPECTED_EXPENDITURE_ROLLUP = `
   SELECT project_id,
          date_trunc('month', spent_on)::date AS month,
@@ -230,14 +223,7 @@ const EXPECTED_PROJECT_ROLLUP = `
     LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.reports GROUP BY project_id) r
            ON r.project_id = p.project_id`;
 
-/**
- * Rows describing every way the stored rollups disagree with the base tables.
- * Empty means consistent.
- *
- * A zero-count expenditure_rollup row and a missing one are treated as equal:
- * expenditure_rollup_remove decrements without deleting, so emptying a grain
- * leaves (0, 0) behind by design.
- */
+// A zero-count expenditure_rollup row equals a missing one: _remove decrements without deleting.
 export async function findRollupDrift(client: Queryable): Promise<string[]> {
   const expenditures = await client.query(`
     WITH expected AS (${EXPECTED_EXPENDITURE_ROLLUP})
@@ -278,11 +264,6 @@ export async function findRollupDrift(client: Queryable): Promise<string[]> {
   );
 }
 
-/**
- * Call in `afterEach`. The row triggers used to make this true by construction;
- * now @branch/store does, so any write path that forgets a rollup -- including a
- * cascade nobody thought to guard -- fails the test that touched it.
- */
 export async function assertRollupsConsistent(client: Queryable): Promise<void> {
   const drift = await findRollupDrift(client);
   if (drift.length > 0) {
@@ -292,7 +273,6 @@ export async function assertRollupsConsistent(client: Queryable): Promise<void> 
   }
 }
 
-/** Rebuilds both rollup tables from the base tables. */
 export async function reconcileRollups(client: Queryable): Promise<void> {
   await client.query(`DELETE FROM ${SCHEMA}.expenditure_rollup`);
   await client.query(

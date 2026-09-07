@@ -130,9 +130,6 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
   }
 
   try {
-    // Field update, roster replacement and the member_count rollup share one
-    // transaction: a failed membership insert must not leave the project with
-    // nobody assigned, or the rollup counting people who are not there.
     const updatedProject = await storeUpdateProject(
       Number(id),
       updateValues,

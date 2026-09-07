@@ -5,15 +5,7 @@ import { projectRollupBump, seedProjectRollup } from './rollups'
 
 type Project = Selectable<DB['branch.projects']>
 
-/**
- * Replaces a project's roster wholesale. Delete-then-insert rather than a diff:
- * the set is small and bounded by the staff list.
- *
- * An entry with no `role` keeps the role that member already held. The staff
- * picker submits bare ids, and "Director" is derived from these rows, so
- * defaulting them all to the fallback would make every ordinary project edit
- * strip the project's directors of their role.
- */
+// An absent `role` keeps the member's current one: the staff picker submits bare ids, and defaulting strips directors.
 async function syncMemberships(
   trx: Transaction<DB>,
   projectId: number,

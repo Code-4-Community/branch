@@ -598,7 +598,6 @@ describe('POST /expenditures unit tests', () => {
         }),
       });
 
-      // Mock: the store write throws
       mockRecordExpenditure.mockRejectedValue(new Error('Database connection failed'));
 
       const res = await handler(

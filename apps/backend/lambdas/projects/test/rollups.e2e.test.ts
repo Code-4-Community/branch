@@ -136,7 +136,6 @@ beforeEach(async () => {
   await client.query('DELETE FROM branch.expenditures');
   await client.query('DELETE FROM branch.project_donations');
   await client.query('DELETE FROM branch.reports');
-  // Raw fixture SQL does not maintain the rollups; put them back in step by hand.
   await reconcileRollups(client);
 });
 
@@ -208,7 +207,6 @@ describe('expenditure spend reaches the dashboard', () => {
     await recordExpenditure({ ...travel, amount: 900, status: 'pending' });
     await auditRollups(client);
 
-    // Status is part of the grain, so both rows are stored -- separately.
     expect(await bucketsFor(1)).toBe(2);
     const body = await get('/dashboard');
     expect(body.summary.totalSpent).toBe(250);

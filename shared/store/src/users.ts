@@ -25,13 +25,7 @@ export async function updateUser(
   )
 }
 
-/**
- * Links a Cognito identity to an invited row, only while that row has none.
- *
- * The `cognito_sub IS NULL` predicate is the whole point: it makes a concurrent
- * claim a no-op rather than an overwrite of a working account. Returns the
- * number of rows updated so the caller can tell the two apart.
- */
+// The `cognito_sub IS NULL` guard makes a concurrent claim a no-op instead of overwriting a live account.
 export async function claimUser(userId: number, values: UserEdit): Promise<bigint> {
   return tx(async (trx) => {
     const result = await trx
@@ -44,12 +38,7 @@ export async function claimUser(userId: number, values: UserEdit): Promise<bigin
   })
 }
 
-/**
- * user_id on project_memberships is ON DELETE RESTRICT, so the memberships have
- * to go first and member_count has to come off each project explicitly. Under
- * the old CASCADE the row trigger did this; the users lambda never knew the
- * rollups existed.
- */
+// user_id on project_memberships is ON DELETE RESTRICT: delete memberships first and decrement member_count.
 export async function removeUser(userId: number): Promise<bigint> {
   return tx(async (trx) => {
     const memberships = await trx

@@ -1,15 +1,3 @@
-/**
- * @branch/store's rollup maintenance, tested against the database alone -- no
- * handler, no auth. `auditRollups` re-derives every rollup figure from the base
- * tables; each test mutates in one shape and audits, so a regression names the
- * operation that broke.
- *
- * Replaces rollup-triggers.e2e.test.ts. That file drove the row triggers with
- * raw SQL, including shapes no route can produce -- a bulk UPDATE with no WHERE,
- * TRUNCATE, moving an expenditure between projects by column. Those tested
- * trigger generality; what matters now is that every operation the store
- * exposes keeps the rollups exact.
- */
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll } from '@jest/globals';
 import { Pool, PoolClient } from 'pg';
 import { ensureSchema, resetData, reconcileRollups } from '../../../db/testkit';
@@ -102,8 +90,6 @@ beforeAll(async () => {
 beforeEach(async () => {
   client = await pool.connect();
   await resetData(client);
-  // Fixture setup, not the behaviour under test: clear the seeded child rows
-  // with raw SQL, then put the rollups back in step by hand.
   await client.query('DELETE FROM branch.expenditures');
   await client.query('DELETE FROM branch.project_donations');
   await client.query('DELETE FROM branch.reports');

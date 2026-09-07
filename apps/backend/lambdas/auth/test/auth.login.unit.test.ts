@@ -45,8 +45,6 @@ jest.mock('@branch/store', () => {
   return {
     __esModule: true,
     db: { selectFrom: () => selectChain },
-    // claimUser carries the `cognito_sub IS NULL` guard; the tests assert on the
-    // values it was handed and on how many rows it claimed.
     claimUser: (_id: unknown, values: unknown) => {
       mockSet(values);
       return mockUpdateResult();

@@ -5,8 +5,7 @@ import { projectRollupBump } from './rollups'
 
 type Donation = Selectable<DB['branch.project_donations']>
 
-// amount is NUMERIC, surfaced as a string. Negate textually so the exact decimal
-// survives; Number() would round at the edges of the type.
+// amount is NUMERIC (a string); negate textually so the exact decimal survives.
 const negate = (amount: string) => (amount.startsWith('-') ? amount.slice(1) : `-${amount}`)
 
 export async function recordDonation(values: NewDonation): Promise<Donation> {
@@ -51,11 +50,7 @@ export async function createDonor(
   )
 }
 
-/**
- * donor_id is ON DELETE RESTRICT, so the donations have to go first and their
- * rollup contribution has to come off explicitly. Under the old CASCADE the row
- * trigger did this; nothing in the donors lambda knew the rollups existed.
- */
+// donor_id is ON DELETE RESTRICT: delete the donations first and back their rollup out.
 export async function removeDonor(donorId: number): Promise<bigint> {
   return tx(async (trx) => {
     const donations = await trx

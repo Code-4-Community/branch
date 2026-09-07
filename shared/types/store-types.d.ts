@@ -1,15 +1,3 @@
-/**
- * The single declaration of the @branch/store write DTOs. The store re-exports
- * these rather than declaring its own copy.
- *
- * Deliberately not `Insertable<DB['branch.x']>`: a caller should not have to
- * know Kysely's generics to write a row, and generated columns (ids, created_at)
- * are absent here so they cannot be set by accident.
- *
- * `number | string` on money columns mirrors NUMERIC's insert type -- the value
- * comes back out as a string, so both are accepted going in.
- */
-
 export interface NewExpenditure {
   project_id: number;
   amount: number | string;
@@ -22,7 +10,6 @@ export interface NewExpenditure {
   admin_notes?: string | null;
 }
 
-/** Every column an expenditure update may reach. Routes narrow this further. */
 export interface ExpenditureEdit {
   amount?: number | string;
   category?: string | null;
@@ -87,7 +74,6 @@ export interface UserEdit {
   profile_image?: string | null;
 }
 
-/** One roster entry. An absent role keeps whatever the member already held. */
 export interface ProjectMemberInput {
   user_id: number;
   role?: string | null;

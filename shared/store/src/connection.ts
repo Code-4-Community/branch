@@ -2,10 +2,6 @@ import { Kysely, PostgresDialect } from 'kysely'
 import { Pool } from 'pg'
 import type { DB } from '@branch/types'
 
-/**
- * The one Kysely instance in the backend. Not exported from the package root:
- * callers get the read-only `db` handle, or a named write operation.
- */
 export const writeDb = new Kysely<DB>({
   dialect: new PostgresDialect({
     pool: new Pool({

@@ -338,7 +338,6 @@ describe('POST /users unit tests', () => {
         where: jest.fn().mockReturnValue(whereChain),
       });
 
-      // Mock the store write
       mockCreateUser.mockResolvedValue({ user_id: 1 } as never);
 
       const res = await handler(
@@ -477,7 +476,6 @@ describe('PATCH /users/{userId} unit tests', () => {
 
   describe('Success Cases', () => {
     test('404: returns 404 when user does not exist', async () => {
-      // Nothing matched the id, so the update returns no row.
       mockUpdateUser.mockResolvedValue(undefined);
 
       const res = await handler(patchEvent(999, { name: 'Whoever' }));
