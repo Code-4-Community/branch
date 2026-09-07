@@ -222,21 +222,30 @@ jobs:
         id: status
         run: |
           set -o pipefail
-          npm run migrate:status --prefix apps/backend/db 2>&1 | tee status.log
-          pending=$(grep -oE '[0-9]+ pending' status.log | tail -1 | cut -d' ' -f1)
+          npm run --silent migrate:info --prefix apps/backend/db -- -outputType=json > info.json
+          jq -r '.migrations[] | "\(.state)\t\(.version)\t\(.description)"' info.json | tee status.log
           # Unknown (unexpected output) falls through as "1" so we take the safe
           # path and snapshot before touching anything.
+          pending=$(jq '[.migrations[] | select(.state == "Pending")] | length' info.json || echo 1)
           echo "pending=${pending:-1}" >> "$GITHUB_OUTPUT"
           echo "$pending migration(s) pending"
 
-      # 0000_baseline_schema is idempotent, but "idempotent" is one typo away from
-      # DROP SCHEMA. It is adopted once by hand against production (see
-      # apps/backend/db/README.md); if it still shows as pending here, we are
-      # pointed at a database we did not expect -- refuse rather than guess.
+      # V0000__baseline_schema is idempotent, but "idempotent" is one typo away
+      # from DROP SCHEMA, and production is never built by running it -- Flyway
+      # baselines over the schema that is already there.
+      #
+      # An empty target therefore means DB_HOST is not the database we think it
+      # is. A pending baseline on a database Flyway is already tracking means the
+      # history and the schema have drifted apart. Refuse either way rather than
+      # guess. See apps/backend/db/README.md.
       - name: Refuse to execute the baseline against production
         run: |
-          if grep -E '0000_baseline_schema' status.log | grep -q 'PENDING'; then
-            echo "::error::0000_baseline_schema is PENDING on the target database. It was never adopted (or DB_HOST is wrong). Refusing to run -- see apps/backend/db/README.md."
+          if jq -e '.allSchemasEmpty' info.json > /dev/null; then
+            echo "::error::schema \"branch\" is empty on the target database. Refusing to build production from scratch -- check DB_HOST."
+            exit 1
+          fi
+          if jq -e '.schemaVersion != null and any(.migrations[]; .version == "0000" and .state == "Pending")' info.json > /dev/null; then
+            echo "::error::V0000__baseline_schema is PENDING on a database Flyway already tracks. The schema history and the schema have drifted -- refusing to run."
             exit 1
           fi
 

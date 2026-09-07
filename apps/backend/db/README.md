@@ -1,8 +1,8 @@
 # Database migrations
 
-Schema changes are plain `.sql` files in `migrations/`, applied by [kysely's
-`Migrator`](https://kysely.dev/docs/migrations). They are applied to **production
-automatically when your PR merges**.
+Schema changes are plain `.sql` files in `migrations/`, applied by
+[Flyway](https://documentation.red-gate.com/flyway). They are applied to
+**production automatically when your PR merges**.
 
 ## Changing the schema
 
@@ -10,7 +10,7 @@ automatically when your PR merges**.
 cd apps/backend
 make up                                   # if the stack isn't already running
 
-make new-migration NAME=add_expenditure_notes   # creates migrations/<utc>_add_expenditure_notes.sql
+make new-migration NAME=add_expenditure_notes   # creates migrations/V<utc>__add_expenditure_notes.sql
 # ...write your SQL...
 make migrate                              # applies it, reseeds if empty, regenerates types, prints status
 ```
@@ -59,31 +59,42 @@ and CI will reject the change.
 
 ## How it works
 
-- `migrations/*.sql` — applied in filename order. `make new-migration` generates a
-  UTC `YYYYMMDDHHMMSS_` prefix so concurrent PRs can't collide.
+- `migrations/V<version>__<description>.sql` — applied in version order.
+  `make new-migration` generates a UTC `VYYYYMMDDHHMMSS__` prefix so concurrent PRs
+  can't collide. The double underscore is Flyway's separator and is not optional.
 - `seed.sql` — dev/test data only, **never applied to production**.
 - `testkit.ts` — `ensureSchema()` / `resetData()` used by the lambda tests.
-- `src/` — the runner CLI, the type generator, and the shared post-processing that
-  keeps local and CI type output byte-identical.
+- `flyway.sh` — the only place Flyway is configured. Uses the flyway on `PATH`,
+  otherwise the pinned image, so docker is the only prerequisite.
+- `src/` — seeding and schema-rebuild commands, the type generator, and the shared
+  post-processing that keeps local and CI type output byte-identical.
 
-**What's applied is tracked in the database**, in `branch.kysely_migration` — one row
-per applied migration (`name`, `timestamp`). "Pending" is just the `.sql` files on
-disk minus the rows in that table. It's an ordinary table, so in any environment:
+**What's applied is tracked in the database**, in `branch.flyway_schema_history` —
+one row per applied migration, including a checksum of the file. "Pending" is the
+`.sql` files on disk minus the rows in that table. It's an ordinary table, so in any
+environment:
 
 ```sql
-select * from branch.kysely_migration order by name;
+select version, description, checksum, success from branch.flyway_schema_history
+ order by installed_rank;
 ```
 
-All pending migrations run inside a **single transaction** with
+The checksum is why a merged migration can never be edited: Flyway compares the file
+against the recorded checksum on the next run and fails the deploy.
+
+Each migration file runs inside its **own transaction** with
 `search_path = branch, public`, so table names can be unqualified and a failure
-part-way through rolls the whole run back. That's also why `CREATE INDEX
+part-way through a file rolls that file back. That's also why `CREATE INDEX
 CONCURRENTLY` and `VACUUM` don't work here — they can't run in a transaction. This
 database is tiny; a plain `CREATE INDEX` is fine.
 
-Out-of-order merges are allowed (`allowUnorderedMigrations`): if your migration
-merges after someone whose timestamp is later, it simply applies late. The
-alternative — the default — is a production deploy that fails with `corrupted
-migrations` and can only be unblocked by hand-editing `kysely_migration` in RDS.
+Out-of-order merges are allowed (`outOfOrder`): if your migration merges after
+someone whose timestamp is later, it simply applies late. The alternative — the
+default — is a production deploy that fails and can only be unblocked by
+hand-editing `flyway_schema_history` in RDS.
+
+`${async}` in a migration is a Flyway placeholder. It expands to nothing on
+PostgreSQL and to `ASYNC` on Aurora DSQL, which has no synchronous `CREATE INDEX`.
 
 ## In CI
 
@@ -108,9 +119,9 @@ manual restore-into-a-new-instance procedure, not a button:
 
 ## One-time: adopting an existing database
 
-`0000_baseline_schema.sql` is the schema as it existed before migrations, and is the
-only migration allowed to use `IF NOT EXISTS` — that's what lets it be applied to a
-database that already has these tables.
+`V0000__baseline_schema.sql` is the schema as it existed before migrations, and is
+the only migration allowed to use `IF NOT EXISTS` — that's what lets it be applied to
+a database that already has these tables.
 
 `IF NOT EXISTS` skips the **entire** `CREATE TABLE` when the table exists, so it
 cannot detect a column or constraint that differs. Before running the migrator
@@ -119,16 +130,18 @@ against a pre-existing database, diff it:
 ```bash
 # use a pg_dump matching the server's major version
 pg_dump --schema-only --schema=branch --no-owner --no-privileges --no-comments \
-        -T 'branch.kysely_migration*' -d "$URL" | grep -v '^--'
+        -T 'branch.flyway_schema_history' -d "$URL" | grep -v '^--'
 ```
 
 Run that against a local database with only the baseline applied, and against the
 target; `diff -u` the two. Once it's empty, run `npm run migrate` against the target
-with a human watching — the baseline no-ops and records itself in the ledger.
+with a human watching.
 
-If the schemas genuinely diverge, use `npm run db -- stamp 0000_baseline_schema` to
-record it without executing, then write a follow-up migration reconciling the
-difference.
+Flyway adopts it rather than replaying it: `baselineOnMigrate` writes a single
+baseline row at the version pinned in `flyway.sh` when it finds a non-empty schema
+with no history table, and everything at or below that version is then considered
+applied. If the schemas genuinely diverge, write a follow-up migration reconciling
+the difference — there is no way to record one file as applied on its own.
 
-The `migrate` job refuses to run if `0000_baseline_schema` is still pending, on the
-assumption that it means `DB_HOST` is pointing somewhere unexpected.
+The `migrate` job refuses to run against an **empty** target, on the assumption that
+it means `DB_HOST` is pointing somewhere unexpected.

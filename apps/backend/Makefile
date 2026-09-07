@@ -108,6 +108,7 @@ grant-admin:
 migrate:
 	@docker compose --env-file $(ENV_FILE) build migrator
 	@docker compose --env-file $(ENV_FILE) run --rm migrator npm run migrate
+	@docker compose --env-file $(ENV_FILE) run --rm migrator npm run fingerprint
 	@docker compose --env-file $(ENV_FILE) run --rm migrator npm run seed -- --if-empty
 	@$(MAKE) types
 	@$(MAKE) show-migrations
@@ -116,10 +117,10 @@ migrate:
 
 # List every migration and whether it has been applied. Read-only.
 #
-# The source of truth is the branch.kysely_migration table -- one row per applied
-# migration -- diffed against the .sql files in db/migrations.
+# The source of truth is the branch.flyway_schema_history table -- one row per
+# applied migration -- diffed against the .sql files in db/migrations.
 show-migrations:
-	@docker compose --env-file $(ENV_FILE) run --rm migrator npm run migrate:status
+	@docker compose --env-file $(ENV_FILE) run --rm migrator npm run migrate:info
 
 # Create an empty timestamped migration file, then say what to do next.
 # usage: make new-migration NAME=add_expenditure_project_id_index

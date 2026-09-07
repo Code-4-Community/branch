@@ -44,13 +44,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      # Build the schema the same way production does -- by applying
-      # db/migrations -- then load the dev seed rows the tests expect. The tests
-      # also call ensureSchema()/resetData() from db/testkit.ts themselves, so
-      # this doubles as a per-PR smoke test that migrations apply to a virgin DB.
-      - name: Apply migrations and seed
+      # Applies db/migrations to a virgin database and loads the dev seed rows
+      # the tests expect. Through testkit rather than Flyway: the tests build the
+      # schema that way too (ensureSchema/resetData), and the `checks` job below
+      # runs the real Flyway migration once instead of six times over.
+      - name: Build the schema and seed
         working-directory: apps/backend/db
-        run: npm ci --no-audit --no-fund && npm run migrate && npm run seed
+        run: npm ci --no-audit --no-fund && npm run reset
         env:
           DATABASE_URL: postgres://branch_dev:password@localhost:5432/branch_db
       - name: Build shared packages
@@ -120,6 +120,8 @@ jobs:
           esac
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
+      # Keyed by Flyway version rather than by path: what production's schema
+      # history pins is the version, its checksum and its script name.
       - name: Applied migrations are immutable
         if: steps.base.outputs.sha != ''
         env:
@@ -127,16 +129,43 @@ jobs:
         run: |
           set -euo pipefail
           MB=$(git merge-base "$BASE" HEAD)
-          # Anything but A(dded) under migrations/ is a violation: M modified,
-          # D deleted, R renamed, C copied, T typechange. --find-renames is
-          # explicit so a rename reports R (not D+A) regardless of the runner's
-          # diff.renames default.
-          violations=$(git diff --name-status --find-renames "$MB" HEAD -- "$DIR" | grep -vE '^A[[:space:]]' || true)
-          if [ -n "$violations" ]; then
-            echo "::error::Migrations already on main can never be modified, renamed or deleted -- someone has already run them. Add a NEW migration that fixes the old one."
-            printf '%s\n' "$violations"
-            exit 1
+          TAB=$(printf '\t')
+
+          # version<TAB>blob<TAB>filename, sorted by version so `join` can pair
+          # the two revisions up.
+          list() {
+            git ls-tree -r "$1" -- "$DIR" | while read -r _ _ sha path; do
+              name=$(basename "$path")
+              printf '%s\t%s\t%s\n' \
+                "$(printf '%s' "$name" | sed -E 's/^V?0*([0-9]+)_+.*/\1/')" \
+                "$sha" "$name"
+            done | sort
+          }
+          list "$MB" > "$RUNNER_TEMP/was.tsv"
+          list HEAD  > "$RUNNER_TEMP/now.tsv"
+
+          fail=0
+          gone=$(join -t"$TAB" -v1 -j1 "$RUNNER_TEMP/was.tsv" "$RUNNER_TEMP/now.tsv" | cut -f3)
+          if [ -n "$gone" ]; then
+            echo "::error::deleted, but already run on production -- add a NEW migration that undoes it: $(echo $gone)"
+            fail=1
           fi
+
+          # The rename check applies only once a name is in Flyway form:
+          # adopting Flyway renamed every file exactly once.
+          join -t"$TAB" -j1 "$RUNNER_TEMP/was.tsv" "$RUNNER_TEMP/now.tsv" > "$RUNNER_TEMP/both.tsv"
+          awk -F'\t' -v dir="$DIR" '
+            $2 != $4 {
+              printf "::error file=%s/%s::contents changed. Flyway checksums every applied migration, so this fails the next deploy. Add a NEW migration that fixes the old one.\n", dir, $5
+              bad = 1
+            }
+            $3 ~ /^V/ && $3 != $5 {
+              printf "::error file=%s/%s::renamed from %s. Production'"'"'s schema history records the old name, and Flyway rejects the mismatch.\n", dir, $5, $3
+              bad = 1
+            }
+            END { exit bad }
+          ' "$RUNNER_TEMP/both.tsv" || fail=1
+          exit $fail
 
       - name: New migrations must be named correctly
         if: steps.base.outputs.sha != ''
@@ -150,12 +179,12 @@ jobs:
           last=$(git ls-tree -r --name-only "$MB" -- "$DIR" | xargs -r -n1 basename | sort | tail -1 || true)
           fail=0
           for f in $added; do
-            if ! echo "$f" | grep -qE '^(0000_baseline_schema|[0-9]{14}_[a-z0-9_]+)\.sql$'; then
-              echo "::error file=$DIR/$f::name must be YYYYMMDDHHMMSS_lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
+            if ! echo "$f" | grep -qE '^V(0000|[0-9]{14})__[a-z0-9_]+\.sql$'; then
+              echo "::error file=$DIR/$f::name must be VYYYYMMDDHHMMSS__lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
               fail=1
             fi
-            # Out-of-order merges are allowed at runtime (the migrator sets
-            # allowUnorderedMigrations), so this is advice, not a failure.
+            # Out-of-order merges are allowed at runtime (flyway.sh sets
+            # outOfOrder), so this is advice, not a failure.
             if [ -n "${last:-}" ] && [ "$f" \< "$last" ]; then
               echo "::warning file=$DIR/$f::sorts before $last, which is already on main, so it will be applied out of order. Harmless, but renaming it to a current timestamp keeps the history readable."
             fi
@@ -189,7 +218,7 @@ jobs:
               fail=1
             fi
             if printf '%s\n' "$sql" | grep -inE 'CONCURRENTLY'; then
-              echo "::error file=$f::CONCURRENTLY cannot run inside a transaction, and the migrator wraps the run in one. This database is tiny -- use a plain CREATE INDEX."
+              echo "::error file=$f::CONCURRENTLY cannot run inside a transaction, and Flyway wraps each migration in one. This database is tiny -- use a plain CREATE INDEX."
               fail=1
             fi
             if printf '%s\n' "$sql" | grep -inE '^[[:space:]]*INSERT[[:space:]]+INTO[[:space:]]+(branch\.)?users\b'; then
@@ -197,6 +226,31 @@ jobs:
             fi
           done
           exit $fail
+
+      # Advisory until the Aurora DSQL cutover: the corpus still contains the
+      # plpgsql the rollup migration later dropped, so linting all of it can
+      # only ever fail. New migrations are what we can keep clean.
+      #
+      # Only added files, and with the placeholder substituted -- dsql-lint
+      # parses SQL, and `${async}` is not SQL.
+      - name: Aurora DSQL compatibility (advisory)
+        if: steps.base.outputs.sha != ''
+        continue-on-error: true
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          MB=$(git merge-base "$BASE" HEAD)
+          files=$(git diff --diff-filter=A --name-only "$MB" HEAD -- "$DIR" || true)
+          [ -n "$files" ] || { echo "no new migrations"; exit 0; }
+          npm install --prefix "$RUNNER_TEMP/dsql-lint" --no-audit --no-fund @aws/dsql-lint
+          lint=$RUNNER_TEMP/dsql-lint/node_modules/@aws/dsql-lint/bin/dsql-lint
+          for f in $files; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            sed 's/${async}/ASYNC/g' "$f" > "$RUNNER_TEMP/$(basename "$f")"
+            node "$lint" "$RUNNER_TEMP/$(basename "$f")" || true
+          done
 
       - name: Build and test shared packages
         uses: ./.github/actions/build-shared-packages
@@ -209,20 +263,27 @@ jobs:
       - name: Apply every migration from scratch
         run: npm run migrate --prefix apps/backend/db
 
-      - name: Ledger must be clean afterwards
+      - name: Schema history must be clean afterwards
         run: |
           set -o pipefail
-          npm run migrate:status --prefix apps/backend/db | tee status.log
-          if grep -q 'PENDING' status.log; then
-            echo "::error::migrations still pending after a successful migrate run"
+          npm run --silent migrate:info --prefix apps/backend/db -- -outputType=json > info.json
+          pending=$(jq '[.migrations[] | select(.state == "Pending")] | length' info.json)
+          if [ "$pending" != '0' ]; then
+            echo "::error::$pending migration(s) still pending after a successful migrate run"
+            jq -r '.migrations[] | select(.state == "Pending") | .filepath' info.json
             exit 1
           fi
 
       - name: Re-running migrations must be a no-op
         run: npm run migrate --prefix apps/backend/db
 
+      - name: Applied migrations must still match their checksums
+        run: npm run migrate:validate --prefix apps/backend/db
+
       - name: Seeds must apply on top of the migrated schema
-        run: npm run seed --prefix apps/backend/db
+        run: |
+          npm run fingerprint --prefix apps/backend/db
+          npm run seed --prefix apps/backend/db
 
       # Drift check: the committed types must be what these migrations produce.
       - name: Committed types must match the migrations
