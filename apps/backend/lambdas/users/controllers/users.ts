@@ -4,6 +4,7 @@ import {
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, reportError, requirePermission, type RouteHandler } from '@branch/lambda-http';
+import { METRICS, recordEvent } from '@branch/lambda-telemetry';
 import db from '../db';
 import { UserValidationUtils } from '../validation-utils';
 import {
@@ -338,6 +339,7 @@ export const createUser: RouteHandler = async ({ event }) => {
     return json(500, { message: 'Failed to create user' });
   }
 
+  recordEvent(METRICS.USER_INVITED, { admin: isAdmin });
   return json(201, {
     ok: true,
     route: 'POST /users',

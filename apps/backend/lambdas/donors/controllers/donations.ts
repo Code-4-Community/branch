@@ -1,6 +1,7 @@
 import type { RouteCtx } from '@branch/lambda-http';
 import { json, requirePermission } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
+import { METRICS, recordEvent, recordValue } from '@branch/lambda-telemetry';
 import { sql, type SqlBool } from 'kysely';
 import db from '../db';
 
@@ -142,6 +143,10 @@ export async function createDonation({ event }: RouteCtx) {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+
+    // Ids stay out of the labels; the rollups answer per-project questions.
+    recordEvent(METRICS.DONATION_RECORDED, { backdated: donatedAt !== undefined });
+    recordValue(METRICS.DONATION_AMOUNT, donationAmount);
 
     return json(201, { data: donation });
   } catch (err: any) {

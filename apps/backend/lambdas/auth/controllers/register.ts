@@ -9,6 +9,7 @@ import {
   ResendConfirmationCodeCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, reportError, serverError } from '@branch/lambda-http';
+import { METRICS, recordEvent } from '@branch/lambda-telemetry';
 import db from '../db';
 import { cognitoClient, USER_POOL_CLIENT_ID, USER_POOL_ID, validatePassword } from '../services/cognito';
 
@@ -71,6 +72,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
     // email addresses have been invited, so the response is deliberately the
     // same whether or not the address is known.
     if (!existingUser) {
+      recordEvent(METRICS.REGISTRATION, { outcome: 'invitation_required' });
       return json(403, {
         message:
           'Registration is by invitation only. Ask an administrator to create your account.',
@@ -214,6 +216,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
       return json(500, { message: 'Failed to create user account' });
     }
 
+    recordEvent(METRICS.REGISTRATION, { outcome: 'claimed' });
     return json(201, {
       message: 'User registered successfully',
       userId: cognitoUserSub,

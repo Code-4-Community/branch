@@ -1,4 +1,5 @@
 import type { APIGatewayProxyResult } from 'aws-lambda';
+import { logger } from '@branch/lambda-telemetry';
 import { json } from './response';
 
 /**
@@ -34,7 +35,7 @@ export function serverError(
   message: string,
   body?: Record<string, unknown>,
 ): APIGatewayProxyResult {
-  console.error(`${message}:`, err);
+  logger.error(message, { error: err });
   reportError(err);
   return json(500, { message, ...body });
 }

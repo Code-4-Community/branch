@@ -51,6 +51,7 @@ export const getDonor: RouteHandler = async ({ params }) => {
 };
 ```
 - `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health`, 404 and 500 centrally — routes.ts only lists real endpoints.
+- **`dispatch()` is also where the backend is instrumented.** Latency, status, cold starts and auth refusals are recorded there for every route, and one `Request served` log line carries the request id, route, status, duration and caller. Controllers add only *domain* metrics — `recordEvent(METRICS.EXPENDITURE_CHANGED, { action: 'reviewed', status })` — never a per-request counter of their own, which would double-count. Route *patterns* are the label; a concrete path or a row id never is. See `shared/lambda-telemetry/README.md`.
 - **A caught error is an error Sentry cannot see.** The Sentry layer wraps the handler and records uncaught throws only, and we always catch so API Gateway returns a JSON 500 instead of a 502. `dispatch()` reports what reaches its catch; a controller that returns its own 500 must use `serverError(err, 'Failed to …')` from `@branch/lambda-http` rather than `console.error` + `json(500, …)`. Same status to the caller, one less invisible failure.
 - **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
 - Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
@@ -116,7 +117,7 @@ the same predicate** or the total leaks what the page does not.
 
 ## DB access
 
-`db.ts` exports a `Kysely<DB>` (`DB` from `@branch/types`) over a `pg.Pool`. Always qualify the schema:
+`db.ts` exports a `Kysely<DB>` (`DB` from `@branch/types`) over a `pg.Pool`, with `log: kyselyTelemetryLog` so every statement's duration is measured and anything slow or failed gets a log line. A new lambda's `db.ts` must keep that hook. Always qualify the schema:
 ```ts
 await db.selectFrom('branch.users').where('cognito_sub', '=', sub).selectAll().executeTakeFirst();
 await db.selectFrom('branch.users').select(db.fn.count('user_id').as('count')).executeTakeFirst();
