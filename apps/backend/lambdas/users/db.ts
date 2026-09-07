@@ -2,8 +2,10 @@
 import { Kysely, PostgresDialect } from 'kysely'
 import { Pool } from 'pg'
 import type { DB } from '@branch/types'
+import { kyselyTelemetryLog } from '@branch/lambda-telemetry'
 
 const db = new Kysely<DB>({
+  log: kyselyTelemetryLog,
   dialect: new PostgresDialect({
     pool: new Pool({
       host: process.env.DB_HOST ?? 'localhost',

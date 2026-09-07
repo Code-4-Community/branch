@@ -2,6 +2,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
+import { METRICS, recordEvent, recordValue } from '@branch/lambda-telemetry';
 import db from '../db';
 import {
   fetchReportData,
@@ -99,22 +100,32 @@ export const generateReport: RouteHandler = async ({ event }) => {
     return json(404, { message: 'Project not found' });
   }
 
+  // The slowest path here, and the one nearest the 30s lambda timeout.
+  const renderStartedAt = Date.now();
+  const kind = { report_type: reportType, file_type: fileType };
+
   let fileBuffer: Buffer;
   try {
     fileBuffer = fileType === 'docx' ? await generateDocx(reportData) : await generatePdf(reportData);
   } catch (err) {
+    recordEvent(METRICS.REPORT_GENERATED, { ...kind, outcome: 'render_failed' });
     return serverError(err, 'Failed to generate report');
   }
+  recordValue(METRICS.REPORT_DURATION, Date.now() - renderStartedAt, kind);
 
   let objectUrl: string;
   try {
     objectUrl = await uploadToS3(fileBuffer, projectId, fileType);
   } catch (err) {
+    recordEvent(METRICS.REPORT_GENERATED, { ...kind, outcome: 'upload_failed' });
     return serverError(err, 'Failed to upload report');
   }
 
   const title = customTitle || `${reportData.project.name} — ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
   const record = await saveReportRecord(projectId, objectUrl, title, reportType);
+
+  recordEvent(METRICS.REPORT_GENERATED, { ...kind, outcome: 'success' });
+  recordValue(METRICS.REPORT_SIZE, fileBuffer.byteLength, kind);
 
   return json(201, {
     ok: true,

@@ -2,6 +2,7 @@ import type { RouteHandler } from '@branch/lambda-http';
 import { json, requirePermission, serverError } from '@branch/lambda-http';
 import { can } from '@branch/rbac';
 import type { ExpenseResource } from '@branch/rbac';
+import { METRICS, recordEvent, recordValue } from '@branch/lambda-telemetry';
 import { ExpenditureValidationUtils } from '../validation-utils';
 import * as expendituresService from '../services/expenditures';
 import { expenditureScope } from '../services/scope';
@@ -128,6 +129,14 @@ export const createExpenditure: RouteHandler = async ({ event, auth }) => {
   } catch (err) {
     return serverError(err, 'Failed to create expenditure');
   }
+
+  // `projectID` is not a label; it grows without bound.
+  recordEvent(METRICS.EXPENDITURE_CHANGED, {
+    action: 'created',
+    status: effectiveStatus,
+    category: category ?? 'uncategorised',
+  });
+  recordValue(METRICS.EXPENDITURE_AMOUNT, Number(amount), { category: category ?? 'uncategorised' });
 
   return json(201, {
     ok: true,
@@ -356,6 +365,8 @@ export const patchExpenditureStatus: RouteHandler = async ({ event, params }) =>
   if (!updated) {
     return json(404, { message: 'Expenditure not found' });
   }
+
+  recordEvent(METRICS.EXPENDITURE_CHANGED, { action: 'reviewed', status: updated.status });
 
   // Email on approve/denial — best-effort, never blocks the response.
   if (updated.entered_by && (updated.status === 'approved' || updated.status === 'denied')) {
