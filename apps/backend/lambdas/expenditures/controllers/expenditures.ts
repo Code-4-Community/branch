@@ -130,8 +130,7 @@ export const createExpenditure: RouteHandler = async ({ event, auth }) => {
     return serverError(err, 'Failed to create expenditure');
   }
 
-  // `category` is a small controlled vocabulary; `projectID` deliberately is not
-  // a label, since it grows without bound.
+  // `projectID` is not a label; it grows without bound.
   recordEvent(METRICS.EXPENDITURE_CHANGED, {
     action: 'created',
     status: effectiveStatus,
@@ -367,7 +366,6 @@ export const patchExpenditureStatus: RouteHandler = async ({ event, params }) =>
     return json(404, { message: 'Expenditure not found' });
   }
 
-  // The approval funnel: rate of approved vs denied vs needs_more_info.
   recordEvent(METRICS.EXPENDITURE_CHANGED, { action: 'reviewed', status: updated.status });
 
   // Email on approve/denial — best-effort, never blocks the response.

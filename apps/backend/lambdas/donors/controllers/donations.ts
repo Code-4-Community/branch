@@ -144,8 +144,7 @@ export async function createDonation({ event }: RouteCtx) {
       .returningAll()
       .executeTakeFirstOrThrow();
 
-    // Donation rate and size. Ids stay out of the labels — one series per donor
-    // would be unbounded, and the rollups already answer per-project questions.
+    // Ids stay out of the labels; the rollups answer per-project questions.
     recordEvent(METRICS.DONATION_RECORDED, { backdated: donatedAt !== undefined });
     recordValue(METRICS.DONATION_AMOUNT, donationAmount);
 

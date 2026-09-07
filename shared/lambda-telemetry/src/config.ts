@@ -13,13 +13,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
-/**
- * Parse the OTLP env vars Terraform sets on every lambda.
- *
- * Returns `null` when there is nowhere to export to — local dev, tests, and any
- * preview stack that never got the vars. Callers treat that as "no SDK", not as
- * an error, so the OTel packages are never even required.
- */
+/** `null` when there is no endpoint; callers then never load the SDK. */
 export function readConfig(env: NodeJS.ProcessEnv = process.env): TelemetryConfig | null {
   const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim();
   if (!endpoint || env.OTEL_SDK_DISABLED === 'true') return null;
@@ -33,7 +27,6 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): TelemetryConfi
   };
 }
 
-/** Resource identity, which is also useful when the SDK is off (stdout logs carry it). */
 export function identity(env: NodeJS.ProcessEnv = process.env) {
   return {
     serviceName: env.OTEL_SERVICE_NAME || env.AWS_LAMBDA_FUNCTION_NAME || 'branch-local',
@@ -70,9 +63,7 @@ function safeDecode(value: string): string {
 function parseLevel(raw: string | undefined, nodeEnv?: string): LogLevel {
   const level = raw?.trim().toLowerCase() as LogLevel | undefined;
   if (level && LEVELS.includes(level)) return level;
-  // Jest sets NODE_ENV=test. An access log per request is the point in prod and
-  // pure noise in a test run, so default it down rather than make every lambda's
-  // jest config say so.
+  // Jest sets NODE_ENV=test, where a per-request access log is pure noise.
   return nodeEnv === 'test' ? 'error' : 'info';
 }
 

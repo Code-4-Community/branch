@@ -22,8 +22,7 @@ describe('providers, unconfigured', () => {
 });
 
 describe('providers, configured', () => {
-  // Exercises the real OTel constructors: an SDK API change shows up here as a
-  // null meter rather than as silently missing metrics in production.
+  // Real OTel constructors: an SDK API change fails here, not silently in prod.
   it('builds a meter and a logger from the OTLP env vars', () => {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://127.0.0.1:4318';
     process.env.OTEL_EXPORTER_OTLP_HEADERS = 'Authorization=Basic%20abc';

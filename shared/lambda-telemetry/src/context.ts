@@ -1,12 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-/** Fields every log line in a request carries, so a Loki query can follow one request. */
+/** Attached to every log line in the request, so Loki can follow one call. */
 export interface RequestContext {
   requestId?: string;
   service: string;
   method: string;
   path: string;
-  /** The matched route *pattern* (`/donors/:id`), never the concrete path — Prometheus label cardinality. */
+  /** Route *pattern*, never the concrete path — label cardinality. */
   route?: string;
   userId?: string;
   coldStart: boolean;
@@ -22,7 +22,6 @@ export function currentRequestContext(): RequestContext | undefined {
   return storage.getStore();
 }
 
-/** Fill in what is only known part-way through a request (the route, the caller). */
 export function enrichRequestContext(fields: Partial<RequestContext>): void {
   const context = storage.getStore();
   if (context) Object.assign(context, fields);

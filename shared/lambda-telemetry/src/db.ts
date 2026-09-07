@@ -9,16 +9,9 @@ interface QueryLogEvent {
   error?: unknown;
 }
 
-/** Queries slower than this get their own log line. */
 const SLOW_QUERY_MS = 500;
 
-/**
- * Kysely `log` hook: one duration histogram per statement kind, plus a line for
- * anything slow or failed.
- *
- * Wire it in a lambda's `db.ts`:
- * `new Kysely({ dialect, log: kyselyTelemetryLog })`
- */
+/** Kysely `log` hook: `new Kysely({ dialect, log: kyselyTelemetryLog })`. */
 export function kyselyTelemetryLog(event: QueryLogEvent): void {
   const operation = statementKind(event.query?.sql);
   const durationMs = Math.round(event.queryDurationMillis ?? 0);
@@ -33,10 +26,7 @@ export function kyselyTelemetryLog(event: QueryLogEvent): void {
   }
 }
 
-/**
- * The leading keyword, which is low-cardinality. The SQL itself is deliberately
- * never a label: it embeds ids and would blow up the series count.
- */
+/** The leading keyword only. The SQL embeds ids and would blow up cardinality. */
 function statementKind(sql: string | undefined): string {
   const word = sql?.trimStart().split(/\s+/, 1)[0]?.toUpperCase();
   return word && /^[A-Z]+$/.test(word) ? word : 'UNKNOWN';

@@ -3,10 +3,7 @@ import { getMeter } from './provider';
 
 export type Attributes = Record<string, string | number | boolean | undefined>;
 
-/**
- * Domain metric names. Kept in one table so a dashboard and the code that feeds
- * it cannot drift, and so nobody invents a second spelling of the same series.
- */
+/** One table, so a dashboard and the code feeding it cannot drift. */
 export const METRICS = {
   LOGIN: 'branch.auth.logins',
   REGISTRATION: 'branch.auth.registrations',
@@ -41,8 +38,7 @@ let boundMeter: Meter | null = null;
 
 function meter(): Meter | null {
   const current = getMeter();
-  // A reset (tests) or a late init hands back a different meter; the cached
-  // instruments belong to the old one.
+  // A different meter (reset, or late init) orphans the cached instruments.
   if (current !== boundMeter) {
     counters.clear();
     histograms.clear();
@@ -85,10 +81,7 @@ function clean(attributes: Attributes = {}): Record<string, string | number | bo
   return out;
 }
 
-/**
- * Every recorder below swallows its own failures. A broken metric must never be
- * the reason a request fails.
- */
+/** A broken metric must never be the reason a request fails. */
 function guard(fn: () => void): void {
   try {
     fn();
@@ -120,7 +113,6 @@ export function recordColdStart(): void {
   guard(() => counter('faas.cold_starts', 'Lambda cold starts')?.add(1));
 }
 
-/** `reason` is `unauthenticated` or `forbidden` — the two gates in `dispatch`. */
 export function recordAuthFailure(method: string, route: string, reason: string): void {
   guard(() =>
     counter('http.server.auth_failures', 'Requests refused by the auth gate')?.add(1, {

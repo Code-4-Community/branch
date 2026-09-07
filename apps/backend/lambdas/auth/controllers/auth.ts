@@ -64,7 +64,7 @@ export async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
     }
 
     if (response.ChallengeName) {
-      // The challenge name is a small fixed set, so it is safe as a label.
+      // A small fixed set, so safe as a label.
       recordEvent(METRICS.LOGIN, { outcome: 'challenge', challenge: response.ChallengeName });
 
       // MFA_SETUP cannot be answered by RespondToAuthChallenge alone -- it needs
@@ -86,8 +86,7 @@ export async function handleLogin(event: any): Promise<APIGatewayProxyResult> {
       'Unexpected response from authentication service',
     );
   } catch (error: any) {
-    // A spike here is the credential-stuffing signal. The address is
-    // deliberately not a label: it is PII and unbounded cardinality.
+    // The address is not a label: PII, and unbounded cardinality.
     recordEvent(METRICS.LOGIN, { outcome: 'failure', 'error.type': error?.name ?? 'Unknown' });
     return mapCognitoAuthError(error, 'login');
   }

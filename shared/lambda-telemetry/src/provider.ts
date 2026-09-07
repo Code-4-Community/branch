@@ -15,7 +15,7 @@ let config: TelemetryConfig | null | undefined;
 const FLUSH_TIMEOUT_MS = 2_000;
 const EXPORT_TIMEOUT_MS = 5_000;
 
-/** How long the exporters batch before shipping on their own. We force-flush per invocation. */
+/** Rarely reached: every invocation force-flushes first. */
 const BATCH_INTERVAL_MS = 60_000;
 
 export function telemetryConfig(): TelemetryConfig | null {
@@ -23,12 +23,7 @@ export function telemetryConfig(): TelemetryConfig | null {
   return config;
 }
 
-/**
- * Build the OTel providers on first use, or return `null` forever if there is no
- * endpoint. The SDK is `require`d lazily so an unconfigured lambda never pays to
- * load it, and an SDK that throws on init degrades to stdout-only logging rather
- * than taking the request with it.
- */
+/** Lazily `require`s the SDK, so an unconfigured lambda never pays to load it. */
 function getProviders(): Providers | null {
   if (providers !== undefined) return providers;
 
@@ -74,8 +69,7 @@ function build(cfg: TelemetryConfig): Providers {
     resource,
     readers: [
       new PeriodicExportingMetricReader({
-        // Lambda instances are short-lived, so cumulative counters would look
-        // like a reset storm to Mimir. Delta lets the gateway do the summing.
+        // Cumulative counters from short-lived containers read as a reset storm to Mimir.
         exporter: new OTLPMetricExporter({
           url: cfg.metricsUrl,
           headers: cfg.headers,
@@ -118,11 +112,8 @@ export function getOtelLogger(): OtelLogger | null {
 }
 
 /**
- * Ship whatever is buffered. Lambda freezes the instance the moment the handler
- * returns, so nothing that is not flushed here is ever seen.
- *
- * Never rejects and never blocks longer than {@link FLUSH_TIMEOUT_MS}: Grafana
- * being slow must not turn into a 30s lambda timeout.
+ * Lambda freezes on return, so anything not flushed here is never seen. Never
+ * rejects, and capped so a slow Grafana cannot become a 30s lambda timeout.
  */
 export async function flushTelemetry(): Promise<void> {
   const active = providers;
@@ -143,7 +134,7 @@ export async function flushTelemetry(): Promise<void> {
   }
 }
 
-/** Tests only — drops the memoised providers so a new env can be picked up. */
+/** Tests only. */
 export function resetTelemetryForTests(): void {
   providers = undefined;
   config = undefined;

@@ -29,9 +29,6 @@ export function reportError(err: unknown, context?: Record<string, unknown>): vo
  * catch — the status the caller sees is unchanged, but the error stops being
  * invisible. `body` merges extra fields into the response for the handful of
  * routes that already return more than a message.
- *
- * The log line goes to Loki as well as CloudWatch, carrying the request id and
- * route from the enclosing `dispatch`.
  */
 export function serverError(
   err: unknown,

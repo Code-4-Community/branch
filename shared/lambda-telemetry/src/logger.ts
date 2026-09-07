@@ -18,11 +18,8 @@ export interface LogFields {
 }
 
 /**
- * Write one structured line.
- *
- * Goes to stdout as JSON (so CloudWatch keeps working, and so a lambda with no
- * OTLP endpoint still logs) *and* to Loki through the OTel logs exporter. The
- * enclosing request's id, route and caller are attached automatically.
+ * One JSON line to stdout (CloudWatch) and one record to Loki. The enclosing
+ * request's id, route and caller are attached automatically.
  */
 export function log(level: LogLevel, message: string, fields: LogFields = {}): void {
   if (levelRank(level) < minLevel()) return;

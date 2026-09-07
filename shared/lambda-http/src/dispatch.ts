@@ -17,14 +17,9 @@ import { ANONYMOUS_AUTH } from './authz';
 import { reportError } from './errors';
 import type { DispatchOptions, RequestAuth, Route } from './types';
 
-/** Flipped by the first invocation this container serves. */
 let firstInvocation = true;
 
-/**
- * The route label attached to metrics and logs. Always a *pattern*, never a
- * concrete path — `/donors/42` as a label would give Prometheus one series per
- * donor.
- */
+/** Labels are route *patterns*; `/donors/42` would be one series per donor. */
 const UNMATCHED_ROUTE = 'unmatched';
 
 /**
@@ -40,9 +35,8 @@ const UNMATCHED_ROUTE = 'unmatched';
  * declared permission, 404 and 500 centrally. A controller that runs has
  * already cleared its route's gate.
  *
- * Also the one place the backend is instrumented: every request produces a
- * duration histogram sample, a counter increment and an access log, and the
- * buffered telemetry is flushed before the handler returns.
+ * Also the one place the backend is instrumented: metrics, the access log, and
+ * the flush that has to happen before Lambda freezes the container.
  */
 export async function dispatch(
   event: any,
@@ -131,12 +125,7 @@ async function route(
   return json(404, { message: 'Not Found', path, method });
 }
 
-/**
- * Record the request and ship everything buffered.
- *
- * Lambda freezes the container as soon as the handler returns, so a flush that
- * does not happen here never happens at all.
- */
+/** Lambda freezes on return, so a flush that misses here never happens. */
 async function complete(
   context: RequestContext,
   response: APIGatewayProxyResult,
@@ -148,8 +137,7 @@ async function complete(
 
   recordRequest({ method: context.method, route, statusCode, durationMs });
 
-  // Health checks are the majority of traffic on an idle stack; counting them is
-  // useful, narrating them is not.
+  // Health checks dominate an idle stack: worth counting, not worth narrating.
   const level = route.endsWith('/health') ? 'debug' : statusCode >= 500 ? 'error' : 'info';
   logger[level]('Request served', {
     'http.response.status_code': statusCode,
@@ -196,7 +184,6 @@ async function enforce(
   return { auth };
 }
 
-/** The caller's `branch.users` id, for the access log. Anonymous routes have none. */
 function userIdOf(auth: RequestAuth): string | undefined {
   const user = auth.context.user;
   const id = user?.dbUser?.userId ?? user?.userId;

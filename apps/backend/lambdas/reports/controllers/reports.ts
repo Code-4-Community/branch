@@ -100,9 +100,7 @@ export const generateReport: RouteHandler = async ({ event }) => {
     return json(404, { message: 'Project not found' });
   }
 
-  // Rendering a PDF/DOCX is the slowest thing this backend does and the most
-  // likely to hit the 30s lambda timeout, so it is timed separately from the
-  // request as a whole.
+  // The slowest path here, and the one nearest the 30s lambda timeout.
   const renderStartedAt = Date.now();
   const kind = { report_type: reportType, file_type: fileType };
 

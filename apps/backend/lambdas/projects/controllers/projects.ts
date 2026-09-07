@@ -178,8 +178,6 @@ export const deleteProject: RouteHandler = async ({ params }) => {
   // which is the single largest source of unreferenced objects.
   const filesDeleted = await deleteProjectObjects(Number(id));
 
-  // A cascade delete takes expenditures, reports and their S3 objects with it,
-  // so this is worth being able to correlate against on a dashboard.
   recordEvent(METRICS.PROJECT_CHANGED, { action: 'deleted' });
 
   return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id }, filesDeleted });
