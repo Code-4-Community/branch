@@ -11,7 +11,6 @@ interface QueryLogEvent {
 
 const SLOW_QUERY_MS = 500;
 
-/** Kysely `log` hook: `new Kysely({ dialect, log: kyselyTelemetryLog })`. */
 export function kyselyTelemetryLog(event: QueryLogEvent): void {
   const operation = statementKind(event.query?.sql);
   const durationMs = Math.round(event.queryDurationMillis ?? 0);

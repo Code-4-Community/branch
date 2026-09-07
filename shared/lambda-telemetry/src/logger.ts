@@ -17,10 +17,7 @@ export interface LogFields {
   [field: string]: unknown;
 }
 
-/**
- * One JSON line to stdout (CloudWatch) and one record to Loki. The enclosing
- * request's id, route and caller are attached automatically.
- */
+/** One line to stdout (CloudWatch) and one record to Loki. */
 export function log(level: LogLevel, message: string, fields: LogFields = {}): void {
   if (levelRank(level) < minLevel()) return;
 
@@ -106,7 +103,6 @@ function describeError(err: unknown): Record<string, string> {
   return { 'error.type': typeof err, 'error.message': String(err) };
 }
 
-/** Tests only — re-reads `LOG_LEVEL`. */
 export function resetLoggerForTests(): void {
   threshold = undefined;
 }

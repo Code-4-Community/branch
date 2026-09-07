@@ -4,7 +4,6 @@ import type { DB } from '@branch/types'
 import { kyselyTelemetryLog } from '@branch/lambda-telemetry'
 
 const db = new Kysely<DB>({
-  // Query duration + slow/failed query logs. See @branch/lambda-telemetry.
   log: kyselyTelemetryLog,
   dialect: new PostgresDialect({
     pool: new Pool({

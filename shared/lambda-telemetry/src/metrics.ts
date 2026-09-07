@@ -3,7 +3,6 @@ import { getMeter } from './provider';
 
 export type Attributes = Record<string, string | number | boolean | undefined>;
 
-/** One table, so a dashboard and the code feeding it cannot drift. */
 export const METRICS = {
   LOGIN: 'branch.auth.logins',
   REGISTRATION: 'branch.auth.registrations',
@@ -81,7 +80,6 @@ function clean(attributes: Attributes = {}): Record<string, string | number | bo
   return out;
 }
 
-/** A broken metric must never be the reason a request fails. */
 function guard(fn: () => void): void {
   try {
     fn();
@@ -141,12 +139,10 @@ export function recordDbQuery(operation: string, durationMs: number, ok: boolean
   );
 }
 
-/** Count a domain event. Use a {@link METRICS} constant, not a literal. */
 export function recordEvent(name: string, attributes?: Attributes): void {
   guard(() => counter(name, name)?.add(1, clean(attributes)));
 }
 
-/** Record a domain measurement (money, duration). Use a {@link METRICS} constant. */
 export function recordValue(name: string, value: number, attributes?: Attributes): void {
   if (!Number.isFinite(value)) return;
   guard(() => histogram(name)?.record(value, clean(attributes)));

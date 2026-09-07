@@ -111,10 +111,7 @@ export function getOtelLogger(): OtelLogger | null {
   return getProviders()?.otelLogger ?? null;
 }
 
-/**
- * Lambda freezes on return, so anything not flushed here is never seen. Never
- * rejects, and capped so a slow Grafana cannot become a 30s lambda timeout.
- */
+/** Capped: a slow Grafana must not become a 30s lambda timeout. */
 export async function flushTelemetry(): Promise<void> {
   const active = providers;
   if (!active) return;
@@ -134,7 +131,6 @@ export async function flushTelemetry(): Promise<void> {
   }
 }
 
-/** Tests only. */
 export function resetTelemetryForTests(): void {
   providers = undefined;
   config = undefined;

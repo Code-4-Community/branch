@@ -35,8 +35,7 @@ const UNMATCHED_ROUTE = 'unmatched';
  * declared permission, 404 and 500 centrally. A controller that runs has
  * already cleared its route's gate.
  *
- * Also the one place the backend is instrumented: metrics, the access log, and
- * the flush that has to happen before Lambda freezes the container.
+ * Also the one place the backend is instrumented.
  */
 export async function dispatch(
   event: any,

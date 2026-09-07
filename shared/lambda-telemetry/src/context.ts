@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-/** Attached to every log line in the request, so Loki can follow one call. */
 export interface RequestContext {
   requestId?: string;
   service: string;
