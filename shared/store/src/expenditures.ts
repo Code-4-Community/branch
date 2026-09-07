@@ -26,6 +26,7 @@ export async function editExpenditure(
       .selectFrom('branch.expenditures')
       .where('expenditure_id', '=', id)
       .selectAll()
+      .forUpdate()
       .executeTakeFirst()
     if (!before) return undefined
 
@@ -48,6 +49,7 @@ export async function removeExpenditure(id: number): Promise<bigint> {
       .selectFrom('branch.expenditures')
       .where('expenditure_id', '=', id)
       .selectAll()
+      .forUpdate()
       .executeTakeFirst()
     if (!before) return 0n
 
@@ -55,8 +57,11 @@ export async function removeExpenditure(id: number): Promise<bigint> {
       .deleteFrom('branch.expenditures')
       .where('expenditure_id', '=', id)
       .executeTakeFirst()
+    const removed = deleted?.numDeletedRows ?? 0n
+    // A concurrent delete already took the row; decrementing again drifts.
+    if (removed === 0n) return 0n
 
     await expenditureRollupRemove(trx, before)
-    return deleted?.numDeletedRows ?? 0n
+    return removed
   })
 }

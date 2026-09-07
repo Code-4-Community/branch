@@ -23,6 +23,7 @@ export async function removeReport(id: number): Promise<bigint> {
       .selectFrom('branch.reports')
       .where('report_id', '=', id)
       .select('project_id')
+      .forUpdate()
       .executeTakeFirst()
     if (!before) return 0n
 
@@ -30,8 +31,11 @@ export async function removeReport(id: number): Promise<bigint> {
       .deleteFrom('branch.reports')
       .where('report_id', '=', id)
       .executeTakeFirst()
+    const removed = deleted?.numDeletedRows ?? 0n
+    // A concurrent delete already took the row; decrementing again drifts.
+    if (removed === 0n) return 0n
 
     await projectRollupBump(trx, before.project_id, { reports: -1 })
-    return deleted?.numDeletedRows ?? 0n
+    return removed
   })
 }

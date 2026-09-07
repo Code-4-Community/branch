@@ -218,6 +218,23 @@ describe('expenditure_rollup', () => {
     expect(await approvedTotal()).toBe(250);
   });
 
+  // The double-decrement race this guards (two containers deleting one row;
+  // the loser's DELETE matches nothing but still backs the amount out) is not
+  // reachable from here: the store pool is max: 1, so two tx() calls in one
+  // process serialise on the single connection and never interleave. Reproducing
+  // it needs two pools. The fix is the FOR UPDATE on the pre-read plus the
+  // zero-row guard in removeExpenditure/removeReport/removeDonation.
+  test('removing the same row twice decrements once', async () => {
+    const row = await recordExpenditure(travel);
+    await recordExpenditure({ ...travel, amount: 100 });
+
+    expect(await removeExpenditure(row.expenditure_id)).toBe(1n);
+    expect(await removeExpenditure(row.expenditure_id)).toBe(0n);
+
+    await auditRollups(client);
+    expect(await approvedTotal()).toBe(100);
+  });
+
   test('deleting a project cascades without orphaning or resurrecting a bucket', async () => {
     await recordExpenditure({ ...travel, project_id: 4 });
     await recordReport({ project_id: 4, title: 'r', object_url: 's3://r', report_type: 'technical' });
@@ -284,9 +301,50 @@ describe('project_rollup', () => {
 
   test('deleting a user takes its memberships off the rollup', async () => {
     await updateProject(1, {}, [{ user_id: 4 }], 'Student');
+    await updateProject(2, {}, [{ user_id: 4 }], 'Student');
     await auditRollups(client);
-    await removeUser(4);
+
+    const before = await client.query(
+      'SELECT project_id, member_count FROM branch.project_rollup WHERE project_id IN (1, 2) ORDER BY project_id',
+    );
+    expect(before.rows.map((r) => r.member_count)).toEqual([1, 1]);
+
+    // project_memberships.user_id is ON DELETE RESTRICT, so this only succeeds
+    // if the store clears the memberships first.
+    expect(await removeUser(4)).toBe(1n);
     await auditRollups(client);
+
+    const gone = await client.query('SELECT 1 FROM branch.users WHERE user_id = 4');
+    expect(gone.rows).toHaveLength(0);
+    const orphaned = await client.query(
+      'SELECT 1 FROM branch.project_memberships WHERE user_id = 4',
+    );
+    expect(orphaned.rows).toHaveLength(0);
+
+    const after = await client.query(
+      'SELECT project_id, member_count FROM branch.project_rollup WHERE project_id IN (1, 2) ORDER BY project_id',
+    );
+    expect(after.rows.map((r) => r.member_count)).toEqual([0, 0]);
+  });
+
+  test('removing a user that does not exist is a no-op', async () => {
+    expect(await removeUser(999_999)).toBe(0n);
+    await auditRollups(client);
+  });
+
+  test('a write against a project with no rollup row fails loudly', async () => {
+    // projects_rollup_seed used to guarantee this row for every insert path.
+    // Now only the store seeds it, so a bump that matches nothing has to raise
+    // rather than drop the delta and drift for ever.
+    await client.query('DELETE FROM branch.project_rollup WHERE project_id = 1');
+
+    await expect(
+      recordReport({ project_id: 1, title: 'a', object_url: 's3://a', report_type: 'technical' }),
+    ).rejects.toThrow(/no row for project 1/);
+
+    // The transaction rolled back, so the report did not land either.
+    const reports = await client.query('SELECT 1 FROM branch.reports WHERE project_id = 1');
+    expect(reports.rows).toHaveLength(0);
   });
 
   test('reports add and remove', async () => {

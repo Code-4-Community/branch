@@ -36,13 +36,19 @@ export async function projectRollupBump(
   projectId: number,
   delta: RollupDelta,
 ): Promise<void> {
-  await sql`select branch.project_rollup_bump(
+  const result = await sql<{ hit: number | null }>`select branch.project_rollup_bump(
     ${projectId},
     ${delta.members ?? 0},
     ${delta.donated ?? 0},
     ${delta.donations ?? 0},
     ${delta.reports ?? 0}
-  )`.execute(trx)
+  ) AS hit`.execute(trx)
+
+  // NULL means no project_rollup row matched. Dropping the delta silently is how
+  // the rollup drifts permanently, so fail the transaction instead.
+  if (result.rows[0]?.hit !== 1) {
+    throw new Error(`project_rollup has no row for project ${projectId}`)
+  }
 }
 
 export async function seedProjectRollup(
