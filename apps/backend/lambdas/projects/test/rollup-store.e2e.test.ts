@@ -218,12 +218,8 @@ describe('expenditure_rollup', () => {
     expect(await approvedTotal()).toBe(250);
   });
 
-  // The double-decrement race this guards (two containers deleting one row;
-  // the loser's DELETE matches nothing but still backs the amount out) is not
-  // reachable from here: the store pool is max: 1, so two tx() calls in one
-  // process serialise on the single connection and never interleave. Reproducing
-  // it needs two pools. The fix is the FOR UPDATE on the pre-read plus the
-  // zero-row guard in removeExpenditure/removeReport/removeDonation.
+  // Sequential on purpose: the store pool is max: 1, so a concurrent version of
+  // this passes even against the unfixed code.
   test('removing the same row twice decrements once', async () => {
     const row = await recordExpenditure(travel);
     await recordExpenditure({ ...travel, amount: 100 });
@@ -309,8 +305,6 @@ describe('project_rollup', () => {
     );
     expect(before.rows.map((r) => r.member_count)).toEqual([1, 1]);
 
-    // project_memberships.user_id is ON DELETE RESTRICT, so this only succeeds
-    // if the store clears the memberships first.
     expect(await removeUser(4)).toBe(1n);
     await auditRollups(client);
 
@@ -333,16 +327,12 @@ describe('project_rollup', () => {
   });
 
   test('a write against a project with no rollup row fails loudly', async () => {
-    // projects_rollup_seed used to guarantee this row for every insert path.
-    // Now only the store seeds it, so a bump that matches nothing has to raise
-    // rather than drop the delta and drift for ever.
     await client.query('DELETE FROM branch.project_rollup WHERE project_id = 1');
 
     await expect(
       recordReport({ project_id: 1, title: 'a', object_url: 's3://a', report_type: 'technical' }),
     ).rejects.toThrow(/no row for project 1/);
 
-    // The transaction rolled back, so the report did not land either.
     const reports = await client.query('SELECT 1 FROM branch.reports WHERE project_id = 1');
     expect(reports.rows).toHaveLength(0);
   });

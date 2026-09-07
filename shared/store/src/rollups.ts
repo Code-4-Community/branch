@@ -44,8 +44,6 @@ export async function projectRollupBump(
     ${delta.reports ?? 0}
   ) AS hit`.execute(trx)
 
-  // NULL means no project_rollup row matched. Dropping the delta silently is how
-  // the rollup drifts permanently, so fail the transaction instead.
   if (result.rows[0]?.hit !== 1) {
     throw new Error(`project_rollup has no row for project ${projectId}`)
   }

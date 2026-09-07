@@ -35,7 +35,6 @@ export async function removeDonation(id: number): Promise<bigint> {
       .where('donation_id', '=', id)
       .executeTakeFirst()
     const removed = deleted?.numDeletedRows ?? 0n
-    // A concurrent delete already took the row; decrementing again drifts.
     if (removed === 0n) return 0n
 
     await projectRollupBump(trx, before.project_id, {

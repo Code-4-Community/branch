@@ -58,7 +58,6 @@ export async function removeExpenditure(id: number): Promise<bigint> {
       .where('expenditure_id', '=', id)
       .executeTakeFirst()
     const removed = deleted?.numDeletedRows ?? 0n
-    // A concurrent delete already took the row; decrementing again drifts.
     if (removed === 0n) return 0n
 
     await expenditureRollupRemove(trx, before)
