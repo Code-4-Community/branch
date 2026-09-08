@@ -68,10 +68,14 @@ else
     ssl="${ssl}/rds-ca.pem"
     ca_mount="--volume=$ca_path:/rds-ca.pem:ro"
   fi
-  # Docker Desktop ignores --network=host unless enabled; host-gateway reaches the host either way.
-  case "$db_host" in
-    localhost | 127.0.0.1 | ::1) db_host=host.docker.internal ;;
-  esac
+  # Docker Desktop ignores --network=host unless it is switched on, so a loopback
+  # host has to go via the gateway. Only there: on a native daemon --network=host
+  # is real, and the gateway address misses a server bound to loopback only.
+  if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi 'docker desktop'; then
+    case "$db_host" in
+      localhost | 127.0.0.1 | ::1) db_host=host.docker.internal ;;
+    esac
+  fi
   # shellcheck disable=SC2046
   set -- docker run --rm --network=host \
     --add-host=host.docker.internal:host-gateway \
