@@ -139,6 +139,9 @@ jobs:
             echo "Applying db/migrations"
             npm run migrate --prefix apps/backend/db
 
+            # Type generation refuses a schema without this marker.
+            npm run fingerprint --prefix apps/backend/db
+
             echo "Verifying schema application"
             psql -h localhost -U postgres -d testdb -c "\dt branch.*"
           env:

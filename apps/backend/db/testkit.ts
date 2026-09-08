@@ -26,9 +26,9 @@ export interface Queryable {
 }
 
 /**
- * Byte-order sort, matching the sort kysely's Migrator uses to order migrations.
- * If these two ever disagree, tests and production apply migrations in different
- * orders.
+ * Byte-order sort. Flyway orders by parsed version rather than by filename, but
+ * `V<zero-padded digits>__` sorts identically either way. If that ever stops
+ * being true, tests and production apply migrations in different orders.
  */
 function migrationFiles(): string[] {
   return fs
@@ -37,14 +37,29 @@ function migrationFiles(): string[] {
     .sort();
 }
 
+// Must stay in step with the `-placeholders.*` flags in flyway.sh; tests apply the SQL directly.
+const PLACEHOLDERS: Record<string, string> = { async: '' };
+
+function substitutePlaceholders(sql: string, file: string): string {
+  return sql.replace(/\$\{(\w+)\}/g, (match, name: string) => {
+    const value = PLACEHOLDERS[name];
+    if (value === undefined) {
+      throw new Error(
+        `${file}: unknown Flyway placeholder ${match} -- define it in flyway.sh and in PLACEHOLDERS here`,
+      );
+    }
+    return value;
+  });
+}
+
 let allSql: string | undefined;
 function allMigrationSql(): string {
   allSql ??= migrationFiles()
     .map(
       (file) =>
-        `-- ${file}\n${fs.readFileSync(
-          path.join(MIGRATIONS_DIR, file),
-          'utf8',
+        `-- ${file}\n${substitutePlaceholders(
+          fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8'),
+          file,
         )}`,
     )
     .join('\n');
@@ -62,41 +77,56 @@ export function migrationsFingerprint(): string {
   return crypto.createHash('sha256').update(allMigrationSql()).digest('hex');
 }
 
+export const HISTORY_TABLE = 'flyway_schema_history';
+
 /**
- * Writes kysely's migration ledger as if every migration file had just been
- * applied by the Migrator: branch.kysely_migration with one row per file, plus
- * branch.kysely_migration_lock. The DDL is copied from kysely's Migrator so a
- * later `npm run migrate` finds exactly what it expects.
+ * Writes Flyway's history as if every migration file had just been applied. The
+ * DDL is copied from what Flyway itself creates on PostgreSQL, so a later
+ * `npm run migrate` finds exactly what it expects.
  *
  * Without this, rebuildSchema() would leave a schema whose tables exist but
- * whose ledger is empty -- and since the dev stack and the tests share one local
- * database, the next `make migrate` would try to re-apply every migration and
- * fail on "already exists".
+ * whose history is empty -- and since the dev stack and the tests share one
+ * local database, the next `make migrate` would baseline at the adoption
+ * version and re-apply every migration written since, failing on "already
+ * exists".
  */
 export async function stampLedger(client: Queryable): Promise<void> {
   await client.query(
-    `CREATE TABLE IF NOT EXISTS ${SCHEMA}.kysely_migration (
-       name varchar(255) NOT NULL PRIMARY KEY,
-       "timestamp" varchar(255) NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS ${SCHEMA}.${HISTORY_TABLE} (
+       installed_rank integer NOT NULL PRIMARY KEY,
+       version varchar(50),
+       description varchar(200) NOT NULL,
+       type varchar(20) NOT NULL,
+       script varchar(1000) NOT NULL,
+       checksum integer,
+       installed_by varchar(100) NOT NULL,
+       installed_on timestamp NOT NULL DEFAULT now(),
+       execution_time integer NOT NULL,
+       success boolean NOT NULL)`,
   );
   await client.query(
-    `CREATE TABLE IF NOT EXISTS ${SCHEMA}.kysely_migration_lock (
-       id varchar(255) NOT NULL PRIMARY KEY,
-       is_locked integer NOT NULL DEFAULT 0)`,
-  );
-  await client.query(
-    `INSERT INTO ${SCHEMA}.kysely_migration_lock (id, is_locked)
-     VALUES ('migration_lock', 0) ON CONFLICT (id) DO NOTHING`,
+    `CREATE INDEX IF NOT EXISTS ${HISTORY_TABLE}_s_idx
+       ON ${SCHEMA}.${HISTORY_TABLE} (success)`,
   );
 
-  const now = new Date().toISOString();
+  // Flyway stores the description with the underscores turned back into spaces.
   const rows = migrationFiles()
-    .map((file) => `('${file.slice(0, -'.sql'.length)}', '${now}')`)
+    .map((file, index) => {
+      const [version, description] = file
+        .slice(1, -'.sql'.length)
+        .split('__', 2);
+      return (
+        `(${index + 1}, '${version}', '${description.replace(/_/g, ' ')}',` +
+        ` 'SQL', '${file}', NULL, current_user, 0, TRUE)`
+      );
+    })
     .join(', ');
   if (rows) {
     await client.query(
-      `INSERT INTO ${SCHEMA}.kysely_migration (name, "timestamp")
-       VALUES ${rows} ON CONFLICT (name) DO NOTHING`,
+      `INSERT INTO ${SCHEMA}.${HISTORY_TABLE}
+         (installed_rank, version, description, type, script, checksum,
+          installed_by, execution_time, success)
+       VALUES ${rows} ON CONFLICT (installed_rank) DO NOTHING`,
     );
   }
 }
@@ -114,8 +144,8 @@ export async function rebuildSchema(client: Queryable): Promise<void> {
   await client.query(`SET search_path TO ${SCHEMA}, public`);
   try {
     // A parameterless multi-statement query goes over the simple query protocol
-    // and runs as one implicit transaction -- the same all-or-nothing semantics
-    // kysely's Migrator gives us in production.
+    // and runs as one implicit transaction. Flyway commits per file rather than
+    // per run, so this is stricter than production, not looser.
     await client.query(allMigrationSql());
   } finally {
     await client.query('RESET search_path');
@@ -168,7 +198,7 @@ async function truncateAll(client: Queryable): Promise<string> {
     const { rows } = await client.query(
       `SELECT quote_ident(schemaname) || '.' || quote_ident(tablename) AS t
          FROM pg_tables
-        WHERE schemaname = '${SCHEMA}' AND tablename NOT LIKE 'kysely_migration%'
+        WHERE schemaname = '${SCHEMA}' AND tablename <> '${HISTORY_TABLE}'
         ORDER BY tablename`,
     );
     const tables = (rows ?? []).map((row) => row.t as string);

@@ -1,8 +1,12 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { Pool } from 'pg';
 
 /** Every table lives in this schema; the generated DB types key off it. */
 export const SCHEMA = 'branch';
+
+/** Flyway is pointed at the same directory by flyway.sh. */
+export const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 /**
  * The one place that knows how to reach the database.
