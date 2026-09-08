@@ -5,7 +5,15 @@ FLYWAY_IMAGE=flyway/flyway:13.5.0-alpine
 DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # Last migration applied under kysely; already on production, so Flyway baselines here.
+# Also a permanent floor: Flyway reports anything at or below it "Below Baseline" and
+# never runs it. The `checks` job rejects a new migration that sorts here or lower.
 BASELINE_VERSION=20260907213524
+
+# Off unless asked. Baselining only ever fires against a non-empty schema with no
+# history table, which on production means an unrecognised database -- adopting it
+# silently is how a restored snapshot gets mistaken for the real one. compose sets
+# it for local dev; the deploy workflow only for a deliberate one-time adoption.
+BASELINE_ON_MIGRATE=${FLYWAY_BASELINE_ON_MIGRATE:-false}
 
 # Percent-encoded credentials in DATABASE_URL are not decoded -- use DB_USER/DB_PASSWORD.
 if [ -n "${DATABASE_URL:-}" ]; then
@@ -46,7 +54,7 @@ add_flags() {
     -defaultSchema=branch \
     -createSchemas=true \
     -outOfOrder=true \
-    -baselineOnMigrate=true \
+    "-baselineOnMigrate=$BASELINE_ON_MIGRATE" \
     "-baselineVersion=$BASELINE_VERSION" \
     -validateMigrationNaming=true \
     -cleanDisabled=true \
@@ -64,8 +72,15 @@ else
     ssl="${ssl}/rds-ca.pem"
     ca_mount="--volume=$ca_path:/rds-ca.pem:ro"
   fi
+  # Docker Desktop ignores --network=host unless it is switched on, and inside the
+  # container `localhost` can resolve to ::1 before the host's IPv4. host-gateway
+  # reaches the host either way.
+  case "$db_host" in
+    localhost | 127.0.0.1 | ::1) db_host=host.docker.internal ;;
+  esac
   # shellcheck disable=SC2046
   set -- docker run --rm --network=host \
+    --add-host=host.docker.internal:host-gateway \
     --volume="$DB_DIR/migrations:/db/migrations:ro" \
     --env=FLYWAY_URL --env=FLYWAY_USER --env=FLYWAY_PASSWORD \
     ${ca_mount:+"$ca_mount"} "$FLYWAY_IMAGE" \

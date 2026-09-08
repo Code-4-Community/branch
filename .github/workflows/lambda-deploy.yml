@@ -15,6 +15,10 @@ on:
         description: 'Apply pending DB migrations without redeploying lambdas'
         type: boolean
         default: false
+      adopt_baseline:
+        description: 'One-time: let Flyway adopt a populated database that has no schema history'
+        type: boolean
+        default: false
 
 jobs:
   detect-changes:
@@ -172,6 +176,10 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+    env:
+      # Never on for a push. Adopting an unrecognised database is a deliberate,
+      # human-triggered act -- see the guard below.
+      FLYWAY_BASELINE_ON_MIGRATE: ${{ inputs.adopt_baseline == true }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -221,22 +229,42 @@ jobs:
       - name: Pending migrations (read-only preflight)
         id: status
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run --silent migrate:info --prefix apps/backend/db -- -outputType=json > info.json
+          # Every check below reads this file. Unparseable output is a failure, not
+          # a reason to fall through -- `jq -e` on malformed JSON exits non-zero,
+          # which inside `if` would read as "the dangerous condition is absent".
+          jq -e 'type == "object" and has("migrations") and has("allSchemasEmpty")' \
+            info.json > /dev/null \
+            || { echo "::error::could not parse the output of flyway info"; exit 1; }
+
           jq -r '.migrations[] | "\(.state)\t\(.version)\t\(.description)"' info.json | tee status.log
-          # Unknown (unexpected output) falls through as "1" so we take the safe
-          # path and snapshot before touching anything.
-          pending=$(jq '[.migrations[] | select(.state == "Pending")] | length' info.json || echo 1)
-          echo "pending=${pending:-1}" >> "$GITHUB_OUTPUT"
+          pending=$(jq '[.migrations[] | select(.state == "Pending")] | length' info.json)
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
           echo "$pending migration(s) pending"
 
+      # Production is never built by running the baseline, and it is never adopted
+      # by accident: baselineOnMigrate is off unless this run explicitly asks for
+      # it. An empty schema means DB_HOST is not the database we think it is; an
+      # unrecognised populated one is a restored snapshot, a clone or a hand-built
+      # schema. Refuse both. See apps/backend/db/README.md for the one-time
+      # adoption procedure.
       - name: Refuse to execute the baseline against production
+        env:
+          ADOPT: ${{ inputs.adopt_baseline }}
         run: |
-          if jq -e '.allSchemasEmpty' info.json > /dev/null; then
+          set -euo pipefail
+          if [ "$(jq -r '.allSchemasEmpty' info.json)" = 'true' ]; then
             echo "::error::schema \"branch\" is empty on the target database. Refusing to build production from scratch -- check DB_HOST."
             exit 1
           fi
-          if jq -e '.schemaVersion != null and any(.migrations[]; .version == "0000" and .state == "Pending")' info.json > /dev/null; then
+          tracked=$(jq -r '.schemaVersion' info.json)
+          if [ "$tracked" = 'null' ] && [ "$ADOPT" != 'true' ]; then
+            echo "::error::the target database has a populated schema \"branch\" but no Flyway history. Refusing to adopt it -- re-run this workflow manually with adopt_baseline if that is genuinely production."
+            exit 1
+          fi
+          if [ "$tracked" != 'null' ] \
+             && jq -e 'any(.migrations[]; .version == "0000" and .state == "Pending")' info.json > /dev/null; then
             echo "::error::V0000__baseline_schema is PENDING on a database Flyway already tracks. The schema history and the schema have drifted -- refusing to run."
             exit 1
           fi

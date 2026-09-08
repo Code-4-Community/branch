@@ -176,10 +176,45 @@ jobs:
               echo "::error file=$DIR/$f::name must be VYYYYMMDDHHMMSS__lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
               fail=1
             fi
-            # Out-of-order merges are allowed at runtime (flyway.sh sets
-            # outOfOrder), so this is advice, not a failure.
+            # Allowed at runtime (flyway.sh sets outOfOrder) for anything above
+            # the baseline; at or below it the next step fails the build.
             if [ -n "${last:-}" ] && [ "$f" \< "$last" ]; then
-              echo "::warning file=$DIR/$f::sorts before $last, which is already on main, so it will be applied out of order. Harmless, but renaming it to a current timestamp keeps the history readable."
+              echo "::warning file=$DIR/$f::sorts before $last, which is already on main, so it will be applied out of order. Renaming it to a current UTC timestamp keeps the history readable."
+            fi
+          done
+          exit $fail
+
+      # baselineOnMigrate pins production at BASELINE_VERSION, and Flyway reports
+      # anything at or below it "Below Baseline" -- skipped, with pending 0, a
+      # passing validate and an exit 0. CI builds from an empty schema, where
+      # baselining never fires, so nothing else can catch this.
+      - name: New migrations must sort above the adoption baseline
+        if: steps.base.outputs.sha != ''
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          baseline=$(sed -n 's/^BASELINE_VERSION=//p' apps/backend/db/flyway.sh)
+          case "$baseline" in
+            '' | *[!0-9]*)
+              echo "::error::could not read a numeric BASELINE_VERSION from apps/backend/db/flyway.sh"
+              exit 1 ;;
+          esac
+          MB=$(git merge-base "$BASE" HEAD)
+          version_of() { basename "$1" | sed -E 's/^V0*([0-9]+)_+.*/\1/'; }
+
+          # Versions already on main, so a rename reported as an addition is not
+          # mistaken for a new migration.
+          git ls-tree -r --name-only "$MB" -- "$DIR" | while read -r p; do version_of "$p"; done \
+            | sort -u > "$RUNNER_TEMP/known.txt"
+
+          fail=0
+          for f in $(git diff --diff-filter=A --name-only "$MB" HEAD -- "$DIR"); do
+            v=$(version_of "$f")
+            grep -qxF "$v" "$RUNNER_TEMP/known.txt" && continue
+            if [ "$v" -le "$baseline" ]; then
+              echo "::error file=$f::version $v is at or below the adoption baseline $baseline, so production would report it \"Below Baseline\" and never run it -- while CI stays green. Rename it with a current UTC timestamp."
+              fail=1
             fi
           done
           exit $fail

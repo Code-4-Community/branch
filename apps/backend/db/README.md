@@ -93,8 +93,19 @@ someone whose timestamp is later, it simply applies late. The alternative — th
 default — is a production deploy that fails and can only be unblocked by
 hand-editing `flyway_schema_history` in RDS.
 
+**`outOfOrder` does not extend below the baseline.** `BASELINE_VERSION` in
+`flyway.sh` is the version production was adopted at, and Flyway reports anything at
+or below it as `Below Baseline` — skipped, permanently, with nothing pending, a
+passing `validate` and a green deploy. CI builds from an empty schema, where
+baselining never happens, so CI cannot see it either. The `checks` job therefore
+fails any new migration whose version is not strictly above `BASELINE_VERSION`. Let
+`make new-migration` generate the timestamp and this never comes up.
+
 `${async}` in a migration is a Flyway placeholder. It expands to nothing on
 PostgreSQL and to `ASYNC` on Aurora DSQL, which has no synchronous `CREATE INDEX`.
+Placeholders are Flyway's, so `testkit.ts` substitutes them itself when it applies
+the files directly — add any new one to `PLACEHOLDERS` there as well as to
+`flyway.sh`, or the tests fail on a postgres syntax error.
 
 ## In CI
 
@@ -134,14 +145,20 @@ pg_dump --schema-only --schema=branch --no-owner --no-privileges --no-comments \
 ```
 
 Run that against a local database with only the baseline applied, and against the
-target; `diff -u` the two. Once it's empty, run `npm run migrate` against the target
-with a human watching.
+target; `diff -u` the two.
 
-Flyway adopts it rather than replaying it: `baselineOnMigrate` writes a single
-baseline row at the version pinned in `flyway.sh` when it finds a non-empty schema
-with no history table, and everything at or below that version is then considered
-applied. If the schemas genuinely diverge, write a follow-up migration reconciling
-the difference — there is no way to record one file as applied on its own.
+Once it's empty, adopt the database: Flyway writes a single baseline row at
+`BASELINE_VERSION` from `flyway.sh` instead of replaying the files, and everything at
+or below that version counts as applied. If the schemas genuinely diverge, write a
+follow-up migration reconciling the difference — there is no way to record one file
+as applied on its own.
+
+Adoption is **off by default and never happens on a push**: a populated schema with
+no history table is far more often a restored snapshot or a clone than the real
+production database, and adopting one silently is how you end up migrating the wrong
+thing. Run the `Lambda Deploy` workflow by hand with `adopt_baseline` checked, once,
+with a human watching. Locally, compose sets `FLYWAY_BASELINE_ON_MIGRATE=true` so a
+dev database built before Flyway is adopted without ceremony.
 
 The `migrate` job refuses to run against an **empty** target, on the assumption that
 it means `DB_HOST` is pointing somewhere unexpected.

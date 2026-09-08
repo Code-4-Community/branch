@@ -37,14 +37,34 @@ function migrationFiles(): string[] {
     .sort();
 }
 
+/**
+ * Flyway placeholder values for PostgreSQL. Must stay in step with the
+ * `-placeholders.*` flags in flyway.sh: tests apply the migration files
+ * directly, so nothing substitutes these for us and `${async}` would reach
+ * postgres as a syntax error.
+ */
+const PLACEHOLDERS: Record<string, string> = { async: '' };
+
+function substitutePlaceholders(sql: string, file: string): string {
+  return sql.replace(/\$\{(\w+)\}/g, (match, name: string) => {
+    const value = PLACEHOLDERS[name];
+    if (value === undefined) {
+      throw new Error(
+        `${file}: unknown Flyway placeholder ${match} -- define it in flyway.sh and in PLACEHOLDERS here`,
+      );
+    }
+    return value;
+  });
+}
+
 let allSql: string | undefined;
 function allMigrationSql(): string {
   allSql ??= migrationFiles()
     .map(
       (file) =>
-        `-- ${file}\n${fs.readFileSync(
-          path.join(MIGRATIONS_DIR, file),
-          'utf8',
+        `-- ${file}\n${substitutePlaceholders(
+          fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8'),
+          file,
         )}`,
     )
     .join('\n');
