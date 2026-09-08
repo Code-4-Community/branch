@@ -5,7 +5,7 @@ FLYWAY_IMAGE=flyway/flyway:13.5.0-alpine
 DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # Last migration applied under kysely; already on production, so Flyway baselines here.
-BASELINE_VERSION=20260906215733
+BASELINE_VERSION=20260907213524
 
 # Percent-encoded credentials in DATABASE_URL are not decoded -- use DB_USER/DB_PASSWORD.
 if [ -n "${DATABASE_URL:-}" ]; then
