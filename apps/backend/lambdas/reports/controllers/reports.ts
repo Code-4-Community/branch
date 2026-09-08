@@ -15,8 +15,6 @@ import {
   getObjectSize,
 } from '../report-service';
 
-// WHEN_REQUIRED, not the SDK default: see the note in
-// expenditures/services/expenditures.ts. The upload URL below is a browser PUT.
 const s3 = new S3Client({
   region: process.env.AWS_REGION ?? 'us-east-2',
   requestChecksumCalculation: 'WHEN_REQUIRED',

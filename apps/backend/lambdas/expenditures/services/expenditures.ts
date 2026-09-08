@@ -9,9 +9,7 @@ import { applyExpenditureScope, type ExpenditureScope } from './scope';
 
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
-// WHEN_SUPPORTED (the SDK default) signs a CRC32 of the presigner's empty body
-// into the upload URL, which the real bytes then fail. Presigned PUTs need
-// WHEN_REQUIRED.
+// SDK default signs a checksum of the presigner's empty body; real bytes then fail the PUT.
 const s3 = new S3Client({ region: REGION, requestChecksumCalculation: 'WHEN_REQUIRED' });
 
 // Receipts are PDFs only, matching the dropzone in AddExpenseModal.

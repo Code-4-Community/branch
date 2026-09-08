@@ -4,8 +4,6 @@ import { reportError } from '@branch/lambda-http';
 
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
-// WHEN_REQUIRED, not the SDK default: see the note in
-// expenditures/services/expenditures.ts. presignAvatarUpload is a browser PUT.
 const s3 = new S3Client({ region: REGION, requestChecksumCalculation: 'WHEN_REQUIRED' });
 
 /** Profile photos share the reports bucket, under their own prefix. */
