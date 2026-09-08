@@ -88,6 +88,7 @@
 | [aws_s3_bucket.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
 | [aws_s3_bucket.reports_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket) | resource |
+| [aws_s3_bucket_cors_configuration.reports_bucket_cors](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_cors_configuration) | resource |
 | [aws_s3_bucket_policy.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_policy) | resource |
 | [aws_s3_bucket_public_access_block.frontend](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_public_access_block) | resource |
 | [aws_s3_bucket_public_access_block.reports_bucket_public_access](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_public_access_block) | resource |
