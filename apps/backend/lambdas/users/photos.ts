@@ -4,7 +4,7 @@ import { reportError } from '@branch/lambda-http';
 
 const REGION = process.env.AWS_REGION ?? 'us-east-2';
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
-const s3 = new S3Client({ region: REGION });
+const s3 = new S3Client({ region: REGION, requestChecksumCalculation: 'WHEN_REQUIRED' });
 
 /** Profile photos share the reports bucket, under their own prefix. */
 export const AVATAR_PREFIX = 'avatars/';

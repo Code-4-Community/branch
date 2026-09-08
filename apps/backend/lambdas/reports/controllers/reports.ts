@@ -15,7 +15,10 @@ import {
   getObjectSize,
 } from '../report-service';
 
-const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
+const s3 = new S3Client({
+  region: process.env.AWS_REGION ?? 'us-east-2',
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+});
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx'] as const;
