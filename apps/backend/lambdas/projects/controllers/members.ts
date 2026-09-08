@@ -1,5 +1,5 @@
 import { json, RouteHandler } from '@branch/lambda-http';
-import db from '../db';
+import { db } from '@branch/store';
 import { listRoster } from '../services/projects';
 import { requireVisibleProject } from './project-guard';
 

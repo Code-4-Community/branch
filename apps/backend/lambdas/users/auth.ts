@@ -1,6 +1,6 @@
 import { authenticateRequest as _authenticateRequest, loadRbacSubject } from '@branch/lambda-auth';
 import { createAuthResolver } from '@branch/lambda-http';
-import db from './db';
+import { db } from '@branch/store';
 
 export * from '@branch/lambda-auth';
 

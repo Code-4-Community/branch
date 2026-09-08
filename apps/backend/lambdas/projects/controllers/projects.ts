@@ -1,8 +1,8 @@
 import { json, parseBody, requirePermission, RouteHandler, serverError } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
 import { sql, type SqlBool } from 'kysely';
-import db from '../db';
-import { ProjectValidationUtils } from '../validation-utils';
+import { db, createProject as storeCreateProject, updateProject as storeUpdateProject, removeProject } from '@branch/store';
+import { DEFAULT_PROJECT_ROLE, ProjectValidationUtils } from '../validation-utils';
 import { requireVisibleProject } from './project-guard';
 import {
   ADMIN_ASSIGNMENT_MESSAGE,
@@ -12,7 +12,6 @@ import {
   isProjectActive,
   loadAdminHeadcount,
   loadProjectAggregates,
-  syncMemberships,
   toIsoDate,
 } from '../services/projects';
 
@@ -131,26 +130,12 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
   }
 
   try {
-    // Field update and roster replacement share a transaction: a failed
-    // membership insert must not leave the project with nobody assigned.
-    const updatedProject = await db.transaction().execute(async (trx) => {
-      const row = Object.keys(updateValues).length > 0
-        ? await trx
-            .updateTable('branch.projects')
-            .set(updateValues)
-            .where('project_id', '=', Number(id))
-            .returningAll()
-            .executeTakeFirst()
-        : await trx
-            .selectFrom('branch.projects')
-            .where('project_id', '=', Number(id))
-            .selectAll()
-            .executeTakeFirst();
-
-      if (!row) return undefined;
-      if (members !== undefined) await syncMemberships(trx, Number(id), members);
-      return row;
-    });
+    const updatedProject = await storeUpdateProject(
+      Number(id),
+      updateValues,
+      members,
+      DEFAULT_PROJECT_ROLE,
+    );
 
     if (!updatedProject) return json(404, { message: `Project not found for id: ${id}` });
     return json(200, updatedProject);
@@ -165,8 +150,8 @@ export const deleteProject: RouteHandler = async ({ params }) => {
   if (!id) return json(400, { message: 'id is required' });
   if (!/^\d+$/.test(id)) return json(400, { message: 'id must be a valid number' });
 
-  const deleted = await db.deleteFrom('branch.projects').where('project_id', '=', Number(id)).execute();
-  if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+  const deleted = await removeProject(Number(id));
+  if (deleted === 0n) {
     return json(404, { message: 'Project not found' });
   }
 
@@ -240,16 +225,7 @@ export const createProject: RouteHandler = async ({ event, auth }) => {
     // Creating the project and its roster together so a partial save cannot
     // leave a project without the staff the caller picked. The roster may be
     // empty — admins reach every project through `users.is_admin`.
-    const inserted = await db.transaction().execute(async (trx) => {
-      const row = await trx
-        .insertInto('branch.projects')
-        .values(values)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      if (members.length > 0) await syncMemberships(trx, row.project_id, members);
-      return row;
-    });
+    const inserted = await storeCreateProject(values, members, DEFAULT_PROJECT_ROLE);
 
     return json(201, inserted);
   } catch (e) {

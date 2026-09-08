@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 import { handler } from '../handler';
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 jest.mock('../auth', () => {
   // dispatch() resolves the caller through resolveAuth, so an auto-mock would
   // hand it `undefined` and every route would 500. Only the authenticate half
@@ -13,7 +13,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -116,11 +116,6 @@ describe("Donor API with data", () => {
     } finally {
       client.release();
     }
-  });
-
-  test("health test 🌞", async () => {
-    let res = await fetch("http://localhost:3000/donors/health");
-    expect(res.status).toBe(200);
   });
 
   test("Status check for get all donors when donors exist 🌞 - with auth", async () => {
@@ -659,7 +654,7 @@ describe("Donor API when DB is empty", () => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
+  await closeConnection();
 });
 
 

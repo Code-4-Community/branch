@@ -1,0 +1,30 @@
+{
+  "name": "@branch/store",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The only writer of rollup-affecting tables. Shared verbatim by the lambdas.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "kysely": "^0.28.8",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@branch/types": "file:../types",
+    "@jest/globals": "^30.2.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.15.5",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
+    "typescript": "^5.4.5"
+  }
+}

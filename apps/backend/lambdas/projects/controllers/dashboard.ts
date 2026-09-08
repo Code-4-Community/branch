@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import { json, RouteHandler, serverError } from '@branch/lambda-http';
-import db from '../db';
+import { db } from '@branch/store';
 import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
 import { isProjectActive, listRoster, loadAdminHeadcount } from '../services/projects';
 import { requireVisibleProject } from './project-guard';

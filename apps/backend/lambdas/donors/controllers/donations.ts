@@ -2,7 +2,7 @@ import type { RouteCtx } from '@branch/lambda-http';
 import { json, requirePermission } from '@branch/lambda-http';
 import { projectScopeIds } from '@branch/rbac';
 import { sql, type SqlBool } from 'kysely';
-import db from '../db';
+import { db, recordDonation, removeDonation } from '@branch/store';
 
 // Authentication and the route's permission are enforced by dispatch before any
 // of these run — see routes.ts.
@@ -132,16 +132,12 @@ export async function createDonation({ event }: RouteCtx) {
   }
 
   try {
-    const donation = await db
-      .insertInto('branch.project_donations')
-      .values({
-        donor_id: donorId,
-        project_id: projectId,
-        amount: donationAmount,
-        ...(donatedAt ? { donated_at: donatedAt } : {}),
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    const donation = await recordDonation({
+      donor_id: donorId,
+      project_id: projectId,
+      amount: donationAmount,
+      ...(donatedAt ? { donated_at: donatedAt } : {}),
+    });
 
     return json(201, { data: donation });
   } catch (err: any) {
@@ -179,8 +175,8 @@ export async function deleteDonation({ params, auth }: RouteCtx) {
   });
   if (invisible) return json(404, { message: 'Donation not found' });
 
-  const deleted = await db.deleteFrom('branch.project_donations').where('donation_id', '=', Number(id)).execute();
-  if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+  const deleted = await removeDonation(Number(id));
+  if (deleted === 0n) {
     return json(404, { message: 'Donation not found' });
   }
 

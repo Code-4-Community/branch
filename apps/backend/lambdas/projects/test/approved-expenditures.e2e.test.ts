@@ -9,7 +9,7 @@
  */
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
-import { ensureSchema, resetData } from '../../../db/testkit';
+import { ensureSchema, resetData, reconcileRollups } from '../../../db/testkit';
 
 jest.mock('../auth', () => {
   // dispatch() resolves the caller through resolveAuth, so an auto-mock would
@@ -22,7 +22,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -35,7 +35,7 @@ jest.mock('../auth', () => {
 });
 
 import { handler } from '../handler';
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
@@ -83,6 +83,7 @@ beforeEach(async () => {
         (1, 1, 1000, 'Travel', 'needs info', 'needs_more_info', CURRENT_DATE)
     `);
     await client.query(`UPDATE branch.projects SET end_date = '2099-12-31' WHERE end_date IS NOT NULL`);
+    await reconcileRollups(client);
   } finally {
     client.release();
   }
@@ -90,7 +91,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
+  await closeConnection();
 });
 
 function getEvent(rawPath: string) {

@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
-import db from '../db';
+import { db, recordReport, removeReport } from '@branch/store';
 import {
   fetchReportData,
   generatePdf,
@@ -258,11 +258,12 @@ export const createReport: RouteHandler = async ({ event }) => {
     return json(400, { message: "objectUrl must point at this project's prefix in the reports bucket" });
   }
 
-  const report = await db
-    .insertInto('branch.reports')
-    .values({ project_id: projectId, title: (title as string).trim(), object_url: objectUrl as string, report_type: resolvedReportType })
-    .returningAll()
-    .executeTakeFirst();
+  const report = await recordReport({
+    project_id: projectId,
+    title: (title as string).trim(),
+    object_url: objectUrl as string,
+    report_type: resolvedReportType,
+  });
 
   return json(201, report);
 };
@@ -307,8 +308,8 @@ export const deleteReport: RouteHandler = async ({ params, path, method }) => {
   const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
 
-  const deleted = await db.deleteFrom('branch.reports').where('report_id', '=', Number(id)).execute();
-  if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+  const deleted = await removeReport(Number(id));
+  if (deleted === 0n) {
     return json(404, { message: 'Report not found' });
   }
 
