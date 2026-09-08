@@ -41,8 +41,7 @@ export async function claimUser(userId: number, values: UserEdit): Promise<bigin
 // user_id on project_memberships is ON DELETE RESTRICT: delete memberships first and decrement member_count.
 export async function removeUser(userId: number): Promise<bigint> {
   return tx(async (trx) => {
-    // RETURNING, not a prior SELECT: a membership inserted between the two would
-    // be deleted here and never come off member_count.
+    // RETURNING, not a prior SELECT: a membership added in between would be missed.
     const removed = await trx
       .deleteFrom('branch.project_memberships')
       .where('user_id', '=', userId)

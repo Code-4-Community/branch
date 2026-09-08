@@ -37,8 +37,7 @@ async function syncMemberships(
       .execute()
   }
 
-  // Counted from the DELETE, not from `existing`: a concurrent roster edit makes
-  // that read stale and member_count drifts permanently.
+  // Counted from the DELETE: a concurrent roster edit makes `existing` stale.
   const delta = members.length - Number(cleared?.numDeletedRows ?? 0n)
   if (delta !== 0) await projectRollupBump(trx, projectId, { members: delta })
 }

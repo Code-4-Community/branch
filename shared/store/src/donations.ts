@@ -56,8 +56,7 @@ export async function createDonor(
 // donor_id is ON DELETE RESTRICT: delete the donations first and back their rollup out.
 export async function removeDonor(donorId: number): Promise<bigint> {
   return tx(async (trx) => {
-    // RETURNING, not a prior SELECT: a donation inserted between the two would
-    // be deleted here and never come off the rollup.
+    // RETURNING, not a prior SELECT: a donation added in between would be missed.
     const removed = await trx
       .deleteFrom('branch.project_donations')
       .where('donor_id', '=', donorId)
