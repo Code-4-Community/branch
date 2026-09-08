@@ -41,24 +41,20 @@ export async function claimUser(userId: number, values: UserEdit): Promise<bigin
 // user_id on project_memberships is ON DELETE RESTRICT: delete memberships first and decrement member_count.
 export async function removeUser(userId: number): Promise<bigint> {
   return tx(async (trx) => {
-    const memberships = await trx
-      .selectFrom('branch.project_memberships')
+    // RETURNING, not a prior SELECT: a membership inserted between the two would
+    // be deleted here and never come off member_count.
+    const removed = await trx
+      .deleteFrom('branch.project_memberships')
       .where('user_id', '=', userId)
-      .select('project_id')
+      .returning('project_id')
       .execute()
-
-    if (memberships.length > 0) {
-      await trx.deleteFrom('branch.project_memberships').where('user_id', '=', userId).execute()
-    }
 
     const deleted = await trx
       .deleteFrom('branch.users')
       .where('user_id', '=', userId)
       .executeTakeFirst()
 
-    if ((deleted?.numDeletedRows ?? 0n) === 0n) return 0n
-
-    for (const membership of memberships) {
+    for (const membership of removed) {
       await projectRollupBump(trx, membership.project_id, { members: -1 })
     }
     return deleted?.numDeletedRows ?? 0n

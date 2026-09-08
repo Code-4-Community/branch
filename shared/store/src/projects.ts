@@ -19,7 +19,10 @@ async function syncMemberships(
     .execute()
   const heldRole = new Map(existing.map((row) => [row.user_id, row.role]))
 
-  await trx.deleteFrom('branch.project_memberships').where('project_id', '=', projectId).execute()
+  const cleared = await trx
+    .deleteFrom('branch.project_memberships')
+    .where('project_id', '=', projectId)
+    .executeTakeFirst()
 
   if (members.length > 0) {
     await trx
@@ -34,7 +37,9 @@ async function syncMemberships(
       .execute()
   }
 
-  const delta = members.length - existing.length
+  // Counted from the DELETE, not from `existing`: a concurrent roster edit makes
+  // that read stale and member_count drifts permanently.
+  const delta = members.length - Number(cleared?.numDeletedRows ?? 0n)
   if (delta !== 0) await projectRollupBump(trx, projectId, { members: delta })
 }
 
