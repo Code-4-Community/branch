@@ -15,7 +15,12 @@ import {
   getObjectSize,
 } from '../report-service';
 
-const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
+// WHEN_REQUIRED, not the SDK default: see the note in
+// expenditures/services/expenditures.ts. The upload URL below is a browser PUT.
+const s3 = new S3Client({
+  region: process.env.AWS_REGION ?? 'us-east-2',
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+});
 const BUCKET = process.env.REPORTS_BUCKET_NAME ?? '';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'docx'] as const;
