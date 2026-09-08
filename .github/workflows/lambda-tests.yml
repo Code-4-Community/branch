@@ -176,18 +176,14 @@ jobs:
               echo "::error file=$DIR/$f::name must be VYYYYMMDDHHMMSS__lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
               fail=1
             fi
-            # Allowed at runtime (flyway.sh sets outOfOrder) for anything above
-            # the baseline; at or below it the next step fails the build.
+            # Warning only: outOfOrder is set at runtime; the next step fails anything at or below the baseline.
             if [ -n "${last:-}" ] && [ "$f" \< "$last" ]; then
               echo "::warning file=$DIR/$f::sorts before $last, which is already on main, so it will be applied out of order. Renaming it to a current UTC timestamp keeps the history readable."
             fi
           done
           exit $fail
 
-      # baselineOnMigrate pins production at BASELINE_VERSION, and Flyway reports
-      # anything at or below it "Below Baseline" -- skipped, with pending 0, a
-      # passing validate and an exit 0. CI builds from an empty schema, where
-      # baselining never fires, so nothing else can catch this.
+      # Flyway skips anything at or below the baseline as "Below Baseline" with exit 0; CI's empty schema never baselines, so nothing else catches it.
       - name: New migrations must sort above the adoption baseline
         if: steps.base.outputs.sha != ''
         env:
@@ -203,8 +199,7 @@ jobs:
           MB=$(git merge-base "$BASE" HEAD)
           version_of() { basename "$1" | sed -E 's/^V0*([0-9]+)_+.*/\1/'; }
 
-          # Versions already on main, so a rename reported as an addition is not
-          # mistaken for a new migration.
+          # Renames show up as additions, so skip versions already on main.
           git ls-tree -r --name-only "$MB" -- "$DIR" | while read -r p; do version_of "$p"; done \
             | sort -u > "$RUNNER_TEMP/known.txt"
 

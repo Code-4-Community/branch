@@ -177,8 +177,6 @@ jobs:
       actions: read
       pull-requests: read
     env:
-      # Never on for a push. Adopting an unrecognised database is a deliberate,
-      # human-triggered act -- see the guard below.
       FLYWAY_BASELINE_ON_MIGRATE: ${{ inputs.adopt_baseline == true }}
     steps:
       - uses: actions/checkout@v4
@@ -231,9 +229,7 @@ jobs:
         run: |
           set -euo pipefail
           npm run --silent migrate:info --prefix apps/backend/db -- -outputType=json > info.json
-          # Every check below reads this file. Unparseable output is a failure, not
-          # a reason to fall through -- `jq -e` on malformed JSON exits non-zero,
-          # which inside `if` would read as "the dangerous condition is absent".
+          # `jq -e` on malformed JSON exits non-zero, which inside `if` reads as "condition absent".
           jq -e 'type == "object" and has("migrations") and has("allSchemasEmpty")' \
             info.json > /dev/null \
             || { echo "::error::could not parse the output of flyway info"; exit 1; }
@@ -243,12 +239,7 @@ jobs:
           echo "pending=$pending" >> "$GITHUB_OUTPUT"
           echo "$pending migration(s) pending"
 
-      # Production is never built by running the baseline, and it is never adopted
-      # by accident: baselineOnMigrate is off unless this run explicitly asks for
-      # it. An empty schema means DB_HOST is not the database we think it is; an
-      # unrecognised populated one is a restored snapshot, a clone or a hand-built
-      # schema. Refuse both. See apps/backend/db/README.md for the one-time
-      # adoption procedure.
+      # Empty schema means the wrong DB_HOST; populated with no history means a snapshot or clone -- refuse both.
       - name: Refuse to execute the baseline against production
         env:
           ADOPT: ${{ inputs.adopt_baseline }}
