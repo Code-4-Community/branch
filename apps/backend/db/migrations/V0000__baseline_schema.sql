@@ -110,7 +110,6 @@ CREATE INDEX ${async} project_memberships_user_id_idx ON project_memberships (us
 CREATE INDEX ${async} project_donations_project_id_donation_id_idx ON project_donations (project_id, donation_id);
 CREATE INDEX ${async} users_name_idx ON users (name);
 
--- (category IS NULL) keeps a NULL category distinct from ''.
 CREATE UNIQUE INDEX ${async} expenditure_rollup_grain
     ON expenditure_rollup (
         project_id, month, status, (category IS NULL), COALESCE(category, '')
