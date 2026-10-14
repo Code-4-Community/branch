@@ -8,6 +8,7 @@
  *   npm run seed -- --if-empty seed only an empty database
  *   npm run reset              rebuild the schema from migrations, then seed
  *   npm run fingerprint        record which migrations built the live schema
+ *   npm run db -- copy-to-dsql copy RDS into Aurora DSQL (see copy-to-dsql.ts)
  *
  * Migrations are Flyway's job -- see flyway.sh. The Makefile in apps/backend
  * wraps all of this; CI calls it directly.
@@ -16,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PoolClient } from 'pg';
 import { MIGRATIONS_DIR, createPool, describeTarget } from './config';
+import { copyToDsql } from './copy-to-dsql';
 import {
   rebuildSchema,
   resetData,
@@ -26,8 +28,11 @@ import {
 const TEMPLATE = `-- __NAME__
 --
 -- Flyway runs this file inside a SINGLE transaction, with search_path =
--- branch, public -- so table names can be unqualified, and CREATE INDEX
--- CONCURRENTLY / VACUUM will not work here.
+-- branch, public -- so table names can be unqualified.
+--
+-- Aurora DSQL: exactly ONE DDL statement per file (DML goes in a file of its
+-- own), CREATE INDEX \${async} ..., no SERIAL, triggers, PL/pgSQL or TRUNCATE,
+-- and at most 3,000 rows changed. CI lints this file with dsql-lint.
 --
 -- This migration is applied to PRODUCTION automatically when the PR merges,
 -- BEFORE the new lambda code is deployed. It must be safe for the code that is
@@ -105,8 +110,12 @@ async function main(): Promise<void> {
         await stampFingerprint(client);
         console.log(`fingerprinted ${describeTarget()}`);
       });
+    case 'copy-to-dsql':
+      return copyToDsql(args);
     default:
-      console.error('usage: db <new NAME|seed [--if-empty]|reset|fingerprint>');
+      console.error(
+        'usage: db <new NAME|seed [--if-empty]|reset|fingerprint|copy-to-dsql [--verify|--reset]>',
+      );
       process.exitCode = 1;
   }
 }
