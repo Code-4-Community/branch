@@ -1,10 +1,8 @@
-# Custom domain for the app. branchaccounting.org is registered in Route 53
-# Domains, which created its hosted zone; var.use_existing_hosted_zone adopts it.
+# Custom domain for the app; its zone was created by Route 53 Domains registration.
 #
 # Three states, so nothing is created in an account that is not going to keep it:
 #   app_domain = ""     -> no DNS resources at all
-#   app_domain set      -> zone + certificate requests; if registered elsewhere,
-#                          set the nameservers there and wait for them to resolve
+#   app_domain set      -> zone + certificate requests (+ registrar NS if registered elsewhere)
 #   + enable_custom_domain -> validation completes and the domains attach
 #
 # The second step exists because ACM validates over public DNS: enabling
