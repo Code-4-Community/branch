@@ -316,6 +316,13 @@ resource "aws_iam_role_policy" "ci_migrate" {
           "arn:aws:rds:us-east-2:${data.aws_caller_identity.current.account_id}:snapshot:branch-premigrate-*",
         ]
       },
+      # Flyway and the RDS -> DSQL copy connect as the cluster's admin role.
+      {
+        Sid      = "MigrateDsql"
+        Effect   = "Allow"
+        Action   = ["dsql:DbConnectAdmin", "dsql:GetCluster"]
+        Resource = aws_dsql_cluster.branch.arn
+      },
     ]
   })
 }
