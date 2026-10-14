@@ -320,7 +320,7 @@ resource "aws_iam_role_policy" "ci_migrate" {
       {
         Sid      = "MigrateDsql"
         Effect   = "Allow"
-        Action   = ["dsql:DbConnectAdmin", "dsql:GetCluster"]
+        Action   = ["dsql:DbConnectAdmin"]
         Resource = aws_dsql_cluster.branch.arn
       },
     ]

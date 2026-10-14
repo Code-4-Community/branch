@@ -63,8 +63,17 @@ async function tablesIn(client: PoolClient): Promise<string[]> {
 }
 
 async function columnsOf(client: PoolClient, table: string): Promise<string[]> {
+  return (await columnShapes(client, table)).map((c) => c.split(' ')[0]);
+}
+
+/** `name type nullable` per column, so a looser target is caught before any copy. */
+async function columnShapes(client: PoolClient, table: string): Promise<string[]> {
   const { rows } = await client.query<{ c: string }>(
-    `SELECT column_name AS c FROM information_schema.columns
+    `SELECT column_name || ' ' || data_type
+              || COALESCE('(' || character_maximum_length || ')', '')
+              || COALESCE('(' || numeric_precision || ',' || numeric_scale || ')', '')
+              || ' ' || is_nullable AS c
+       FROM information_schema.columns
       WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position`,
     [SCHEMA, table],
   );
@@ -74,10 +83,14 @@ async function columnsOf(client: PoolClient, table: string): Promise<string[]> {
 const qualified = (table: string) => `${SCHEMA}.${table}`;
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-/** Row count plus an order-independent digest of every row's text form. */
+/**
+ * Row count plus an order-independent digest of every row's text form. COLLATE "C"
+ * because DSQL only has C, and RDS's default would sort the same rows differently.
+ */
 async function digest(client: PoolClient, table: string): Promise<string> {
   const { rows } = await client.query<{ n: string; h: string | null }>(
-    `SELECT count(*) AS n, md5(string_agg(t::text, E'\\n' ORDER BY t::text)) AS h
+    `SELECT count(*) AS n,
+            md5(string_agg(t::text, E'\\n' ORDER BY t::text COLLATE "C")) AS h
        FROM ${qualified(table)} t`,
   );
   return `${rows[0].n}:${rows[0].h ?? '-'}`;
@@ -109,7 +122,7 @@ async function assertSameShape(source: PoolClient, target: PoolClient): Promise<
     }
   }
   for (const table of TABLES) {
-    const [a, b] = [await columnsOf(source, table), await columnsOf(target, table)];
+    const [a, b] = [await columnShapes(source, table), await columnShapes(target, table)];
     if (a.join(',') !== b.join(',')) {
       throw new Error(`${table}: source columns [${a}] differ from target [${b}]`);
     }

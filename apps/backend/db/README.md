@@ -194,8 +194,10 @@ move is one Terraform change to `DB_HOST`. Everything before that change is iner
 Run each step from the **DSQL cutover** workflow (`.github/workflows/dsql-cutover.yml`):
 
 1. **`migrate`** builds the schema on the empty cluster from `migrations/`.
-2. **Stop writes.** Announce a window. Nothing enforces this, but `copy` notices if
-   RDS changed while it ran and fails.
+2. **Stop writes, and keep them stopped until step 4's apply finishes.** Announce a
+   window. Nothing enforces it: `copy` fails if RDS changed while it ran, but a write
+   that lands on RDS after the copy is lost at the flip. Run `verify` again right
+   before merging the flip.
 3. **`copy`**, with `confirm` set to the DSQL host. It copies every table in FK order,
    keeping ids and each sequence's counter, then compares a per-table digest and the
    sequences on both sides and checks the rollups against the base tables. If it

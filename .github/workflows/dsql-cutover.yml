@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   cutover:
+    # production-db's OIDC trust is not branch-scoped; never run a branch's code with it.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production-db
     permissions:

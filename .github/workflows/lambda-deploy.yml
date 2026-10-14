@@ -269,7 +269,7 @@ jobs:
 
       # Only when something will actually change. Snapshotting a no-op wasted 1-2
       # minutes per deploy and churned the 5-snapshot retention with junk.
-      # RDS only. DSQL has no CreateDBSnapshot; its backups go through AWS Backup.
+      # RDS only. DSQL has no CreateDBSnapshot, and nothing replaces this for it yet.
       - name: Snapshot production before migrating
         id: snapshot
         if: steps.status.outputs.pending != '0' && steps.conn.outputs.dsql == 'false'
