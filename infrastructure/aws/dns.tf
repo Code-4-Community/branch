@@ -1,13 +1,8 @@
-# Custom domain for the app, on a subdomain delegated from the client's registrar.
-#
-# The apex (e.g. branchinitiative.com) stays with the marketing site. Only
-# var.app_domain is delegated here, via NS records set once at the registrar --
-# see the app_domain_nameservers output.
+# Custom domain for the app; its zone was created by Route 53 Domains registration.
 #
 # Three states, so nothing is created in an account that is not going to keep it:
 #   app_domain = ""     -> no DNS resources at all
-#   app_domain set      -> zone + certificate requests; read the nameservers,
-#                          set them at the registrar, wait for them to resolve
+#   app_domain set      -> zone + certificate requests (+ registrar NS if registered elsewhere)
 #   + enable_custom_domain -> validation completes and the domains attach
 #
 # The second step exists because ACM validates over public DNS: enabling
