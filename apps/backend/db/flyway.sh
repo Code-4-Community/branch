@@ -9,8 +9,7 @@ DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # Last migration applied under kysely; already on production, so Flyway baselines here.
 # Also a permanent floor: anything at or below it is "Below Baseline" and never runs.
-# CI treats files at or below it as mutable (RDS never ran them). Set it to 0 when
-# production moves to DSQL, which runs every file from scratch.
+# Set to 0 once production is on DSQL, which runs every file from scratch.
 BASELINE_VERSION=20260907213524
 
 # Off by default: on production, baselining would silently adopt an unrecognised database.
@@ -88,7 +87,6 @@ add_flags() {
   printf '%s\n' "$@"
 }
 
-# DSQL always goes through docker, which is where the plugin gets mounted.
 if [ "$dsql" = false ] && command -v flyway >/dev/null 2>&1; then
   [ -z "$ca_path" ] || ssl="${ssl}${ca_path}"
   # shellcheck disable=SC2046  # deliberate word splitting: one flag per line
@@ -140,7 +138,7 @@ FLYWAY_USER=$db_user
 FLYWAY_PASSWORD=$db_password
 export FLYWAY_URL FLYWAY_USER FLYWAY_PASSWORD
 
-# Read only by flyway-database-dsql. Awaiting means no migration runs against an index still building.
+# Read by flyway-database-dsql; awaiting keeps migrations off still-building indexes.
 FLYWAY_DSQL_AWAIT_ASYNC_INDEXES=${FLYWAY_DSQL_AWAIT_ASYNC_INDEXES:-true}
 FLYWAY_DSQL_OCC_MAX_RETRIES=${FLYWAY_DSQL_OCC_MAX_RETRIES:-3}
 export FLYWAY_DSQL_AWAIT_ASYNC_INDEXES FLYWAY_DSQL_OCC_MAX_RETRIES

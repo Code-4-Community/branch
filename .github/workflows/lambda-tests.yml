@@ -116,9 +116,7 @@ jobs:
           esac
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
-      # Keyed by version, not path: that is what Flyway's history pins. Production
-      # baselined at BASELINE_VERSION and never ran anything at or below it, so
-      # those files only build new databases and may be squashed.
+      # Keyed by version, not path: that is what Flyway's history pins.
       - name: Applied migrations are immutable
         if: steps.base.outputs.sha != ''
         env:
@@ -212,7 +210,6 @@ jobs:
           version_of() { basename "$1" | sed -E 's/^V0*([0-9]+)_+.*/\1/'; }
 
           # Renames show up as additions, so skip a file whose exact contents are on main.
-          # Matching by version alone would wave through a new file reusing a squashed version.
           git ls-tree -r "$MB" -- "$DIR" | awk '{print $3}' | sort -u > "$RUNNER_TEMP/known.txt"
 
           fail=0
@@ -263,7 +260,6 @@ jobs:
           done
           exit $fail
 
-      # The whole corpus is DSQL-clean since the squash, so this blocks.
       - name: Aurora DSQL compatibility
         if: steps.base.outputs.sha != ''
         env:
@@ -282,8 +278,7 @@ jobs:
             sed 's/${async}/ASYNC/g' "$f" > "$RUNNER_TEMP/$(basename "$f")"
             node "$lint" "$RUNNER_TEMP/$(basename "$f")" || fail=1
 
-            # DSQL takes one DDL per transaction and Flyway runs a file as one. Only the
-            # squash may opt out: a non-transactional file that fails midway stays half-applied.
+            # DSQL allows one DDL per transaction and Flyway runs each file as one; only the squash opts out.
             [ "$(basename "$f")" = V0000__baseline_schema.sql ] && continue
             stmts=$(sed -e 's/--.*//' "$f" | tr '\n' ' ' | sed -E 's/\$\$[^$]*\$\$//g' | tr ';' '\n')
             ddl=$(printf '%s\n' "$stmts" | grep -ciE '^[[:space:]]*(CREATE|ALTER|DROP|COMMENT|GRANT|REVOKE)[[:space:]]' || true)

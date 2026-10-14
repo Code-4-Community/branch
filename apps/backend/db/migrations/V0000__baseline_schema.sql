@@ -1,17 +1,8 @@
 -- 0000_baseline_schema
 --
--- Squash of every migration up to 20260907213524, written for Aurora DSQL (valid
--- PostgreSQL too). RDS never ran this file -- its history baselines at
--- 20260907213524 -- so it only builds new databases: DSQL, CI and local dev.
---
--- Runs outside a transaction (see the .conf), because DSQL allows one DDL per
--- transaction. Every later migration holds exactly one DDL statement instead.
---
--- DSQL differences from the pre-squash corpus:
---   * sequences are BIGINT, CACHE 1 and unowned (no SERIAL, no ALTER SEQUENCE);
---     the columns stay INT so the generated types do not change
---   * indexes take the async placeholder; the rollup functions come after them, because the
---     ON CONFLICT in expenditure_rollup_add needs its arbiter index to be valid
+-- Squash up to 20260907213524; RDS never ran it (baselined there), it only builds new databases.
+-- Runs outside a transaction (see the .conf): DSQL allows one DDL per transaction.
+-- Rollup functions must follow the indexes: expenditure_rollup_add's ON CONFLICT needs its arbiter index valid.
 
 CREATE SEQUENCE users_user_id_seq CACHE 1;
 CREATE TABLE users (
@@ -91,7 +82,6 @@ CREATE TABLE reports (
     date_created DATE NOT NULL DEFAULT CURRENT_DATE
 );
 
--- Maintained by @branch/store. Spend lives only here.
 CREATE TABLE expenditure_rollup (
     project_id        INT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
     month             DATE NOT NULL,
@@ -144,7 +134,6 @@ CREATE FUNCTION branch.expenditure_rollup_add(
             expenditure_count = er.expenditure_count + EXCLUDED.expenditure_count;
 $$;
 
--- A plain UPDATE: emptied buckets stay at zero rather than being deleted.
 CREATE FUNCTION branch.expenditure_rollup_remove(
     p_project_id INT,
     p_spent_on   DATE,

@@ -28,7 +28,6 @@ function dsqlConfig(): PoolConfig {
     ...shared,
     user,
     database: process.env.DB_NAME ?? 'postgres',
-    // Minted per connection: the token is only checked at connect time.
     password: () => dsqlAuthToken(host, user),
     ssl: { rejectUnauthorized: true },
     // DSQL closes every connection after an hour; retire ours first.

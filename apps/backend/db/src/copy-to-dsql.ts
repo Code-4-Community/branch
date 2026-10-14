@@ -1,14 +1,4 @@
-/**
- * One-shot RDS -> Aurora DSQL data copy for the cutover. Source is the usual
- * connection (DATABASE_URL / DB_*); target is DSQL_HOST, as the admin role.
- *
- *   npm run db -- copy-to-dsql           copy into a migrated, empty target
- *   npm run db -- copy-to-dsql --verify  compare only, change nothing
- *   npm run db -- copy-to-dsql --reset   drop every object in the target schema
- *
- * Writes to the source must be stopped first: the copy compares the source
- * before and after, and fails if it moved.
- */
+// Stop writes to the source first: the copy fails if the source changed mid-run.
 import { DsqlSigner } from '@aws-sdk/dsql-signer';
 import { Pool, type PoolClient } from 'pg';
 import { SCHEMA, createPool, describeTarget } from './config';
@@ -66,7 +56,6 @@ async function columnsOf(client: PoolClient, table: string): Promise<string[]> {
   return (await columnShapes(client, table)).map((c) => c.split(' ')[0]);
 }
 
-/** `name type nullable` per column, so a looser target is caught before any copy. */
 async function columnShapes(client: PoolClient, table: string): Promise<string[]> {
   const { rows } = await client.query<{ c: string }>(
     `SELECT column_name || ' ' || data_type
@@ -83,10 +72,7 @@ async function columnShapes(client: PoolClient, table: string): Promise<string[]
 const qualified = (table: string) => `${SCHEMA}.${table}`;
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-/**
- * Row count plus an order-independent digest of every row's text form. COLLATE "C"
- * because DSQL only has C, and RDS's default would sort the same rows differently.
- */
+// COLLATE "C": DSQL only has C, and RDS's default would sort the same rows differently.
 async function digest(client: PoolClient, table: string): Promise<string> {
   const { rows } = await client.query<{ n: string; h: string | null }>(
     `SELECT count(*) AS n,

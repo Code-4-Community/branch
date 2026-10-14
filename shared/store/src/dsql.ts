@@ -4,17 +4,11 @@ import { SignatureV4 } from '@smithy/signature-v4'
 
 const DSQL_HOST = /^[a-z0-9]+\.dsql\.([a-z0-9-]+)\.on\.aws$/
 
-/** The cluster's region when `host` is an Aurora DSQL endpoint, else undefined. */
 export function dsqlRegion(host: string): string | undefined {
   return DSQL_HOST.exec(host)?.[1]
 }
 
-/**
- * The IAM auth token DSQL takes as the password: a SigV4-presigned
- * `GET /?Action=DbConnect[Admin]`, minus the scheme. Mirrors @aws-sdk/dsql-signer,
- * which the lambdas' `--external:@aws-sdk/*` bundle cannot be relied on to carry.
- * Only checked at connect time, so a short expiry is fine.
- */
+// Mirrors @aws-sdk/dsql-signer, which the lambdas' `--external:@aws-sdk/*` bundle cannot be relied on to carry.
 export async function dsqlAuthToken(
   host: string,
   user: string,

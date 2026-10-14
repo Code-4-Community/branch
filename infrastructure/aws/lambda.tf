@@ -237,8 +237,7 @@ resource "aws_lambda_function" "functions" {
       DB_PORT     = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
       DB_NAME     = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
 
-      # Read by no lambda yet: the cutover workflow takes the target from here, as
-      # the migrate job takes DB_HOST, so neither can pick the wrong cluster.
+      # Unused by lambdas; the cutover workflow reads its target from here.
       DSQL_HOST = local.dsql_endpoint
 
       # Not secrets: the user pool ID is public, and the app client is created

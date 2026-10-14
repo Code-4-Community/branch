@@ -1,5 +1,4 @@
-# Replaces branch_rds. Public endpoint, IAM-token auth only: there is no password
-# and no security group, so nothing to leave open to 0.0.0.0/0.
+# Public endpoint, IAM-token auth only: no password and no security group.
 resource "aws_dsql_cluster" "branch" {
   deletion_protection_enabled = true
 
