@@ -9,6 +9,8 @@ DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # Last migration applied under kysely; already on production, so Flyway baselines here.
 # Also a permanent floor: anything at or below it is "Below Baseline" and never runs.
+# CI treats files at or below it as mutable (RDS never ran them). Set it to 0 when
+# production moves to DSQL, which runs every file from scratch.
 BASELINE_VERSION=20260907213524
 
 # Off by default: on production, baselining would silently adopt an unrecognised database.

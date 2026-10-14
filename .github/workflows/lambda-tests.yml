@@ -116,7 +116,9 @@ jobs:
           esac
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
-      # Keyed by version, not path: that is what Flyway's history pins.
+      # Keyed by version, not path: that is what Flyway's history pins. Production
+      # baselined at BASELINE_VERSION and never ran anything at or below it, so
+      # those files only build new databases and may be squashed.
       - name: Applied migrations are immutable
         if: steps.base.outputs.sha != ''
         env:
@@ -125,14 +127,17 @@ jobs:
           set -euo pipefail
           MB=$(git merge-base "$BASE" HEAD)
           TAB=$(printf '\t')
+          baseline=$(git show "$MB:apps/backend/db/flyway.sh" | sed -n 's/^BASELINE_VERSION=//p')
+          baseline=${baseline:-0}
 
           # version<TAB>blob<TAB>name, sorted because `join` requires sorted input.
           list() {
             git ls-tree -r "$1" -- "$DIR" | while read -r _ _ sha path; do
               name=$(basename "$path")
-              printf '%s\t%s\t%s\n' \
-                "$(printf '%s' "$name" | sed -E 's/^V?0*([0-9]+)_+.*/\1/')" \
-                "$sha" "$name"
+              case "$name" in *.sql) ;; *) continue ;; esac
+              version=$(printf '%s' "$name" | sed -E 's/^V?0*([0-9]+)_+.*/\1/')
+              [ "$version" -gt "$baseline" ] || continue
+              printf '%s\t%s\t%s\n' "$version" "$sha" "$name"
             done | sort
           }
           list "$MB" > "$RUNNER_TEMP/was.tsv"
@@ -172,6 +177,12 @@ jobs:
           last=$(git ls-tree -r --name-only "$MB" -- "$DIR" | xargs -r -n1 basename | sort | tail -1 || true)
           fail=0
           for f in $added; do
+            # Flyway's per-script config, e.g. executeInTransaction=false.
+            case "$f" in
+              *.sql.conf)
+                [ -f "$DIR/${f%.conf}" ] || { echo "::error file=$DIR/$f::no ${f%.conf} beside it"; fail=1; }
+                continue ;;
+            esac
             if ! echo "$f" | grep -qE '^V(0000|[0-9]{14})__[a-z0-9_]+\.sql$'; then
               echo "::error file=$DIR/$f::name must be VYYYYMMDDHHMMSS__lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
               fail=1
@@ -250,25 +261,37 @@ jobs:
           done
           exit $fail
 
-      # Advisory: the existing corpus still holds plpgsql the DSQL cutover drops.
-      - name: Aurora DSQL compatibility (advisory)
+      # The whole corpus is DSQL-clean since the squash, so this blocks.
+      - name: Aurora DSQL compatibility
         if: steps.base.outputs.sha != ''
-        continue-on-error: true
         env:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           set -euo pipefail
           MB=$(git merge-base "$BASE" HEAD)
-          files=$(git diff --diff-filter=A --name-only "$MB" HEAD -- "$DIR" || true)
-          [ -n "$files" ] || { echo "no new migrations"; exit 0; }
-          npm install --prefix "$RUNNER_TEMP/dsql-lint" --no-audit --no-fund @aws/dsql-lint
+          files=$(git diff --diff-filter=AM --name-only "$MB" HEAD -- "$DIR" | grep '\.sql$' || true)
+          [ -n "$files" ] || { echo "no new or changed migrations"; exit 0; }
+          npm install --prefix "$RUNNER_TEMP/dsql-lint" --no-audit --no-fund @aws/dsql-lint@0.2.20
           lint=$RUNNER_TEMP/dsql-lint/node_modules/@aws/dsql-lint/bin/dsql-lint
+          fail=0
           for f in $files; do
             [ -f "$f" ] || continue
             echo "--- $f"
             sed 's/${async}/ASYNC/g' "$f" > "$RUNNER_TEMP/$(basename "$f")"
-            node "$lint" "$RUNNER_TEMP/$(basename "$f")" || true
+            node "$lint" "$RUNNER_TEMP/$(basename "$f")" || fail=1
+
+            # DSQL takes one DDL per transaction and Flyway runs a file as one, so
+            # a second DDL needs executeInTransaction=false in a .sql.conf beside it.
+            [ -f "$f.conf" ] && grep -qx 'executeInTransaction=false' "$f.conf" && continue
+            stmts=$(sed -e 's/--.*//' "$f" | tr '\n' ' ' | sed -E 's/\$\$[^$]*\$\$//g' | tr ';' '\n')
+            ddl=$(printf '%s\n' "$stmts" | grep -ciE '^[[:space:]]*(CREATE|ALTER|DROP|COMMENT|GRANT|REVOKE)[[:space:]]' || true)
+            dml=$(printf '%s\n' "$stmts" | grep -ciE '^[[:space:]]*(INSERT|UPDATE|DELETE|WITH)[[:space:]]' || true)
+            if [ "$ddl" -gt 1 ] || { [ "$ddl" -gt 0 ] && [ "$dml" -gt 0 ]; }; then
+              echo "::error file=$f::$ddl DDL and $dml DML statements. Aurora DSQL runs one DDL per transaction, and never with DML: split this into one migration per statement."
+              fail=1
+            fi
           done
+          exit $fail
 
       - name: Build and test shared packages
         uses: ./.github/actions/build-shared-packages
