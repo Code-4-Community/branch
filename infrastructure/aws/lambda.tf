@@ -109,7 +109,6 @@ resource "aws_iam_role_policy" "lambda_ses_send" {
   })
 }
 
-# Resource "*" until the DSQL cluster exists; scope to its ARN then.
 resource "aws_iam_role_policy" "lambda_dsql_connect" {
   name = "branch-lambda-dsql-connect"
   role = aws_iam_role.lambda_role.id
@@ -120,7 +119,7 @@ resource "aws_iam_role_policy" "lambda_dsql_connect" {
       Sid      = "LambdaDsqlConnect"
       Effect   = "Allow"
       Action   = ["dsql:DbConnectAdmin"]
-      Resource = "*"
+      Resource = aws_dsql_cluster.branch.arn
     }]
   })
 }
@@ -237,6 +236,9 @@ resource "aws_lambda_function" "functions" {
       DB_PASSWORD = data.infisical_secrets.rds_folder.secrets["password"].value
       DB_PORT     = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
       DB_NAME     = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
+
+      # Unused by lambdas; the cutover workflow reads its target from here.
+      DSQL_HOST = local.dsql_endpoint
 
       # Not secrets: the user pool ID is public, and the app client is created
       # with generate_secret = false, so there is no SECRET_HASH to protect.

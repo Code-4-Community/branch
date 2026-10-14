@@ -1,0 +1,95 @@
+name: DSQL cutover
+
+# Run in order: migrate -> copy -> flip the lambdas' DB_HOST in Terraform.
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: What to run against the DSQL cluster
+        type: choice
+        required: true
+        options: [migrate, copy, verify, reset]
+      confirm:
+        description: For copy and reset, the DSQL host (DSQL_HOST on branch-auth)
+        required: false
+        default: ''
+
+# Shared with lambda-deploy's migrate job, so the two never run together.
+concurrency:
+  group: db-migrate-prod
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    # production-db's OIDC trust is not branch-scoped; never run a branch's code with it.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production-db
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install db tooling
+        run: npm ci --prefix apps/backend/db --no-audit --no-fund
+
+      - name: Configure AWS credentials (scoped migrate role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/branch-ci-migrate
+          aws-region: us-east-2
+
+      - name: Resolve RDS (source) and DSQL (target)
+        env:
+          STEP: ${{ inputs.step }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          cfg=$(aws lambda get-function-configuration --function-name branch-auth \
+                  --query 'Environment.Variables' --output json)
+          dsql=$(jq -er '.DSQL_HOST' <<<"$cfg") \
+            || { echo "::error::DSQL_HOST missing from branch-auth -- apply infrastructure/aws first"; exit 1; }
+          host=$(jq -er '.DB_HOST' <<<"$cfg")
+          if [ "$host" = "$dsql" ]; then
+            echo "::error::the lambdas already use DSQL; the cutover is over"
+            exit 1
+          fi
+          case "$STEP" in
+            copy | reset)
+              [ "$CONFIRM" = "$dsql" ] \
+                || { echo "::error::$STEP needs confirm=$dsql"; exit 1; } ;;
+          esac
+          echo "DSQL_HOST=$dsql" >> "$GITHUB_ENV"
+          for k in DB_HOST DB_PORT DB_USER DB_NAME; do
+            echo "$k=$(jq -er --arg k "$k" '.[$k]' <<<"$cfg")" >> "$GITHUB_ENV"
+          done
+          pw=$(jq -er '.DB_PASSWORD' <<<"$cfg")
+          echo "::add-mask::$pw"
+          echo "DB_PASSWORD=$pw" >> "$GITHUB_ENV"
+          curl -fsSL -o "$RUNNER_TEMP/rds-ca.pem" \
+            https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+          echo "DB_SSL=true" >> "$GITHUB_ENV"
+          echo "DB_SSL_CA=$RUNNER_TEMP/rds-ca.pem" >> "$GITHUB_ENV"
+
+      - name: Migrate the DSQL cluster
+        if: inputs.step == 'migrate'
+        run: |
+          DB_HOST=$DSQL_HOST DB_USER='' DB_NAME='' DB_PASSWORD='' DB_SSL='' DB_SSL_CA='' \
+            npm run migrate --prefix apps/backend/db
+          DB_HOST=$DSQL_HOST DB_USER='' DB_NAME='' DB_PASSWORD='' DB_SSL='' DB_SSL_CA='' \
+            npm run migrate:info --prefix apps/backend/db
+
+      - name: Copy RDS into DSQL
+        if: inputs.step == 'copy'
+        run: npm run db --prefix apps/backend/db -- copy-to-dsql
+
+      - name: Verify DSQL against RDS
+        if: inputs.step == 'verify'
+        run: npm run db --prefix apps/backend/db -- copy-to-dsql --verify
+
+      - name: Drop everything in the DSQL schema
+        if: inputs.step == 'reset'
+        run: npm run db --prefix apps/backend/db -- copy-to-dsql --reset

@@ -2,8 +2,8 @@
 --
 -- Ids are load-bearing: tests assume users 1-3, projects 1-4 and donors 1-3
 -- exist, and that any row they create lands on 4+. resetData() in db/testkit.ts
--- TRUNCATEs with RESTART IDENTITY before running this file, so every sequence
--- starts at 1. Do not reorder or remove rows without checking the tests.
+-- truncates and restarts every sequence at 1 before running this file. Do not
+-- reorder or remove rows without checking the tests.
 --
 -- Fully schema-qualified so it never depends on search_path.
 

@@ -85,8 +85,33 @@ against the recorded checksum on the next run and fails the deploy.
 Each migration file runs inside its **own transaction** with
 `search_path = branch, public`, so table names can be unqualified and a failure
 part-way through a file rolls that file back. That's also why `CREATE INDEX
-CONCURRENTLY` and `VACUUM` don't work here — they can't run in a transaction. This
-database is tiny; a plain `CREATE INDEX` is fine.
+CONCURRENTLY` and `VACUUM` don't work here — they can't run in a transaction.
+
+## Writing for Aurora DSQL
+
+Production is moving from RDS to Aurora DSQL (see [the cutover](#the-rds--aurora-dsql-cutover)),
+and every migration has to run on both. CI enforces all of this with `dsql-lint`:
+
+- **One DDL statement per file, and no DML beside it.** DSQL allows one DDL per
+  transaction and never mixes it with `INSERT`/`UPDATE`/`DELETE`. A backfill is its own
+  migration. (`V0000` is the one exception: its `.sql.conf` sets
+  `executeInTransaction=false`.)
+- **`CREATE INDEX ${async} ...`** — DSQL builds every index asynchronously. Flyway waits
+  for the build before the next migration.
+- **No `SERIAL`, triggers, PL/pgSQL or `TRUNCATE`.** Ids come from a
+  `CREATE SEQUENCE ... CACHE 1` (its own migration) and `INT DEFAULT nextval(...)`.
+  `LANGUAGE sql` functions are fine.
+- **At most 3,000 rows changed**, cascades included.
+
+`${async}` in a migration is a Flyway placeholder. It expands to nothing on
+PostgreSQL and to `ASYNC` on Aurora DSQL (`flyway.sh` switches on a DSQL `DB_HOST`).
+Placeholders are Flyway's, so `testkit.ts` substitutes them itself when it applies
+the files directly — add any new one to `PLACEHOLDERS` there as well as to
+`flyway.sh`, or the tests fail on a postgres syntax error.
+
+Against a DSQL host, `flyway.sh` connects as `admin` to database `postgres` with an
+IAM token it mints from the caller's AWS credentials. It also mounts the pinned
+`flyway-database-dsql` plugin, which the Flyway CLI does not bundle.
 
 Out-of-order merges are allowed (`outOfOrder`): if your migration merges after
 someone whose timestamp is later, it simply applies late. The alternative — the
@@ -101,11 +126,10 @@ baselining never happens, so CI cannot see it either. The `checks` job therefore
 fails any new migration whose version is not strictly above `BASELINE_VERSION`. Let
 `make new-migration` generate the timestamp and this never comes up.
 
-`${async}` in a migration is a Flyway placeholder. It expands to nothing on
-PostgreSQL and to `ASYNC` on Aurora DSQL, which has no synchronous `CREATE INDEX`.
-Placeholders are Flyway's, so `testkit.ts` substitutes them itself when it applies
-the files directly — add any new one to `PLACEHOLDERS` there as well as to
-`flyway.sh`, or the tests fail on a postgres syntax error.
+Files **at or below** the baseline were never run by production, so CI lets them
+change. That is how `V0000` came to be a squash of everything up to
+`20260907213524`. When production moves to DSQL, which runs every file, set
+`BASELINE_VERSION` to `0` and they become immutable like the rest.
 
 ## In CI
 
@@ -130,28 +154,25 @@ manual restore-into-a-new-instance procedure, not a button:
 
 ## One-time: adopting an existing database
 
-`V0000__baseline_schema.sql` is the schema as it existed before migrations, and is
-the only migration allowed to use `IF NOT EXISTS` — that's what lets it be applied to
-a database that already has these tables.
-
-`IF NOT EXISTS` skips the **entire** `CREATE TABLE` when the table exists, so it
-cannot detect a column or constraint that differs. Before running the migrator
-against a pre-existing database, diff it:
+`V0000__baseline_schema.sql` is the whole schema as of `BASELINE_VERSION`. Before
+adopting a database that was built by hand or by the old Kysely migrator, diff it:
 
 ```bash
 # use a pg_dump matching the server's major version
 pg_dump --schema-only --schema=branch --no-owner --no-privileges --no-comments \
-        -T 'branch.flyway_schema_history' -d "$URL" | grep -v '^--'
+        -T 'branch.flyway_schema_history' -T 'branch.kysely_migration*' -d "$URL" | grep -v '^--'
 ```
 
-Run that against a local database with only the baseline applied, and against the
-target; `diff -u` the two.
+Run that against a local database built by `make migrate`, and against the target,
+then `diff -u` the two. The only expected differences are the ones the DSQL squash
+introduced: `SERIAL` (integer, owned) sequences where V0000 has unowned BIGINT ones,
+and `NOT VALID` on the two `ON DELETE RESTRICT` foreign keys.
 
-Once it's empty, adopt the database: Flyway writes a single baseline row at
-`BASELINE_VERSION` from `flyway.sh` instead of replaying the files, and everything at
-or below that version counts as applied. If the schemas genuinely diverge, write a
-follow-up migration reconciling the difference — there is no way to record one file
-as applied on its own.
+Then adopt it: Flyway writes a single baseline row at `BASELINE_VERSION` from
+`flyway.sh` instead of replaying the files, and everything at or below that version
+counts as applied. If the schemas genuinely diverge, write a follow-up migration
+reconciling the difference — there is no way to record one file as applied on its
+own.
 
 Adoption is **off by default and never happens on a push**: a populated schema with
 no history table is far more often a restored snapshot or a clone than the real
@@ -162,3 +183,33 @@ dev database built before Flyway is adopted without ceremony.
 
 The `migrate` job refuses to run against an **empty** target, on the assumption that
 it means `DB_HOST` is pointing somewhere unexpected.
+
+## The RDS → Aurora DSQL cutover
+
+Terraform creates the cluster (`infrastructure/aws/dsql.tf`) and publishes its
+endpoint to the lambdas as `DSQL_HOST`, which no lambda reads. `@branch/store` and
+`flyway.sh` both switch to IAM auth when `DB_HOST` is a DSQL endpoint, so the whole
+move is one Terraform change to `DB_HOST`. Everything before that change is inert.
+
+Run each step from the **DSQL cutover** workflow (`.github/workflows/dsql-cutover.yml`):
+
+1. **`migrate`** builds the schema on the empty cluster from `migrations/`.
+2. **Stop writes, and keep them stopped until step 4's apply finishes.** Announce a
+   window. Nothing enforces it: `copy` fails if RDS changed while it ran, but a write
+   that lands on RDS after the copy is lost at the flip. Run `verify` again right
+   before merging the flip.
+3. **`copy`**, with `confirm` set to the DSQL host. It copies every table in FK order,
+   keeping ids and each sequence's counter, then compares a per-table digest and the
+   sequences on both sides and checks the rollups against the base tables. If it
+   fails: `reset`, then `migrate`, then `copy` again.
+4. **Flip** `DB_HOST`/`DB_USER`/`DB_NAME` in `infrastructure/aws/lambda.tf` to
+   `local.dsql_endpoint`/`admin`/`postgres`, drop `DB_PASSWORD`, and set
+   `BASELINE_VERSION=0` in `flyway.sh`. Merge it, and the lambdas pick DSQL up when
+   the apply finishes. To roll back, revert that PR: RDS is untouched and still holds
+   the data as of step 2, but nothing written to DSQL after the flip comes with it.
+5. **Later:** delete `aws_db_instance.branch_rds` after a final snapshot.
+
+Run `verify` any time before the flip to re-check without writing.
+
+**Local databases built before the squash** still record nine applied versions, and
+Flyway refuses to migrate them. Run `make down-v && make up` once.

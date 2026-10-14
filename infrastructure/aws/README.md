@@ -55,6 +55,7 @@
 | [aws_cognito_user_pool.branch_user_pool](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool) | resource |
 | [aws_cognito_user_pool_client.branch_client](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool_client) | resource |
 | [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
+| [aws_dsql_cluster.branch](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/dsql_cluster) | resource |
 | [aws_iam_openid_connect_provider.github](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_openid_connect_provider) | resource |
 | [aws_iam_role.ci_apply](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
 | [aws_iam_role.ci_migrate](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
@@ -146,6 +147,7 @@
 | <a name="output_cognito_user_pool_arn"></a> [cognito\_user\_pool\_arn](#output\_cognito\_user\_pool\_arn) | Cognito User Pool ARN |
 | <a name="output_cognito_user_pool_endpoint"></a> [cognito\_user\_pool\_endpoint](#output\_cognito\_user\_pool\_endpoint) | Cognito User Pool Endpoint |
 | <a name="output_cognito_user_pool_id"></a> [cognito\_user\_pool\_id](#output\_cognito\_user\_pool\_id) | Cognito User Pool ID (wired into the lambdas by lambda.tf) |
+| <a name="output_dsql_endpoint"></a> [dsql\_endpoint](#output\_dsql\_endpoint) | Aurora DSQL cluster endpoint (user admin, database postgres) |
 | <a name="output_frontend_bucket"></a> [frontend\_bucket](#output\_frontend\_bucket) | S3 bucket the frontend build is synced to |
 | <a name="output_frontend_cloudfront_distribution_id"></a> [frontend\_cloudfront\_distribution\_id](#output\_frontend\_cloudfront\_distribution\_id) | CloudFront distribution id (for cache invalidation in CI) |
 | <a name="output_frontend_cloudfront_domain"></a> [frontend\_cloudfront\_domain](#output\_frontend\_cloudfront\_domain) | Public URL of the frontend |

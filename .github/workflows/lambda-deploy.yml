@@ -196,7 +196,9 @@ jobs:
       # Read the connection from the same place the lambdas read it, so CI can
       # never migrate a database the code isn't talking to. Terraform is the
       # authoritative writer of that env block (infrastructure/aws/lambda.tf).
+      # Aurora DSQL has no password: flyway.sh mints an IAM token from this job's role.
       - name: Resolve DB connection from the deployed lambda config
+        id: conn
         run: |
           set -euo pipefail
           cfg=$(aws lambda get-function-configuration \
@@ -207,6 +209,10 @@ jobs:
               || { echo "::error::$k missing from branch-auth config"; exit 1; }
             echo "$k=$v" >> "$GITHUB_ENV"
           done
+          case "$(jq -r '.DB_HOST' <<<"$cfg")" in
+            *.dsql.*.on.aws) echo "dsql=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+          esac
+          echo "dsql=false" >> "$GITHUB_OUTPUT"
           pw=$(jq -er '.DB_PASSWORD' <<<"$cfg")
           echo "::add-mask::$pw"
           echo "DB_PASSWORD=$pw" >> "$GITHUB_ENV"
@@ -215,6 +221,7 @@ jobs:
       # even though the lambdas currently use ssl:false (they at least stay inside
       # AWS). AWS publishes the CA bundle, so verification is free.
       - name: Fetch RDS CA bundle
+        if: steps.conn.outputs.dsql == 'false'
         run: |
           curl -fsSL -o "$RUNNER_TEMP/rds-ca.pem" \
             https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
@@ -262,9 +269,10 @@ jobs:
 
       # Only when something will actually change. Snapshotting a no-op wasted 1-2
       # minutes per deploy and churned the 5-snapshot retention with junk.
+      # DSQL has no CreateDBSnapshot.
       - name: Snapshot production before migrating
         id: snapshot
-        if: steps.status.outputs.pending != '0'
+        if: steps.status.outputs.pending != '0' && steps.conn.outputs.dsql == 'false'
         run: |
           set -euo pipefail
           INSTANCE=$(aws rds describe-db-instances \

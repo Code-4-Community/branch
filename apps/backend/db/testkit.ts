@@ -214,17 +214,20 @@ async function truncateAll(client: Queryable): Promise<string> {
   return truncateStatement;
 }
 
+// The id sequences are unowned (DSQL has no ALTER SEQUENCE ... OWNED BY), so RESTART IDENTITY skips them.
+const RESTART_SEQUENCES = `
+  SELECT setval(format('%I.%I', schemaname, sequencename), 1, false)
+    FROM pg_sequences WHERE schemaname = '${SCHEMA}'`;
+
 /**
- * Call in `beforeEach`. Empties every table, restarts every SERIAL sequence at 1,
+ * Call in `beforeEach`. Empties every table, restarts every id sequence at 1,
  * and re-applies seed.sql -- so seeded ids stay deterministic (users 1-3,
  * projects 1-4, donors 1-3) and rows a test creates land on 4+, exactly as they
  * did when tests re-ran the whole of db_setup.sql.
- *
- * Not covered by TRUNCATE: standalone sequences (ones not owned by a serial
- * column) and materialized views. There are none today.
  */
 export async function resetData(client: Queryable): Promise<void> {
   await client.query(await truncateAll(client));
+  await client.query(RESTART_SEQUENCES);
   await client.query(seedSql());
   await reconcileRollups(client);
 }
