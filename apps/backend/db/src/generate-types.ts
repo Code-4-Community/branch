@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createPool, databaseUrl } from './config';
-import { assertSchemaIsCurrent } from '../testkit';
+import { HISTORY_TABLE, assertSchemaIsCurrent } from '../testkit';
 import { postprocess } from './postprocess-types';
 
 /**
@@ -47,14 +47,16 @@ async function main(): Promise<void> {
       databaseUrl(),
       '--dialect',
       'postgres',
-      // Ignore anything created outside schema "branch". kysely already excludes
-      // kysely_migration / kysely_migration_lock by name.
+      // Ignore anything created outside schema "branch".
       //
       // Deliberately NOT --default-schema: that would strip the `branch.` prefix
       // from the generated DB keys and break every db.selectFrom('branch.users')
       // in all six lambdas.
       '--include-pattern',
       'branch.*',
+      // kysely-codegen only skips kysely_migration% by name, not Flyway's table.
+      '--exclude-pattern',
+      `branch.${HISTORY_TABLE}`,
       '--out-file',
       tmp,
     ],

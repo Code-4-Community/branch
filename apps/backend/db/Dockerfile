@@ -1,18 +1,17 @@
 # One-shot migration runner, built from the repo root like the lambdas.
-#
-# A Dockerfile rather than bind-mounting the repo into node:20-alpine and running
-# `npm ci` on every `up`: that would clobber the host's apps/backend/db/node_modules
-# with alpine-built artifacts and cost ~30s per start. This way docker caches the
-# install layer.
-FROM node:20-alpine
+FROM flyway/flyway:13.5.0-alpine
+
+RUN apk add --no-cache nodejs npm
 
 WORKDIR /db
 
 COPY apps/backend/db/package.json apps/backend/db/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-COPY apps/backend/db/tsconfig.json apps/backend/db/testkit.ts apps/backend/db/seed.sql ./
+COPY apps/backend/db/tsconfig.json apps/backend/db/testkit.ts apps/backend/db/seed.sql apps/backend/db/flyway.sh ./
 COPY apps/backend/db/src ./src
 COPY apps/backend/db/migrations ./migrations
 
+# The base image entrypoint would prepend `flyway` to every compose `command:`.
+ENTRYPOINT []
 CMD ["npm", "run", "migrate"]

@@ -43,7 +43,9 @@ services:
       DB_USER: ${DB_USER:-branch_dev}
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_NAME: ${DB_NAME:-branch_db}
-    command: sh -c "npm run migrate && npm run seed -- --if-empty"
+      # Local only: adopt a dev database built before Flyway.
+      FLYWAY_BASELINE_ON_MIGRATE: 'true'
+    command: sh -c "npm run migrate && npm run fingerprint && npm run seed -- --if-empty"
     depends_on:
       postgres:
         condition: service_healthy
