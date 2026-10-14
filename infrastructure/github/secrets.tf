@@ -71,6 +71,12 @@ resource "github_actions_variable" "aws_account_id" {
   value         = var.aws_account_id
 }
 
+resource "github_actions_variable" "api_base_url" {
+  repository    = github_repository.branch.name
+  variable_name = "API_BASE_URL"
+  value         = var.api_base_url
+}
+
 
 
 variable "infisical_client_id" {
