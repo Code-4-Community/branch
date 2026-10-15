@@ -41,6 +41,18 @@ export interface AnchoredPopoverPosition {
   pointerEvents: 'auto';
 }
 
+/**
+ * True when `target` sits in a popover marked `data-anchored-popover`. A
+ * surrounding Chakra dialog needs this: the popover is portalled outside its
+ * content, so any click past the dialog's edges reads as an outside click.
+ */
+export function isInAnchoredPopover(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('[data-anchored-popover]') !== null
+  );
+}
+
 interface UseAnchoredPopoverOptions {
   open: boolean;
   /** Called on an outside click or Escape. */
