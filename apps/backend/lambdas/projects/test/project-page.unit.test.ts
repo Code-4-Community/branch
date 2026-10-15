@@ -39,7 +39,7 @@ const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<
 
 const pool = new Pool({
   host: 'localhost',
-  port: 5432,
+  port: Number(process.env.DB_PORT ?? 5432),
   user: 'branch_dev',
   password: 'password',
   database: 'branch_db',
@@ -107,6 +107,22 @@ test('/projects/assignable-staff is not parsed as a project id', async () => {
   expect(staff.length).toBeGreaterThan(0);
   // Only the fields the picker renders — not the whole user row.
   expect(Object.keys(staff[0]).sort()).toEqual(['email', 'name', 'profile_image', 'user_id']);
+});
+
+test('a staff account is neither assignable nor accepted as a member', async () => {
+  const { rows } = await pool.query(
+    `INSERT INTO branch.users (cognito_sub, name, email, is_admin, is_staff)
+     VALUES ('staff-sub', 'Hidden Staff', 'staff@branch.org', false, true)
+     RETURNING user_id`,
+  );
+  const staffId: number = rows[0].user_id;
+
+  const { staff } = parse(await handler(event('/assignable-staff', 'GET')));
+  expect(staff.map((s: { user_id: number }) => s.user_id)).not.toContain(staffId);
+
+  const res = await handler(event('/', 'POST', { name: 'Leak', total_budget: 1, members: [staffId] }));
+  expect(res.statusCode).toBe(400);
+  expect(parse(res).message).toBe(`Unknown user ids: ${staffId}`);
 });
 
 test('/projects/dashboard is not parsed as a project id', async () => {

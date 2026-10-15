@@ -97,6 +97,8 @@ const ADMIN_ONLY = 'Only administrators can do this';
 const ADMIN_OR_DIRECTOR = 'Only administrators and project directors can do this';
 const MEMBER_ONLY = 'You are not a member of this project';
 const SIGN_IN = 'You must be signed in';
+const STAFF_ONLY = 'Only staff accounts can do this';
+const STAFF_MUST_SWITCH = 'Staff accounts must switch into a user first';
 
 function unscoped(
   reason: string,
@@ -215,11 +217,23 @@ export const POLICY = {
   'accounts:create': unscoped(ADMIN_ONLY, admin),
   'accounts:update': unscoped(ADMIN_ONLY, admin),
   'accounts:delete': unscoped(ADMIN_ONLY, admin),
+
+  // -- Impersonation --------------------------------------------------------
+  // The only actions a staff subject passes; see the gate in authorizeAny.
+  // While impersonating the subject is the target's, so these deny and a
+  // switch cannot be chained.
+  'impersonation:console': unscoped(STAFF_ONLY, (s) => s.isStaff),
+  'impersonation:start': unscoped(STAFF_ONLY, (s) => s.isStaff),
 } satisfies Record<string, PolicyEntry<any>>;
 
 export type Action = keyof typeof POLICY;
 
 export const ACTIONS = Object.keys(POLICY) as Action[];
+
+const STAFF_ACTIONS: ReadonlySet<string> = new Set<Action>([
+  'impersonation:console',
+  'impersonation:start',
+]);
 
 /** Actions whose own entry declares that its rule reads a resource. */
 export type ScopedAction = {
@@ -272,6 +286,9 @@ export function authorizeAny(
   if (!entry) return deny('Unknown action');
 
   const s = subject ?? ANONYMOUS;
+
+  // A staff account holds no rights of its own, whatever a rule below says.
+  if (s.isStaff && !STAFF_ACTIONS.has(action)) return deny(STAFF_MUST_SWITCH);
 
   // Fail closed. A caller that forgot the resource must not get a rule
   // evaluated against `undefined`, which reads as "no project" and can be

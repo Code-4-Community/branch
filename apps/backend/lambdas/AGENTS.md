@@ -54,7 +54,7 @@ export const getDonor: RouteHandler = async ({ params }) => {
 - **A caught error is an error Sentry cannot see.** The Sentry layer wraps the handler and records uncaught throws only, and we always catch so API Gateway returns a JSON 500 instead of a 502. `dispatch()` reports what reaches its catch; a controller that returns its own 500 must use `serverError(err, 'Failed to …')` from `@branch/lambda-http` rather than `console.error` + `json(500, …)`. Same status to the caller, one less invisible failure.
 - **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
 - Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
-- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization`). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requirePermission`, `createAuthResolver`, `matchPattern`).
+- Responses go through `json(status, body)` from `@branch/lambda-http`, which sets CORS headers (`Access-Control-Allow-Origin: *`, allowed headers `Content-Type,Authorization,X-Impersonate-Session`; keep `infrastructure/{aws,preview}/api_gateway.tf` in step, since API Gateway answers preflights itself). See `shared/lambda-http/README.md` for the full API (`parseBody`, `requirePermission`, `createAuthResolver`, `matchPattern`).
 
 ## Auth & authorization
 
@@ -73,9 +73,16 @@ export async function authenticateRequest(event: any) {
   return _authenticateRequest(db, event);
 }
 export const resolveAuth = createAuthResolver(authenticateRequest, (ctx) => loadRbacSubject(db, ctx));
+export const onImpersonatedWrite = recordImpersonationAction; // from @branch/store
 ```
 
-`handler.ts` hands `resolveAuth` to `dispatch`, which calls it **once per request**.
+`handler.ts` hands `resolveAuth` and `onImpersonatedWrite` to `dispatch`, which calls `resolveAuth` **once per request**.
+
+### Staff accounts are invisible
+
+`branch.users.is_staff` marks a hidden staff account (see `shared/rbac/README.md`). **Every query that returns users, counts them, or accepts a user id from a client must filter `.where('is_staff', 'is not', true)`**, and must never return the column. The column is nullable (DSQL cannot add it with a default) and NULL means "not staff", so `= false` would hide every user who predates it. A staff id answers exactly like a missing one (404, "Unknown user ids"). Today that is `users/controllers/users.ts`, `projects/controllers/members.ts` and `projects/services/projects.ts`; staff never author rows, because while impersonating they write as the target.
+
+A route that acts on the caller's own Cognito session (MFA, today) must declare `impersonation: 'blocked'`: while impersonating, that session is the staff account's.
 
 ### Two layers, and which one to use
 

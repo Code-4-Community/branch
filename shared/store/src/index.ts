@@ -27,6 +27,13 @@ export { recordDonation, removeDonation, createDonor, removeDonor } from './dona
 export { createProject, updateProject, removeProject } from './projects'
 export { recordReport, removeReport } from './reports'
 export { createUser, updateUser, claimUser, removeUser } from './users'
+export {
+  startImpersonationSession,
+  endImpersonationSession,
+  recordImpersonationAction,
+  createStaffUser,
+} from './impersonation'
+export type { NewImpersonationSession } from './impersonation'
 
 export type {
   NewExpenditure,

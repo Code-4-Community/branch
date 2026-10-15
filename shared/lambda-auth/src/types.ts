@@ -5,4 +5,7 @@ export type {
   AuthenticatedUser,
   AuthenticatedDbUser,
   AuthMembership,
+  AuthFailure,
+  Impersonator,
+  ImpersonationMode,
 } from '@branch/types';

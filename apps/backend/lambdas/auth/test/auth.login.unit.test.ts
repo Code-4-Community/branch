@@ -442,6 +442,7 @@ describe('GET /me', () => {
           email: 'a@b.com',
           name: 'Ada',
           isAdmin: true,
+          isStaff: false,
           profileImage: 'https://s3/pic.png',
         },
       },
@@ -456,7 +457,9 @@ describe('GET /me', () => {
       email: 'a@b.com',
       name: 'Ada',
       isAdmin: true,
+      isStaff: false,
       profileImage: 'https://s3/pic.png',
+      impersonation: null,
       // The authorization subject rides along with identity so the browser can
       // evaluate @branch/rbac without a second round trip.
       rbac: mockSubject,

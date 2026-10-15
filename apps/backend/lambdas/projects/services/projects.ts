@@ -155,6 +155,7 @@ export async function listRoster(projectId: number): Promise<RosterMember[]> {
       .selectFrom('branch.users')
       .select(['user_id', 'name', 'email', 'profile_image'])
       .where('is_admin', 'is', true)
+      .where('is_staff', 'is not', true)
       .orderBy('name', 'asc')
       .execute(),
     db
@@ -185,6 +186,7 @@ export async function loadAdminHeadcount(projectIds: number[]): Promise<{
       .selectFrom('branch.users')
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('is_admin', 'is', true)
+      .where('is_staff', 'is not', true)
       .executeTakeFirst(),
     projectIds.length === 0
       ? Promise.resolve([])
@@ -222,7 +224,11 @@ export async function findAdminUserIds(members: MemberAssignment[]): Promise<num
   return admins.map((row) => row.user_id);
 }
 
-/** Rejects member ids that are not real users, so FK errors never reach the client as a 500. */
+/**
+ * Rejects member ids that are not real users, so FK errors never reach the
+ * client as a 500. A staff account counts as unknown: it can never hold a
+ * membership, and the error must not confirm one exists.
+ */
 export async function findUnknownUserIds(members: MemberAssignment[]): Promise<number[]> {
   if (members.length === 0) return [];
   const ids = members.map((m) => m.user_id);
@@ -230,6 +236,7 @@ export async function findUnknownUserIds(members: MemberAssignment[]): Promise<n
     .selectFrom('branch.users')
     .select('user_id')
     .where('user_id', 'in', ids)
+    .where('is_staff', 'is not', true)
     .execute();
   const known = new Set(found.map((r) => r.user_id));
   return ids.filter((id) => !known.has(id));

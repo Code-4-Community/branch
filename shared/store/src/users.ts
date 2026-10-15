@@ -20,6 +20,8 @@ export async function updateUser(
       .updateTable('branch.users')
       .set(values)
       .where('user_id', '=', id)
+      // Staff rows are not editable through the app; the provisioning script owns them.
+      .where('is_staff', 'is not', true)
       .returningAll()
       .executeTakeFirst(),
   )

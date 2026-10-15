@@ -29,7 +29,21 @@ export interface AuthenticatedDbUser {
   email: string;
   name: string;
   isAdmin: boolean;
+  isStaff: boolean;
   profileImage: string | null;
+}
+
+export type ImpersonationMode = 'read_only' | 'full';
+
+/** The staff account behind an impersonated request. */
+export interface Impersonator {
+  userId: number;
+  name: string;
+  email: string;
+  sessionId: string;
+  mode: ImpersonationMode;
+  /** ISO timestamp. */
+  expiresAt: string;
 }
 
 export interface AuthenticatedUser {
@@ -38,6 +52,10 @@ export interface AuthenticatedUser {
   /** The JWT `email` claim. Not the same field as `dbUser.email`. */
   email?: string;
   isAdmin: boolean;
+  /** False while impersonating: every identity field is then the target's. */
+  isStaff?: boolean;
+  /** Set when a staff account is acting as this user. */
+  impersonator?: Impersonator;
   cognitoGroups?: string[];
   /** Set whenever `AuthContext.isAuthenticated` is true. */
   dbUser?: AuthenticatedDbUser;
@@ -53,6 +71,17 @@ export interface AuthenticatedUser {
 export interface AuthContext {
   user?: AuthenticatedUser;
   isAuthenticated: boolean;
+  /**
+   * Why an otherwise valid token was refused, when "Authentication required"
+   * would mislead. Only impersonation sets it today.
+   */
+  failure?: AuthFailure;
+}
+
+export interface AuthFailure {
+  status: 401 | 403;
+  code: 'IMPERSONATION_EXPIRED' | 'IMPERSONATION_FORBIDDEN';
+  message: string;
 }
 
 // AccessLevel / AuthorizationCheck used to live here: a flat enum of PUBLIC,

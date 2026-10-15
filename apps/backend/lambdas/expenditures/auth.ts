@@ -1,6 +1,6 @@
 import { authenticateRequest as _authenticateRequest, loadRbacSubject } from '@branch/lambda-auth';
 import { createAuthResolver } from '@branch/lambda-http';
-import { db } from '@branch/store';
+import { db, recordImpersonationAction } from '@branch/store';
 
 export * from '@branch/lambda-auth';
 
@@ -17,3 +17,6 @@ export async function authenticateRequest(
 export const resolveAuth = createAuthResolver(authenticateRequest, (context) =>
   loadRbacSubject(db, context),
 );
+
+/** Audit row per write made while a staff account is impersonating. */
+export const onImpersonatedWrite = recordImpersonationAction;

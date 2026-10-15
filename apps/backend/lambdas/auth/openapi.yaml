@@ -335,11 +335,35 @@ paths:
                     type: string
                   isAdmin:
                     type: boolean
+                  isStaff:
+                    type: boolean
+                    description: A staff account acting as itself; false while impersonating
                   profileImage:
                     type: string
                     nullable: true
+                  impersonation:
+                    type: object
+                    nullable: true
+                    description: Set while a staff account is switched into this user
+                    properties:
+                      userId:
+                        type: integer
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      sessionId:
+                        type: string
+                      mode:
+                        type: string
+                        enum: [read_only, full]
+                      expiresAt:
+                        type: string
+                        format: date-time
         '401':
-          description: Authentication required
+          description: Authentication required, or IMPERSONATION_EXPIRED
+        '403':
+          description: IMPERSONATION_FORBIDDEN (the header from a non-staff caller)
 
   /auth/verify-email:
     post:
@@ -615,6 +639,125 @@ paths:
                     type: boolean
         '401':
           description: Missing Authorization header, or invalid/expired token
+
+  /auth/impersonation/targets:
+    get:
+      summary: Staff only. Every non-staff user a staff account may switch into
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive match on name or email
+      responses:
+        '200':
+          description: Up to 200 users, ordered by name
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId:
+                          type: integer
+                        name:
+                          type: string
+                        email:
+                          type: string
+                        isAdmin:
+                          type: boolean
+                        pending:
+                          type: boolean
+                          description: Invited but never signed in
+                        directorProjectCount:
+                          type: integer
+                        memberProjectCount:
+                          type: integer
+        '403':
+          description: Caller is not a staff account, or is impersonating
+
+  /auth/impersonation:
+    post:
+      summary: Staff only. Start a session acting as another user
+      description: >
+        Send the returned sessionId as the X-Impersonate-Session header, beside the
+        staff account's own Bearer token, on every request made as the target.
+        Sessions last one hour. Read-only sessions refuse every non-GET request;
+        every non-GET request in either mode is recorded in
+        branch.impersonation_actions.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId, mode]
+              properties:
+                targetUserId:
+                  type: integer
+                mode:
+                  type: string
+                  enum: [read_only, full]
+      responses:
+        '201':
+          description: Session started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                  mode:
+                    type: string
+                    enum: [read_only, full]
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  target:
+                    type: object
+                    properties:
+                      userId:
+                        type: integer
+                      name:
+                        type: string
+                      email:
+                        type: string
+        '400':
+          description: Missing or invalid targetUserId or mode
+        '403':
+          description: Caller is not a staff account, or is impersonating
+        '404':
+          description: No such user (also returned for a staff target)
+
+  /auth/impersonation/{sessionId}:
+    delete:
+      summary: Staff only. End one of the caller's own sessions
+      description: Call without X-Impersonate-Session, as the staff account itself. Idempotent.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session ended (or was already ended)
+        '404':
+          description: sessionId is not a UUID
 
 components:
   securitySchemes:

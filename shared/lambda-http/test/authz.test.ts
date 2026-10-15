@@ -12,6 +12,7 @@ const context = (userId: number, isAdmin = false): AuthContext => ({
 const subject = (userId: number, isAdmin = false, projects: number[] = []): RbacSubject => ({
   userId,
   isAdmin,
+  isStaff: false,
   memberProjectIds: projects,
   directorProjectIds: [],
 });

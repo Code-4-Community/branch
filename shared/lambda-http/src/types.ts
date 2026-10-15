@@ -1,5 +1,5 @@
 import type { APIGatewayProxyResult } from 'aws-lambda';
-import type { AuthContext } from '@branch/lambda-auth';
+import type { AuthContext, Impersonator } from '@branch/lambda-auth';
 import type { GlobalAction, RbacSubject } from '@branch/rbac';
 
 /** Who is calling, resolved once per request by `dispatch`. */
@@ -35,6 +35,12 @@ interface RouteBase {
   /** Full prefixed path pattern with `:param` segments, e.g. `/projects/:id/members`. */
   pattern: string;
   handler: RouteHandler;
+  /**
+   * `'blocked'` refuses the route to an impersonated request in either mode:
+   * for routes that act on the caller's own Cognito session, which while
+   * impersonating is the staff account's, not the target's.
+   */
+  impersonation?: 'blocked';
 }
 
 /**
@@ -63,4 +69,14 @@ export interface DispatchOptions {
    * route without it.
    */
   resolveAuth?: (event: any) => Promise<RequestAuth>;
+  /**
+   * Audit hook, awaited after every mutating request made while impersonating.
+   * A failure is reported, never surfaced: the write has already happened.
+   */
+  onImpersonatedWrite?: (
+    impersonator: Impersonator,
+    method: string,
+    path: string,
+    statusCode: number,
+  ) => Promise<void>;
 }
