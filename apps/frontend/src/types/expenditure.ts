@@ -1,4 +1,3 @@
-/** Shared by the add and edit pickers so they cannot offer different choices. */
 export const EXPENSE_CATEGORIES = ['General', 'Travel', 'Travel Foreign', 'Visitor / Honorarium'];
 
 export const EXPENDITURE_STATUSES = ['pending', 'approved', 'needs_more_info'] as const;
