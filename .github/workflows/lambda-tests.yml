@@ -134,7 +134,7 @@ jobs:
               name=$(basename "$path")
               case "$name" in *.sql) ;; *) continue ;; esac
               version=$(printf '%s' "$name" | sed -E 's/^V?0*([0-9]+)_+.*/\1/')
-              [ "$version" -gt "$baseline" ] || continue
+              [ "$baseline" -eq 0 ] || [ "$version" -gt "$baseline" ] || continue
               printf '%s\t%s\t%s\n' "$version" "$sha" "$name"
             done | sort
           }

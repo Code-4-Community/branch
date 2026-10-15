@@ -8,10 +8,8 @@ DSQL_PLUGIN_SHA256=2d5b8e3f16732afc70e6bd096c4817f8967f7e755c4e38d5f604ca85cfacd
 DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 flyway_args=" $* "
 
-# Last migration applied under kysely; already on production, so Flyway baselines here.
-# Also a permanent floor: anything at or below it is "Below Baseline" and never runs.
-# Set to 0 once production is on DSQL, which runs every file from scratch.
-BASELINE_VERSION=20260907213524
+# Production is Aurora DSQL, built from V0000 with no baseline, so every file is immutable.
+BASELINE_VERSION=0
 
 # Off by default: on production, baselining would silently adopt an unrecognised database.
 BASELINE_ON_MIGRATE=${FLYWAY_BASELINE_ON_MIGRATE:-false}
