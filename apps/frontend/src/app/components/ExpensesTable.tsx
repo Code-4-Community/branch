@@ -6,6 +6,7 @@ import StatusBadge from './StatusBadge';
 import RowDeleteButton from './RowDeleteButton';
 import Tooltip from './Tooltip';
 import { usePermissions } from '@/hooks/usePermissions';
+import { formatDateNumeric } from '@/lib/format';
 
 interface ExpensesTableProps {
   expenditures: Expenditure[];
@@ -64,12 +65,7 @@ export default function ExpensesTable({
       key: 'date',
       header: 'Date',
       width: widths.date,
-      cell: (e) =>
-        new Date(e.spent_on).toLocaleDateString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-        }),
+      cell: (e) => formatDateNumeric(e.spent_on),
       skeleton: { width: '75%' },
     },
     {

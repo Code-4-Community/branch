@@ -28,7 +28,7 @@ import { IoClose } from 'react-icons/io5';
 import ExpensesTable from '../components/ExpensesTable';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { getReceiptDownloadUrl } from '@/lib/expenditures';
-import { formatCurrencyPrecise } from '@/lib/format';
+import { formatCurrencyPrecise, parseApiDate } from '@/lib/format';
 import {
   EXPENDITURE_STATUSES,
   EXPENDITURE_STATUS_LABELS,
@@ -200,8 +200,8 @@ function ExpensePageContent() {
         if (!matchesId && !matchesDesc && !matchesCat) return false;
       }
       if (selectedMonths.length > 0) {
-        const month = new Date(e.spent_on).getMonth();
-        if (!selectedMonths.includes(MONTHS[month])) return false;
+        const month = parseApiDate(e.spent_on)?.getMonth();
+        if (month === undefined || !selectedMonths.includes(MONTHS[month])) return false;
       }
       if (selectedTypes.length > 0) {
         if (!e.category || !selectedTypes.includes(e.category)) return false;

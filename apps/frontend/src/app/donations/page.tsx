@@ -45,8 +45,11 @@ export default function DonationsPage() {
   // server-side aggregates it does not have yet. What changed is only that the
   // three reads are cached, so returning here is free, and that `/projects` is
   // the same cache entry the navbar and every other page reads.
+  // The donor roster is admin + director only; members still see the donations
+  // themselves, with donors shown by id.
+  const canViewDonors = can('donors:view');
   const donationsList = useQuery(donationsQuery());
-  const donorsList = useQuery(donorsQuery());
+  const donorsList = useQuery({ ...donorsQuery(), enabled: canViewDonors });
   const projectsList = useQuery(projectsQuery());
 
   const donations = donationsList.data ?? NO_DONATIONS;
@@ -54,10 +57,10 @@ export default function DonationsPage() {
   const projects = projectsList.data ?? NO_PROJECTS;
 
   const loading =
-    donationsList.isPending || donorsList.isPending || projectsList.isPending;
+    donationsList.isPending || (canViewDonors && donorsList.isPending) || projectsList.isPending;
 
   const loadError =
-    donationsList.error ?? donorsList.error ?? projectsList.error;
+    donationsList.error ?? (canViewDonors ? donorsList.error : null) ?? projectsList.error;
   const error = loadError
     ? loadError instanceof Error
       ? loadError.message
