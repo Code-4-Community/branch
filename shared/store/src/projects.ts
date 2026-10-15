@@ -2,6 +2,7 @@ import type { Selectable, Transaction } from 'kysely'
 import type { DB, NewProject, ProjectEdit, ProjectMemberInput } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump, seedProjectRollup } from './rollups'
+import { now, requireLiveUsers } from './live'
 
 type Project = Selectable<DB['branch.projects']>
 
@@ -18,6 +19,7 @@ async function syncMemberships(
     .select(['user_id', 'role'])
     .execute()
   const heldRole = new Map(existing.map((row) => [row.user_id, row.role]))
+  await requireLiveUsers(trx, members.map((m) => m.user_id))
 
   const cleared = await trx
     .deleteFrom('branch.project_memberships')
@@ -72,12 +74,15 @@ export async function updateProject(
             .updateTable('branch.projects')
             .set(values)
             .where('project_id', '=', id)
+            .where('deleted_at', 'is', null)
             .returningAll()
             .executeTakeFirst()
         : await trx
             .selectFrom('branch.projects')
             .where('project_id', '=', id)
+            .where('deleted_at', 'is', null)
             .selectAll()
+            .forUpdate()
             .executeTakeFirst()
 
     if (!row) return undefined
@@ -86,13 +91,29 @@ export async function updateProject(
   })
 }
 
-/** Both rollup tables reference projects ON DELETE CASCADE, so they clean themselves up. */
+// Children are stamped with the project's time (now() is per transaction). Memberships
+// and both rollups are still hard-deleted, as the ON DELETE CASCADE did.
 export async function removeProject(id: number): Promise<bigint> {
   return tx(async (trx) => {
     const deleted = await trx
-      .deleteFrom('branch.projects')
+      .updateTable('branch.projects')
+      .set({ deleted_at: now() })
       .where('project_id', '=', id)
+      .where('deleted_at', 'is', null)
       .executeTakeFirst()
-    return deleted?.numDeletedRows ?? 0n
+    if (deleted.numUpdatedRows === 0n) return 0n
+
+    for (const table of ['branch.project_donations', 'branch.expenditures', 'branch.reports'] as const) {
+      await trx
+        .updateTable(table)
+        .set({ deleted_at: now() })
+        .where('project_id', '=', id)
+        .where('deleted_at', 'is', null)
+        .execute()
+    }
+    await trx.deleteFrom('branch.project_memberships').where('project_id', '=', id).execute()
+    await trx.deleteFrom('branch.expenditure_rollup').where('project_id', '=', id).execute()
+    await trx.deleteFrom('branch.project_rollup').where('project_id', '=', id).execute()
+    return deleted.numUpdatedRows
   })
 }

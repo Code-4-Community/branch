@@ -51,9 +51,14 @@ export const listUsers: RouteHandler = async ({ event }) => {
 
     // The count does not depend on the page, so both go out at once.
     const [totalCount, users] = await Promise.all([
-      db.selectFrom('branch.users').select(db.fn.count('user_id').as('count')).executeTakeFirst(),
       db
         .selectFrom('branch.users')
+        .where('deleted_at', 'is', null)
+        .select(db.fn.count('user_id').as('count'))
+        .executeTakeFirst(),
+      db
+        .selectFrom('branch.users')
+        .where('deleted_at', 'is', null)
         .selectAll()
         .orderBy('user_id', 'asc')
         .limit(limit)
@@ -76,6 +81,7 @@ export const listUsers: RouteHandler = async ({ event }) => {
 
   const users = await db
     .selectFrom('branch.users')
+    .where('deleted_at', 'is', null)
     .selectAll()
     .execute();
 
@@ -89,7 +95,7 @@ export const getUser: RouteHandler = async ({ params, auth }) => {
   const denied = requirePermission(auth.subject, 'profile:view', { userId: Number(userId) });
   if (denied) return denied;
 
-  const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).selectAll().executeTakeFirst();
+  const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).where("deleted_at", "is", null).selectAll().executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
 
   return json(200, {
@@ -214,7 +220,7 @@ export const deleteUser: RouteHandler = async ({ params }) => {
   const userId = params.userId;
   if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
 
-  const user = await db.selectFrom('branch.users').where('user_id', '=', Number(userId)).select('email').executeTakeFirst();
+  const user = await db.selectFrom('branch.users').where('user_id', '=', Number(userId)).where('deleted_at', 'is', null).select('email').executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
 
   const deleted = await removeUser(Number(userId));
@@ -273,10 +279,11 @@ export const createUser: RouteHandler = async ({ event }) => {
   const isAdmin = isAdminResult.value as boolean;
   const profile_image = profileImageResult.value ?? undefined;
 
-  // Check if user with this email already exists in DB
+  // Live users only: a soft-deleted row keeps its email, and its Cognito account is gone.
   const existingUser = await db
     .selectFrom('branch.users')
     .where('email', '=', email)
+    .where('deleted_at', 'is', null)
     .selectAll()
     .executeTakeFirst();
 

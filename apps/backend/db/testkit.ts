@@ -239,6 +239,7 @@ const EXPECTED_EXPENDITURE_ROLLUP = `
          SUM(amount) AS total_amount,
          COUNT(*)::int AS expenditure_count
     FROM ${SCHEMA}.expenditures
+   WHERE deleted_at IS NULL
    GROUP BY project_id, date_trunc('month', spent_on)::date, category, status`;
 
 const EXPECTED_PROJECT_ROLLUP = `
@@ -250,10 +251,31 @@ const EXPECTED_PROJECT_ROLLUP = `
     FROM ${SCHEMA}.projects p
     LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.project_memberships GROUP BY project_id) m
            ON m.project_id = p.project_id
-    LEFT JOIN (SELECT project_id, COUNT(*) AS c, SUM(amount) AS total FROM ${SCHEMA}.project_donations GROUP BY project_id) d
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c, SUM(amount) AS total FROM ${SCHEMA}.project_donations WHERE deleted_at IS NULL GROUP BY project_id) d
            ON d.project_id = p.project_id
-    LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.reports GROUP BY project_id) r
-           ON r.project_id = p.project_id`;
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.reports WHERE deleted_at IS NULL GROUP BY project_id) r
+           ON r.project_id = p.project_id
+   WHERE p.deleted_at IS NULL`;
+
+/**
+ * Hard-deletes every soft-deleted row, children first. Read-parity tests snapshot the
+ * API before and after: a soft-deleted row must read exactly like an absent one.
+ */
+export async function purgeSoftDeleted(client: Queryable): Promise<void> {
+  for (const table of ['expenditures', 'reports', 'project_donations', 'donors', 'projects', 'users']) {
+    await client.query(`DELETE FROM ${SCHEMA}.${table} WHERE deleted_at IS NOT NULL`);
+  }
+}
+
+/** Seed ids the parity tests delete: one of each kind, plus a project and a user with children. */
+export const PARITY_DELETES = {
+  expenditure: 1,
+  donation: 2,
+  donor: 3,
+  report: 4,
+  project: 3,
+  user: 5,
+} as const;
 
 // A zero-count expenditure_rollup row equals a missing one: _remove decrements without deleting.
 export async function findRollupDrift(client: Queryable): Promise<string[]> {

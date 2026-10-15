@@ -106,9 +106,9 @@ export default function ProjectDetailView({ id }: { id: string }) {
                   Edit Project
                 </Button>
               )}
-              {/* Deleting a project cascades to its memberships, donations,
-                  expenditures and reports, so it is its own permission even
-                  though both currently resolve to admin. */}
+              {/* Deleting a project takes its memberships, donations,
+                  expenditures and reports with it, so it is its own permission
+                  even though both currently resolve to admin. */}
               {can('project:delete') && (
                 <Button
                   variant="danger"
@@ -214,12 +214,12 @@ export default function ProjectDetailView({ id }: { id: string }) {
         title="Delete Project"
         itemName={project.name}
         confirmLabel="Delete Project"
-        // Every FK into `projects` is ON DELETE CASCADE, so this takes the
-        // financial history with it. Worth retyping the name for.
+        // The delete takes the project's financial history with it. Worth
+        // retyping the name for.
         requireTypedConfirmation
         consequences={
           <>
-            <p>This also permanently deletes everything attached to it:</p>
+            <p>This also deletes everything attached to it:</p>
             <ul className="!mt-2 !list-disc !pl-5">
               <li>
                 {expenditures.length} expense

@@ -25,6 +25,7 @@ export interface BranchDonors {
   contact_email: string | null;
   contact_name: string | null;
   created_at: Generated<Timestamp | null>;
+  deleted_at: Timestamp | null;
   donor_id: Generated<number>;
   organization: string;
 }
@@ -43,6 +44,7 @@ export interface BranchExpenditures {
   amount: Numeric;
   category: string | null;
   created_at: Generated<Timestamp | null>;
+  deleted_at: Timestamp | null;
   description: string | null;
   entered_by: number | null;
   expenditure_id: Generated<number>;
@@ -54,6 +56,7 @@ export interface BranchExpenditures {
 
 export interface BranchProjectDonations {
   amount: Numeric;
+  deleted_at: Timestamp | null;
   donated_at: Generated<Timestamp | null>;
   donation_id: Generated<number>;
   donor_id: number;
@@ -81,6 +84,7 @@ export interface BranchProjectRollup {
 export interface BranchProjects {
   created_at: Generated<Timestamp | null>;
   currency: Generated<string | null>;
+  deleted_at: Timestamp | null;
   description: string;
   end_date: Timestamp | null;
   name: string;
@@ -91,6 +95,7 @@ export interface BranchProjects {
 
 export interface BranchReports {
   date_created: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
   object_url: string;
   project_id: number;
   report_id: Generated<number>;
@@ -101,6 +106,7 @@ export interface BranchReports {
 export interface BranchUsers {
   cognito_sub: string | null;
   created_at: Generated<Timestamp | null>;
+  deleted_at: Timestamp | null;
   email: string;
   is_admin: Generated<boolean | null>;
   name: string;

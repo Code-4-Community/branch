@@ -2,6 +2,7 @@ import type { Selectable } from 'kysely'
 import type { DB, NewDonation, NewDonor } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump } from './rollups'
+import { now, requireLiveDonor, requireLiveProject } from './live'
 
 type Donation = Selectable<DB['branch.project_donations']>
 
@@ -10,6 +11,8 @@ const negate = (amount: string) => (amount.startsWith('-') ? amount.slice(1) : `
 
 export async function recordDonation(values: NewDonation): Promise<Donation> {
   return tx(async (trx) => {
+    await requireLiveDonor(trx, values.donor_id)
+    await requireLiveProject(trx, values.project_id)
     const row = await trx
       .insertInto('branch.project_donations')
       .values(values)
@@ -25,16 +28,19 @@ export async function removeDonation(id: number): Promise<bigint> {
     const before = await trx
       .selectFrom('branch.project_donations')
       .where('donation_id', '=', id)
+      .where('deleted_at', 'is', null)
       .selectAll()
       .forUpdate()
       .executeTakeFirst()
     if (!before) return 0n
 
     const deleted = await trx
-      .deleteFrom('branch.project_donations')
+      .updateTable('branch.project_donations')
+      .set({ deleted_at: now() })
       .where('donation_id', '=', id)
+      .where('deleted_at', 'is', null)
       .executeTakeFirst()
-    const removed = deleted?.numDeletedRows ?? 0n
+    const removed = deleted.numUpdatedRows
     if (removed === 0n) return 0n
 
     await projectRollupBump(trx, before.project_id, {
@@ -53,20 +59,26 @@ export async function createDonor(
   )
 }
 
-// donor_id is ON DELETE RESTRICT: delete the donations first and back their rollup out.
+// A donor's donations go with it, stamped with the same time, and their rollup is backed out.
 export async function removeDonor(donorId: number): Promise<bigint> {
   return tx(async (trx) => {
+    const deleted = await trx
+      .updateTable('branch.donors')
+      .set({ deleted_at: now() })
+      .where('donor_id', '=', donorId)
+      .where('deleted_at', 'is', null)
+      .returning('donor_id')
+      .executeTakeFirst()
+    if (!deleted) return 0n
+
     // RETURNING, not a prior SELECT: a donation added in between would be missed.
     const removed = await trx
-      .deleteFrom('branch.project_donations')
+      .updateTable('branch.project_donations')
+      .set({ deleted_at: now() })
       .where('donor_id', '=', donorId)
+      .where('deleted_at', 'is', null)
       .returning(['project_id', 'amount'])
       .execute()
-
-    const deleted = await trx
-      .deleteFrom('branch.donors')
-      .where('donor_id', '=', donorId)
-      .executeTakeFirst()
 
     for (const donation of removed) {
       await projectRollupBump(trx, donation.project_id, {
@@ -74,6 +86,6 @@ export async function removeDonor(donorId: number): Promise<bigint> {
         donations: -1,
       })
     }
-    return deleted?.numDeletedRows ?? 0n
+    return 1n
   })
 }

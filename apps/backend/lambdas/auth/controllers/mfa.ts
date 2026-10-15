@@ -71,6 +71,7 @@ export const handleMfaSetup: RouteHandler = async ({ event, auth }) => {
   const me = await db
     .selectFrom('branch.users')
     .where('cognito_sub', '=', user.cognitoSub)
+    .where('deleted_at', 'is', null)
     .select(['email'])
     .executeTakeFirst();
 

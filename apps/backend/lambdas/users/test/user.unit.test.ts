@@ -330,6 +330,7 @@ describe('POST /users unit tests', () => {
       // Setup mocks for successful user creation
       // Mock the email check to return null (user doesn't exist)
       const whereChain = {
+        where: jest.fn().mockReturnThis(),
         selectAll: jest.fn().mockReturnValue({
           executeTakeFirst: (jest.fn() as any).mockResolvedValue(null),
         }),
@@ -359,6 +360,7 @@ describe('POST /users unit tests', () => {
     test('409: POST returns 409 when user already exists', async () => {
       // Mock: user already exists
       const whereChain = {
+        where: jest.fn().mockReturnThis(),
         selectAll: jest.fn().mockReturnValue({
           executeTakeFirst: (jest.fn() as any).mockResolvedValue({
             user_id: 1,
@@ -384,6 +386,7 @@ describe('POST /users unit tests', () => {
       expect(res.statusCode).toBe(409);
       const json = JSON.parse(res.body);
       expect(json).toHaveProperty('message');
+      expect(whereChain.where).toHaveBeenCalledWith('deleted_at', 'is', null);
     });
   });
 });

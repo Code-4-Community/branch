@@ -23,7 +23,7 @@ jest.mock('../auth', () => {
     ),
   };
 });
-// Shared across instances so the delete assertions below can see the call.
+// Shared across instances so the assertions below can see that a delete sends no DeleteObject.
 const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
@@ -63,6 +63,24 @@ const mockRecordReport = recordReport as jest.MockedFunction<typeof recordReport
 const mockRemoveReport = removeReport as jest.MockedFunction<typeof removeReport>;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockReportService = reportService as jest.Mocked<typeof reportService>;
+
+// A query builder whose every method returns itself, so a mock does not break
+// when a filter is added.
+function mockQuery(result: unknown) {
+  const methods: Record<string, unknown> = {};
+  const builder: any = new Proxy(methods, {
+    get(target, prop) {
+      if (typeof prop !== 'string' || prop === 'then') return undefined;
+      if (!(prop in target)) {
+        target[prop] = prop === 'execute' || prop === 'executeTakeFirst'
+          ? jest.fn(async () => result)
+          : jest.fn(() => builder);
+      }
+      return target[prop];
+    },
+  });
+  return builder;
+}
 function getEvent(queryStringParameters?: Record<string, string>) {
   return {
     rawPath: '/',
@@ -280,13 +298,7 @@ describe('GET /reports unit tests', () => {
 
   describe('Response format', () => {
     test('200: returns data array without pagination when no params', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            execute: jest.fn().mockReturnValue(fakeReports as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery(fakeReports));
 
       const res = await handler(getEvent());
       expect(res.statusCode).toBe(200);
@@ -314,22 +326,8 @@ describe('GET /reports unit tests', () => {
   // file_size at all, so these live under Pagination rather than Response format.
   describe('File sizes (paginated results only)', () => {
     function mockPaginatedQuery(rows: typeof fakeReports) {
-      mockDb.selectFrom.mockReturnValueOnce({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue({ count: String(rows.length) } as any),
-        }),
-      });
-      mockDb.selectFrom.mockReturnValueOnce({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockReturnValue({
-              offset: jest.fn().mockReturnValue({
-                execute: jest.fn().mockReturnValue(rows as any),
-              }),
-            }),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValueOnce(mockQuery({ count: String(rows.length) }));
+      mockDb.selectFrom.mockReturnValueOnce(mockQuery(rows));
     }
 
     test('200: each report includes file_size sourced from getObjectSize', async () => {
@@ -356,23 +354,9 @@ describe('GET /reports unit tests', () => {
   describe('Pagination', () => {
     test('200: returns paginated response with page and limit', async () => {
       // count query
-      mockDb.selectFrom.mockReturnValueOnce({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue({ count: '3' } as any),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValueOnce(mockQuery({ count: '3' }));
       // data query
-      mockDb.selectFrom.mockReturnValueOnce({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockReturnValue({
-              offset: jest.fn().mockReturnValue({
-                execute: jest.fn().mockReturnValue([fakeReports[0]] as any),
-              }),
-            }),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValueOnce(mockQuery([fakeReports[0]]));
 
       const res = await handler(getEvent({ page: '1', limit: '1' }));
       expect(res.statusCode).toBe(200);
@@ -385,13 +369,7 @@ describe('GET /reports unit tests', () => {
     });
 
     test('200: only page provided returns all without pagination', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            execute: jest.fn().mockReturnValue(fakeReports as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery(fakeReports));
 
       const res = await handler(getEvent({ page: '1' }));
       const json = JSON.parse(res.body);
@@ -400,13 +378,7 @@ describe('GET /reports unit tests', () => {
     });
 
     test('200: only limit provided returns all without pagination', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            execute: jest.fn().mockReturnValue(fakeReports as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery(fakeReports));
 
       const res = await handler(getEvent({ limit: '2' }));
       const json = JSON.parse(res.body);
@@ -466,13 +438,7 @@ describe('GET /reports/upload-url unit tests', () => {
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(project as any),
-        }),
-      }),
-    });
+    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(project));
   }
 
   beforeEach(() => {
@@ -614,17 +580,11 @@ describe('Route precedence', () => {
   // the three-segment download route must be matched before the two-segment
   // getReport route swallows it as an id lookup with a trailing extra segment.
   test('GET /reports/{id}/download reaches downloadReport, not the /reports/{id} controller', async () => {
-    mockDb.selectFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue({
-            report_id: 5,
-            project_id: 1,
-            object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/gen.pdf',
-          } as any),
-        }),
-      }),
-    });
+    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery({
+      report_id: 5,
+      project_id: 1,
+      object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/1/gen.pdf',
+    }));
     const res = await handler({
       rawPath: '/reports/5/download',
       requestContext: { http: { method: 'GET' } },
@@ -658,13 +618,7 @@ describe('POST /reports unit tests', () => {
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(project as any),
-        }),
-      }),
-    });
+    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(project));
   }
 
   beforeEach(() => {
@@ -807,13 +761,7 @@ describe('GET /reports/{id} unit tests', () => {
   };
 
   function setupReportMock(report: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(report as any),
-        }),
-      }),
-    });
+    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(report));
   }
 
   beforeEach(() => {
@@ -906,13 +854,7 @@ describe('GET /reports/{id}/download unit tests', () => {
   };
 
   function setupReportMock(report: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(report as any),
-        }),
-      }),
-    });
+    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(report));
   }
 
   beforeEach(() => {
@@ -993,13 +935,7 @@ describe('DELETE /reports/{id} unit tests', () => {
   };
 
   function setupReportMock(report: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(report as any),
-        }),
-      }),
-    });
+    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(report));
   }
 
   function setupDeleteMock(numDeletedRows: bigint) {
@@ -1075,69 +1011,19 @@ describe('DELETE /reports/{id} unit tests', () => {
       expect(res.statusCode).toBe(403);
     });
 
-    test('200: a report with no object_url deletes cleanly, fileDeleted is true, and S3 is never called', async () => {
-      setupReportMock({ ...fakeReport, object_url: null });
+    // A soft delete keeps the file so the row can be restored.
+    test('200: the generated file is left in S3', async () => {
+      process.env.REPORTS_BUCKET_NAME = 'bucket';
+      setupReportMock({
+        ...fakeReport,
+        object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/2/gen.pdf',
+      });
+
       const res = await handler(idEvent('DELETE', '5'));
 
       expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).fileDeleted).toBe(true);
-      expect(mockS3Send).not.toHaveBeenCalled();
-    });
-
-    describe('the generated file goes with the row', () => {
-      const storedReport = {
-        ...fakeReport,
-        object_url: 'https://bucket.s3.us-east-2.amazonaws.com/reports/2/gen.pdf',
-      };
-
-      beforeEach(() => {
-        process.env.REPORTS_BUCKET_NAME = 'bucket';
-        setupReportMock(storedReport);
-        mockS3Send.mockResolvedValue({});
-      });
-
-      test('deletes the object behind the report', async () => {
-        const res = await handler(idEvent('DELETE', '5'));
-
-        expect(res.statusCode).toBe(200);
-        expect(JSON.parse(res.body).fileDeleted).toBe(true);
-        expect(mockS3Send).toHaveBeenCalledWith(
-          expect.objectContaining({
-            __type: 'DeleteObject',
-            Bucket: 'bucket',
-            Key: 'reports/2/gen.pdf',
-          }),
-        );
-      });
-
-      test('a failing S3 delete still deletes the row', async () => {
-        // An orphaned object is recoverable; a row that cannot be deleted is
-        // not, so S3 trouble must not turn a successful delete into a 500.
-        mockS3Send.mockRejectedValue(new Error('AccessDenied'));
-
-        const res = await handler(idEvent('DELETE', '5'));
-
-        expect(res.statusCode).toBe(200);
-        expect(JSON.parse(res.body).fileDeleted).toBe(false);
-      });
-
-      test('the row is deleted before the object', async () => {
-        const order: string[] = [];
-        mockRemoveReport.mockImplementation(async () => {
-          order.push('row');
-          return 1n;
-        });
-        mockS3Send.mockImplementation(async () => {
-          order.push('object');
-          return {};
-        });
-
-        await handler(idEvent('DELETE', '5'));
-
-        // Reversed, a failed row delete would leave a row pointing at a file
-        // that no longer exists.
-        expect(order).toEqual(['row', 'object']);
-      });
+      expect(mockRemoveReport).toHaveBeenCalledWith(5);
+      expect(mockS3Send).not.toHaveBeenCalledWith(expect.objectContaining({ __type: 'DeleteObject' }));
     });
   });
 });

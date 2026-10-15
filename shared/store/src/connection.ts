@@ -1,4 +1,13 @@
-import { Kysely, PostgresDialect } from 'kysely'
+import {
+  Kysely,
+  PostgresDialect,
+  type KyselyPlugin,
+  type PluginTransformQueryArgs,
+  type PluginTransformResultArgs,
+  type QueryResult,
+  type RootOperationNode,
+  type UnknownRow,
+} from 'kysely'
 import { Pool, type PoolConfig } from 'pg'
 import type { DB } from '@branch/types'
 import { dsqlAuthToken, dsqlRegion } from './dsql'
@@ -49,8 +58,21 @@ function postgresConfig(): PoolConfig {
   }
 }
 
+// Soft-delete bookkeeping: queries filter on deleted_at, but no result row ever carries it.
+export class OmitDeletedAt implements KyselyPlugin {
+  transformQuery(args: PluginTransformQueryArgs): RootOperationNode {
+    return args.node
+  }
+
+  async transformResult(args: PluginTransformResultArgs): Promise<QueryResult<UnknownRow>> {
+    for (const row of args.result.rows) delete row.deleted_at
+    return args.result
+  }
+}
+
 export const writeDb = new Kysely<DB>({
   dialect: new PostgresDialect({
     pool: new Pool(dsqlRegion(host) ? dsqlConfig() : postgresConfig()),
   }),
+  plugins: [new OmitDeletedAt()],
 })
