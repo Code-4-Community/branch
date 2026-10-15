@@ -49,7 +49,9 @@ the row is loaded.
   Paths are canonicalized to the prefixed form, so one table serves both.
 - **Authentication and the route's permission**, resolved once per request via
   `resolveAuth`. A controller that runs has already cleared its route's gate.
-- OPTIONS preflight, `GET /<prefix>/health`, 404, and 500.
+- OPTIONS preflight, `GET /<prefix>/health`, 404, and 500. Health awaits the
+  optional `warmup` first, so the frontend's load-time ping leaves a cold
+  container with its JWKS and DB connection ready.
 - CORS headers on every response, via `json`.
 - **Sentry reporting for the 500 path.** The Sentry Lambda layer wraps the
   handler and records *uncaught throws* only. Every lambda catches instead, so
@@ -62,7 +64,8 @@ the row is loaded.
 
 | Export | Purpose |
 | --- | --- |
-| `dispatch(event, { prefix, routes, resolveAuth })` | Route an event; returns a response. |
+| `dispatch(event, { prefix, routes, resolveAuth, warmup })` | Route an event; returns a response. |
+| `prewarm(warm)` | Start `warm` at module scope (Lambda only) and return the `warmup` health awaits. |
 | `json(status, body)` | JSON response with CORS headers. |
 | `parseBody(event)` | Parse a JSON body; `null` when malformed. |
 | `requirePermission(subject, action, resource?)` | 403 carrying the policy's own reason, or `undefined` when allowed. |

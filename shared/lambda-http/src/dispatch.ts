@@ -21,7 +21,7 @@ import type { DispatchOptions, RequestAuth, Route } from './types';
  */
 export async function dispatch(
   event: any,
-  { prefix, routes, resolveAuth }: DispatchOptions,
+  { prefix, routes, resolveAuth, warmup }: DispatchOptions,
 ): Promise<APIGatewayProxyResult> {
   // Hoisted out of the try so the catch can name the route that failed.
   const rawPath: string = event?.rawPath || event?.path || '/';
@@ -42,6 +42,7 @@ export async function dispatch(
     if (method === 'OPTIONS') return json(200, {});
 
     if (path === `${base}/health` && method === 'GET') {
+      await warmup?.();
       return json(200, { ok: true, timestamp: new Date().toISOString() });
     }
 

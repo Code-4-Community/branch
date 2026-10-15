@@ -1,5 +1,5 @@
 export * from './types';
-export { extractToken, authenticateRequest } from './authenticate';
+export { extractToken, authenticateRequest, warmAuth } from './authenticate';
 export { loadRbacSubject, preloadedSubject } from './rbac';
 // The policy itself is re-exported so a lambda needs one import for auth and
 // authorization, the same way this package already re-exports the auth DTOs.

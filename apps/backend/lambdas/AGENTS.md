@@ -50,7 +50,7 @@ export const getDonor: RouteHandler = async ({ params }) => {
   return json(200, { ... });
 };
 ```
-- `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health`, 404 and 500 centrally — routes.ts only lists real endpoints.
+- `dispatch()` handles OPTIONS preflight, `GET /<prefix>/health` (after awaiting `warmup`), 404 and 500 centrally — routes.ts only lists real endpoints.
 - **A caught error is an error Sentry cannot see.** The Sentry layer wraps the handler and records uncaught throws only, and we always catch so API Gateway returns a JSON 500 instead of a 502. `dispatch()` reports what reaches its catch; a controller that returns its own 500 must use `serverError(err, 'Failed to …')` from `@branch/lambda-http` rather than `console.error` + `json(500, …)`. Same status to the caller, one less invisible failure.
 - **NEVER remove or modify the `ROUTES-START` / `ROUTES-END` markers** — the CLI inserts new table entries between them.
 - Patterns are always full-prefixed (`/donors/:id`, never `/:id`) so one table works whether the event arrives via API Gateway's `{proxy+}` (full path) or the shared dev-server (prefix stripped) — `dispatch()` canonicalizes both to the prefixed form.
@@ -76,6 +76,8 @@ export const resolveAuth = createAuthResolver(authenticateRequest, (ctx) => load
 ```
 
 `handler.ts` hands `resolveAuth` to `dispatch`, which calls it **once per request**.
+
+`auth.ts` also exports `warmup = () => warmAuth(db)` (Cognito JWKS + DB connection). `handler.ts` wraps it in `prewarm()` at module scope, so the work starts during Lambda init, and passes it to `dispatch` as `warmup`. `GET /<prefix>/health` waits for it, and the frontend pings every service's `/health` on page load (`warmServices` in `apps/frontend/src/lib/api.ts`) to absorb cold starts early.
 
 ### Two layers, and which one to use
 

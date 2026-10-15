@@ -1,4 +1,8 @@
-import { authenticateRequest as _authenticateRequest, loadRbacSubject } from '@branch/lambda-auth';
+import {
+  authenticateRequest as _authenticateRequest,
+  loadRbacSubject,
+  warmAuth,
+} from '@branch/lambda-auth';
 import { createAuthResolver } from '@branch/lambda-http';
 import { db } from '@branch/store';
 
@@ -17,3 +21,6 @@ export async function authenticateRequest(
 export const resolveAuth = createAuthResolver(authenticateRequest, (context) =>
   loadRbacSubject(db, context),
 );
+
+/** JWKS + DB connection; handed to `prewarm` in handler.ts. */
+export const warmup = () => warmAuth(db);

@@ -5,3 +5,4 @@ export { dispatch } from './dispatch';
 export { parseBody } from './body';
 export { requirePermission, createAuthResolver, ANONYMOUS_AUTH } from './authz';
 export { reportError, serverError } from './errors';
+export { prewarm } from './warmup';

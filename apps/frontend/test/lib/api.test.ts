@@ -49,3 +49,20 @@ describe('apiFetch', () => {
     await expect(apiFetch('/auth/login')).rejects.toThrow('Bad Request');
   });
 });
+
+describe('warmServices', () => {
+  it('pings every service health endpoint once, without a preflight', async () => {
+    const { warmServices } = await import('@/lib/api');
+    global.fetch = jest.fn().mockResolvedValue({} as Response);
+    warmServices();
+    warmServices();
+
+    const calls = (global.fetch as jest.Mock).mock.calls;
+    expect(calls.map(([url]) => new URL(url as string).pathname).sort()).toEqual(
+      ['auth', 'donors', 'expenditures', 'projects', 'reports', 'users'].map(
+        (s) => `/${s}/health`,
+      ),
+    );
+    for (const [, init] of calls) expect(init).toEqual({ mode: 'no-cors' });
+  });
+});

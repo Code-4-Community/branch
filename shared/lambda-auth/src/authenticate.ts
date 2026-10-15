@@ -32,6 +32,17 @@ function getVerifier() {
   return verifier;
 }
 
+/**
+ * Pay a cold start's two network setups up front: the Cognito JWKS fetch the
+ * first `verify()` would make, and the DB connection the first query would open.
+ */
+export async function warmAuth(db: QueryableDb): Promise<void> {
+  await Promise.all([
+    getVerifier().hydrate(),
+    db.selectFrom('branch.users').select('user_id').limit(1).execute(),
+  ]);
+}
+
 export function extractToken(event: any): string | null {
   const authHeader = event.headers?.Authorization || event.headers?.authorization;
   if (!authHeader) return null;
