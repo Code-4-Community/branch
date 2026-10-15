@@ -8,7 +8,6 @@
  *   npm run seed -- --if-empty seed only an empty database
  *   npm run reset              rebuild the schema from migrations, then seed
  *   npm run fingerprint        record which migrations built the live schema
- *   npm run db -- copy-to-dsql copy RDS into Aurora DSQL (see copy-to-dsql.ts)
  *
  * Migrations are Flyway's job -- see flyway.sh. The Makefile in apps/backend
  * wraps all of this; CI calls it directly.
@@ -17,7 +16,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PoolClient } from 'pg';
 import { MIGRATIONS_DIR, createPool, describeTarget } from './config';
-import { copyToDsql } from './copy-to-dsql';
 import {
   rebuildSchema,
   resetData,
@@ -110,12 +108,8 @@ async function main(): Promise<void> {
         await stampFingerprint(client);
         console.log(`fingerprinted ${describeTarget()}`);
       });
-    case 'copy-to-dsql':
-      return copyToDsql(args);
     default:
-      console.error(
-        'usage: db <new NAME|seed [--if-empty]|reset|fingerprint|copy-to-dsql [--verify|--reset]>',
-      );
+      console.error('usage: db <new NAME|seed [--if-empty]|reset|fingerprint>');
       process.exitCode = 1;
   }
 }

@@ -8,12 +8,6 @@ DSQL_PLUGIN_SHA256=2d5b8e3f16732afc70e6bd096c4817f8967f7e755c4e38d5f604ca85cfacd
 DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 flyway_args=" $* "
 
-# Production is Aurora DSQL, built from V0000 with no baseline, so every file is immutable.
-BASELINE_VERSION=0
-
-# Off by default: on production, baselining would silently adopt an unrecognised database.
-BASELINE_ON_MIGRATE=${FLYWAY_BASELINE_ON_MIGRATE:-false}
-
 # Percent-encoded credentials in DATABASE_URL are not decoded -- use DB_USER/DB_PASSWORD.
 if [ -n "${DATABASE_URL:-}" ]; then
   rest=${DATABASE_URL#*://}
@@ -41,10 +35,9 @@ case "$db_host" in
   *) dsql=false ;;
 esac
 
-ca_path=${DB_SSL_CA:-}
+ssl=''
 if [ "$dsql" = true ]; then
   # IAM token instead of a password; TLS verified against the JVM's Amazon roots.
-  ca_path=''
   ssl='?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory'
   if [ -z "${DATABASE_URL:-}" ]; then
     db_user=${DB_USER:-admin}
@@ -62,12 +55,6 @@ if [ "$dsql" = true ]; then
     db_password=$(aws dsql "$token_cmd" --hostname "$db_host" --region "$region" --expires-in 3600)
   fi
   : "${FLYWAY_PLACEHOLDER_ASYNC:=ASYNC}"
-elif [ -n "$ca_path" ]; then
-  ssl='?sslmode=verify-full&sslrootcert='
-elif [ "${DB_SSL:-}" = 'true' ]; then
-  ssl='?sslmode=require'
-else
-  ssl=''
 fi
 
 # outOfOrder: PRs merge out of timestamp order. async: Aurora DSQL has no synchronous CREATE INDEX.
@@ -78,8 +65,6 @@ add_flags() {
     -defaultSchema=branch \
     -createSchemas=true \
     -outOfOrder=true \
-    "-baselineOnMigrate=$BASELINE_ON_MIGRATE" \
-    "-baselineVersion=$BASELINE_VERSION" \
     -validateMigrationNaming=true \
     -cleanDisabled=true \
     "-placeholders.async=${FLYWAY_PLACEHOLDER_ASYNC:-}"
@@ -87,11 +72,9 @@ add_flags() {
 }
 
 if [ "$dsql" = false ] && command -v flyway >/dev/null 2>&1; then
-  [ -z "$ca_path" ] || ssl="${ssl}${ca_path}"
   # shellcheck disable=SC2046  # deliberate word splitting: one flag per line
   set -- flyway $(add_flags "$DB_DIR/migrations") "$@"
 else
-  ca_mount=''
   plugin_mount=''
   if [ "$dsql" = true ]; then
     cache=${XDG_CACHE_HOME:-$HOME/.cache}/branch-flyway
@@ -109,10 +92,6 @@ else
     fi
     plugin_mount="--volume=$plugin:/flyway/drivers/flyway-database-dsql.jar:ro"
   fi
-  if [ -n "$ca_path" ]; then
-    ssl="${ssl}/rds-ca.pem"
-    ca_mount="--volume=$ca_path:/rds-ca.pem:ro"
-  fi
   # Docker Desktop ignores --network=host unless it is switched on, so a loopback
   # host has to go via the gateway. Only there: on a native daemon --network=host
   # is real, and the gateway address misses a server bound to loopback only.
@@ -127,7 +106,7 @@ else
     --volume="$DB_DIR/migrations:/db/migrations:ro" \
     --env=FLYWAY_URL --env=FLYWAY_USER --env=FLYWAY_PASSWORD \
     --env=FLYWAY_DSQL_AWAIT_ASYNC_INDEXES --env=FLYWAY_DSQL_OCC_MAX_RETRIES \
-    ${ca_mount:+"$ca_mount"} ${plugin_mount:+"$plugin_mount"} "$FLYWAY_IMAGE" \
+    ${plugin_mount:+"$plugin_mount"} "$FLYWAY_IMAGE" \
     $(add_flags /db/migrations) "$@"
 fi
 

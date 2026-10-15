@@ -54,7 +54,6 @@
 | [aws_cloudwatch_log_group.lambda](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cloudwatch_log_group) | resource |
 | [aws_cognito_user_pool.branch_user_pool](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool) | resource |
 | [aws_cognito_user_pool_client.branch_client](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/cognito_user_pool_client) | resource |
-| [aws_db_instance.branch_rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/db_instance) | resource |
 | [aws_dsql_cluster.branch](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/dsql_cluster) | resource |
 | [aws_iam_openid_connect_provider.github](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_openid_connect_provider) | resource |
 | [aws_iam_role.ci_apply](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/iam_role) | resource |
@@ -96,13 +95,10 @@
 | [aws_s3_bucket_server_side_encryption_configuration.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_server_side_encryption_configuration) | resource |
 | [aws_s3_bucket_versioning.lambda_deployments](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_bucket_versioning) | resource |
 | [aws_s3_object.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/s3_object) | resource |
-| [aws_security_group.rds](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/security_group) | resource |
 | [aws_ses_domain_dkim.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_dkim) | resource |
 | [aws_ses_domain_identity.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_identity) | resource |
 | [aws_ses_domain_identity_verification.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_identity_verification) | resource |
 | [aws_ses_domain_mail_from.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/ses_domain_mail_from) | resource |
-| [aws_vpc_security_group_egress_rule.rds_all](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_egress_rule) | resource |
-| [aws_vpc_security_group_ingress_rule.rds_postgres](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [archive_file.lambda_placeholder](https://registry.terraform.io/providers/hashicorp/archive/latest/docs/data-sources/file) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.ci_apply_assume](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
@@ -112,9 +108,7 @@
 | [aws_iam_policy_document.frontend_bucket](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/region) | data source |
 | [aws_route53_zone.app](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/route53_zone) | data source |
-| [aws_vpc.default](https://registry.terraform.io/providers/hashicorp/aws/6.14.1/docs/data-sources/vpc) | data source |
 | [infisical_secrets.grafana_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
-| [infisical_secrets.rds_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
 | [infisical_secrets.sentry_folder](https://registry.terraform.io/providers/infisical/infisical/0.17.0/docs/data-sources/secrets) | data source |
 
 ## Inputs

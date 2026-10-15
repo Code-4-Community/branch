@@ -125,8 +125,6 @@ jobs:
           set -euo pipefail
           MB=$(git merge-base "$BASE" HEAD)
           TAB=$(printf '\t')
-          baseline=$(git show "$MB:apps/backend/db/flyway.sh" | sed -n 's/^BASELINE_VERSION=//p')
-          baseline=${baseline:-0}
 
           # version<TAB>blob<TAB>name, sorted because `join` requires sorted input.
           list() {
@@ -134,7 +132,6 @@ jobs:
               name=$(basename "$path")
               case "$name" in *.sql) ;; *) continue ;; esac
               version=$(printf '%s' "$name" | sed -E 's/^V?0*([0-9]+)_+.*/\1/')
-              [ "$baseline" -eq 0 ] || [ "$version" -gt "$baseline" ] || continue
               printf '%s\t%s\t%s\n' "$version" "$sha" "$name"
             done | sort
           }
@@ -185,41 +182,9 @@ jobs:
               echo "::error file=$DIR/$f::name must be VYYYYMMDDHHMMSS__lower_snake_case.sql -- use 'make new-migration NAME=...' so it is generated for you"
               fail=1
             fi
-            # Warning only: outOfOrder is set at runtime; the next step fails anything at or below the baseline.
+            # Warning only: outOfOrder is set at runtime.
             if [ -n "${last:-}" ] && [ "$f" \< "$last" ]; then
               echo "::warning file=$DIR/$f::sorts before $last, which is already on main, so it will be applied out of order. Renaming it to a current UTC timestamp keeps the history readable."
-            fi
-          done
-          exit $fail
-
-      # Flyway skips anything at or below the baseline as "Below Baseline" with exit 0; CI's empty schema never baselines, so nothing else catches it.
-      - name: New migrations must sort above the adoption baseline
-        if: steps.base.outputs.sha != ''
-        env:
-          BASE: ${{ steps.base.outputs.sha }}
-        run: |
-          set -euo pipefail
-          MB=$(git merge-base "$BASE" HEAD)
-          # Main's value: a PR must not lower the floor it is checked against.
-          baseline=$(git show "$MB:apps/backend/db/flyway.sh" | sed -n 's/^BASELINE_VERSION=//p')
-          case "$baseline" in
-            '' | *[!0-9]*)
-              echo "::error::could not read a numeric BASELINE_VERSION from apps/backend/db/flyway.sh on main"
-              exit 1 ;;
-          esac
-          version_of() { basename "$1" | sed -E 's/^V0*([0-9]+)_+.*/\1/'; }
-
-          # Renames show up as additions, so skip a file whose exact contents are on main.
-          git ls-tree -r "$MB" -- "$DIR" | awk '{print $3}' | sort -u > "$RUNNER_TEMP/known.txt"
-
-          fail=0
-          for f in $(git diff --diff-filter=A --name-only "$MB" HEAD -- "$DIR"); do
-            case "$f" in *.sql) ;; *) continue ;; esac
-            v=$(version_of "$f")
-            grep -qxF "$(git rev-parse "HEAD:$f")" "$RUNNER_TEMP/known.txt" && continue
-            if [ "$v" -le "$baseline" ]; then
-              echo "::error file=$f::version $v is at or below the adoption baseline $baseline, so production would report it \"Below Baseline\" and never run it -- while CI stays green. Rename it with a current UTC timestamp."
-              fail=1
             fi
           done
           exit $fail
