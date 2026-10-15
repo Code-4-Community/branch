@@ -6,6 +6,7 @@ FLYWAY_IMAGE=flyway/flyway:13.5.0-alpine
 DSQL_PLUGIN_URL=https://repo1.maven.org/maven2/org/flywaydb/flyway-database-dsql/10.26.0/flyway-database-dsql-10.26.0.jar
 DSQL_PLUGIN_SHA256=2d5b8e3f16732afc70e6bd096c4817f8967f7e755c4e38d5f604ca85cfacdc89
 DB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+flyway_args=" $* "
 
 # Last migration applied under kysely; already on production, so Flyway baselines here.
 # Also a permanent floor: anything at or below it is "Below Baseline" and never runs.
@@ -142,5 +143,16 @@ export FLYWAY_URL FLYWAY_USER FLYWAY_PASSWORD
 FLYWAY_DSQL_AWAIT_ASYNC_INDEXES=${FLYWAY_DSQL_AWAIT_ASYNC_INDEXES:-true}
 FLYWAY_DSQL_OCC_MAX_RETRIES=${FLYWAY_DSQL_OCC_MAX_RETRIES:-3}
 export FLYWAY_DSQL_AWAIT_ASYNC_INDEXES FLYWAY_DSQL_OCC_MAX_RETRIES
+
+# Flyway 13 creates the schema and its history table in one transaction, which DSQL rejects.
+case "$dsql$flyway_args" in
+  true*' migrate '*)
+    PGPASSWORD=$db_password
+    export PGPASSWORD
+    docker run --rm --env=PGPASSWORD postgres:16-alpine psql -qX -v ON_ERROR_STOP=1 \
+      "host=$db_host port=$db_port dbname=$db_name user=$db_user sslmode=verify-full sslrootcert=system" \
+      -c 'CREATE SCHEMA IF NOT EXISTS branch'
+    ;;
+esac
 
 exec "$@"

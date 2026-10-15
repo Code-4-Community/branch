@@ -102,6 +102,8 @@ and every migration has to run on both. CI enforces all of this with `dsql-lint`
   `CREATE SEQUENCE ... CACHE 1` (its own migration) and `INT DEFAULT nextval(...)`.
   `LANGUAGE sql` functions are fine.
 - **At most 3,000 rows changed**, cascades included.
+- **Always give `NUMERIC` a precision and scale.** DSQL stores a bare `NUMERIC` as
+  `numeric(18,6)`, so `12.34` comes back as `12.340000`.
 
 `${async}` in a migration is a Flyway placeholder. It expands to nothing on
 PostgreSQL and to `ASYNC` on Aurora DSQL (`flyway.sh` switches on a DSQL `DB_HOST`).

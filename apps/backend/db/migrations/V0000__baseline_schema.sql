@@ -82,19 +82,20 @@ CREATE TABLE reports (
     date_created DATE NOT NULL DEFAULT CURRENT_DATE
 );
 
+-- NUMERIC(18,2), never bare NUMERIC: DSQL stores that as numeric(18,6) and prints 12.340000.
 CREATE TABLE expenditure_rollup (
     project_id        INT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
     month             DATE NOT NULL,
     category          VARCHAR(50),
     status            VARCHAR(15) NOT NULL,
-    total_amount      NUMERIC NOT NULL DEFAULT 0,
+    total_amount      NUMERIC(18,2) NOT NULL DEFAULT 0,
     expenditure_count INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE project_rollup (
     project_id     INT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
     member_count   INT NOT NULL DEFAULT 0,
-    total_donated  NUMERIC NOT NULL DEFAULT 0,
+    total_donated  NUMERIC(18,2) NOT NULL DEFAULT 0,
     donation_count INT NOT NULL DEFAULT 0,
     report_count   INT NOT NULL DEFAULT 0,
     updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
