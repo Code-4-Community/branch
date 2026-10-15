@@ -122,7 +122,7 @@ describe('ReviewExpenseModal', () => {
       await screen.findByText('Ada Lovelace');
 
       fireEvent.click(screen.getByText('Needs Info'));
-      fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+      fireEvent.change(screen.getByPlaceholderText('Add notes for the submitter'), {
         target: { value: 'Please attach the itemised receipt' },
       });
       fireEvent.click(screen.getByText('Save Changes'));
@@ -143,7 +143,7 @@ describe('ReviewExpenseModal', () => {
       await screen.findByText('Ada Lovelace');
 
       fireEvent.click(screen.getByText('Approved'));
-      fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+      fireEvent.change(screen.getByPlaceholderText('Add notes for the submitter'), {
         target: { value: 'Looks good' },
       });
       fireEvent.click(screen.getByText('Save Changes'));
@@ -188,7 +188,7 @@ describe('ReviewExpenseModal', () => {
       fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '' } });
       fireEvent.click(screen.getByText('Save Changes'));
 
-      expect(await screen.findByText('Enter an amount')).toBeInTheDocument();
+      expect(await screen.findByText('Enter a valid amount')).toBeInTheDocument();
       expect(updateExpenditure).not.toHaveBeenCalled();
     });
 

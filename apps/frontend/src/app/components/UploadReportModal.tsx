@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import { Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import Button from './Button';
 import DropdownSelector from './DropdownSelector';
 import { uploadReport, type Project } from '@/lib/reports';
 
@@ -217,20 +218,10 @@ export default function UploadReportModal({
             </Dialog.Body>
 
             <Dialog.Footer>
-              <Button
-                variant="outline"
-                borderColor="var(--color-core-green)"
-                onClick={handleClose}
-                disabled={loading}
-              >
+              <Button variant="secondary" onClick={handleClose} disabled={loading}>
                 Cancel
               </Button>
-              <Button
-                backgroundColor="var(--color-core-green)"
-                color="var(--color-core-white)"
-                onClick={handleSubmit}
-                loading={loading}
-              >
+              <Button onClick={handleSubmit} isLoading={loading}>
                 Upload
               </Button>
             </Dialog.Footer>

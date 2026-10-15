@@ -146,6 +146,7 @@ export default function ProjectDetailView({ id }: { id: string }) {
                 <SectionHeading
                   label="Expenses"
                   icon={<LuCircleDollarSign aria-hidden />}
+                  viewAllLabel={showAllExpenses ? 'Show Less' : 'View All'}
                   onViewAll={
                     expenditures.length > PREVIEW_EXPENSES
                       ? () => setShowAllExpenses((prev) => !prev)
@@ -170,6 +171,7 @@ export default function ProjectDetailView({ id }: { id: string }) {
               <SectionHeading
                 label="Staff"
                 icon={<LuUsers aria-hidden />}
+                viewAllLabel={showAllStaff ? 'Show Less' : 'View All'}
                 onViewAll={
                   members.length > PREVIEW_STAFF
                     ? () => setShowAllStaff((prev) => !prev)

@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import { Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import Button from './Button';
 import DropdownSelector from './DropdownSelector';
 import { useApi } from '@/hooks/useApi';
 import FileUpload from './FileUpload';
@@ -47,8 +48,10 @@ export default function AddExpenseModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
+  const [submitting, setSubmitting] = useState(false);
+
   const amount = amountDigits ? Number(amountDigits) : 0;
-  
+
   const isFormValid =
     newDate.trim().length > 0 &&
     newType.trim().length > 0 &&
@@ -119,6 +122,7 @@ export default function AddExpenseModal({
       return;
     }
 
+    setSubmitting(true);
     try {
       await api.post('/expenditures', {
         projectID: selectedProject.project_id,
@@ -133,6 +137,8 @@ export default function AddExpenseModal({
       onSuccess();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create expense');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -194,9 +200,9 @@ export default function AddExpenseModal({
                           alignItems: 'center',
                           justifyContent: 'center',
                           backgroundColor: 'var(--color-black-100)',
-                          borderTop: '1px solid var(--color-black-200)',
-                          borderRight: '1px solid var(--color-black-200)',
-                          borderBottom: '1px solid var(--color-black-200)',
+                          borderTop: `1px solid ${dateError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
+                          borderRight: `1px solid ${dateError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
+                          borderBottom: `1px solid ${dateError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
                           borderRadius: '0 6px 6px 0',
                           pointerEvents: 'none',
                         }}
@@ -209,6 +215,11 @@ export default function AddExpenseModal({
                         </svg>
                       </span>
                     </div>
+                    {dateError && (
+                      <span style={{ color: 'var(--color-error-red)', fontSize: '12px' }}>
+                        Enter a date
+                      </span>
+                    )}
                   </div>
 
                   {/* Amount */}
@@ -312,7 +323,7 @@ export default function AddExpenseModal({
                       setNewDescription(e.target.value);
                       setDescError(false);
                     }}
-                    placeholder="Placeholder"
+                    placeholder="Describe the expense"
                     rows={4}
                     maxLength={500}
                     style={{
@@ -338,7 +349,7 @@ export default function AddExpenseModal({
 
                 {/* Upload Receipt */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500 }}>Upload Receipt</label>
+                  <label style={{ fontSize: '14px', fontWeight: 500 }}>Upload Receipt*</label>
                   <FileUpload
                     value={newFile}
                     upload={uploadReceipt}
@@ -348,7 +359,9 @@ export default function AddExpenseModal({
                       setReceiptUrl(objectUrl);
                       setFileError(null);
                     }}
-                    onReject={() => setFileError('File type not supported')}
+                    onReject={(reason) =>
+                      setFileError(reason === 'file-too-large' ? 'File must be under 10MB' : 'File type not supported')
+                    }
                   />
                   {fileError && (
                     <span style={{ color: 'var(--color-error-red)', fontSize: '12px', fontStyle: 'italic', fontWeight: 600 }}>
@@ -366,19 +379,14 @@ export default function AddExpenseModal({
               </Stack>
             </Dialog.Body>
             <Dialog.Footer>
-              <Button
-                variant="outline"
-                borderColor="var(--color-core-green)"
-                onClick={handleClose}
-              >
+              <Button variant="secondary" onClick={handleClose} disabled={submitting}>
                 Cancel
               </Button>
               <Button
-                backgroundColor={isFormValid ? 'var(--color-core-green)' : 'var(--color-primary-500)'}
-                color="var(--color-core-white)"
                 disabled={!isFormValid}
                 onClick={handleSubmit}
-                cursor={isFormValid ? 'pointer' : 'not-allowed'}
+                isLoading={submitting}
+                loadingText="Submitting…"
               >
                 Submit For Review
               </Button>
