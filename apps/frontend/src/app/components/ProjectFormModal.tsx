@@ -7,6 +7,7 @@ import TextInputField from './TextInputField';
 import DatePickerField from './DatePickerField';
 import StaffPicker from './StaffPicker';
 import { useApi } from '@/hooks/useApi';
+import { isInAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import { ADMIN_MEMBER_ROLE } from '@/types';
 import type {
   AssignableStaff,
@@ -226,6 +227,9 @@ export default function ProjectFormModal({
       open={open}
       onOpenChange={(e) => {
         if (!e.open) onClose();
+      }}
+      onInteractOutside={(e) => {
+        if (isInAnchoredPopover(e.detail.target)) e.preventDefault();
       }}
       scrollBehavior="inside"
     >

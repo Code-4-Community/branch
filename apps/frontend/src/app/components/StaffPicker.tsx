@@ -160,6 +160,7 @@ export default function StaffPicker({
           createPortal(
             <div
               role="listbox"
+              data-anchored-popover
               aria-label={label}
               ref={listboxRef}
               style={position}
