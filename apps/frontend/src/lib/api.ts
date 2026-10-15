@@ -17,19 +17,12 @@ function resolveBaseUrl(path: string): string {
 
 let servicesWarmed = false;
 
-/**
- * Ping every service's `/health` once per page load, so the Lambdas cold-start
- * while the user is still on the first screen instead of on each first visit.
- * `/health` waits for the JWKS fetch and DB connection before answering.
- *
- * A bare GET with `no-cors` is a CORS "simple request": no preflight, and the
- * opaque response is never read.
- */
 export function warmServices(): void {
   if (servicesWarmed) return;
   servicesWarmed = true;
   for (const service of Object.keys(SERVICE_PORTS)) {
     const path = `/${service}/health`;
+    // no-cors GET is a CORS simple request: no preflight.
     fetch(`${resolveBaseUrl(path)}${path}`, { mode: 'no-cors' }).catch(
       () => {},
     );

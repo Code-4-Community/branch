@@ -63,6 +63,5 @@ export interface DispatchOptions {
    * route without it.
    */
   resolveAuth?: (event: any) => Promise<RequestAuth>;
-  /** Awaited by `/<prefix>/health`; build it with `prewarm`. */
   warmup?: () => Promise<void>;
 }

@@ -22,5 +22,4 @@ export const resolveAuth = createAuthResolver(authenticateRequest, (context) =>
   loadRbacSubject(db, context),
 );
 
-/** JWKS + DB connection; handed to `prewarm` in handler.ts. */
 export const warmup = () => warmAuth(db);
