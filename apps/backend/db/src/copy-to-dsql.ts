@@ -72,12 +72,18 @@ async function columnShapes(client: PoolClient, table: string): Promise<string[]
 const qualified = (table: string) => `${SCHEMA}.${table}`;
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
-// COLLATE "C": DSQL only has C, and RDS's default would sort the same rows differently.
+// COLLATE "C": DSQL only has C. trim_scale: RDS's bare numeric keeps 0 where DSQL's numeric(18,2) has 0.00.
 async function digest(client: PoolClient, table: string): Promise<string> {
+  const row = (await columnShapes(client, table))
+    .map((shape) => {
+      const [name, type] = shape.split(' ');
+      return type.startsWith('numeric') ? `trim_scale(${ident(name)})` : ident(name);
+    })
+    .join(', ');
   const { rows } = await client.query<{ n: string; h: string | null }>(
     `SELECT count(*) AS n,
-            md5(string_agg(t::text, E'\\n' ORDER BY t::text COLLATE "C")) AS h
-       FROM ${qualified(table)} t`,
+            md5(string_agg(r, E'\\n' ORDER BY r COLLATE "C")) AS h
+       FROM (SELECT ROW(${row})::text AS r FROM ${qualified(table)}) t`,
   );
   return `${rows[0].n}:${rows[0].h ?? '-'}`;
 }
@@ -109,7 +115,10 @@ async function assertSameShape(source: PoolClient, target: PoolClient): Promise<
   }
   for (const table of TABLES) {
     const [a, b] = [await columnShapes(source, table), await columnShapes(target, table)];
-    if (a.join(',') !== b.join(',')) {
+    // RDS's rollup totals are bare numeric; DSQL's are numeric(18,2). The digest compares the values.
+    const loosen = (shape: string, i: number) =>
+      / numeric /.test(` ${a[i]} `) ? shape.replace(/^(\S+ numeric)\(\d+,\d+\)/, '$1') : shape;
+    if (a.join(',') !== b.map(loosen).join(',')) {
       throw new Error(`${table}: source columns [${a}] differ from target [${b}]`);
     }
   }
