@@ -193,8 +193,11 @@ function LoginPageContent() {
                     </h5>
                     <div className="flex flex-col gap-4 w-full !mb-10">
                         <TextInputField
-                            label="Authentication code *"
+                            label="Authentication code"
+                            required
                             placeholder="123456"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
                             errorMessage={mfaCodeError}
                             isError={!!mfaCodeError}
                             value={mfaCode}
@@ -225,7 +228,8 @@ function LoginPageContent() {
             )}
             <div className="flex flex-col gap-4 w-full !mb-10">
                 <TextInputField
-                    label="Email *"
+                    label="Email"
+                    required
                     placeholder="Enter email address"
                     errorMessage={emailError}
                     isError={!!emailError}
@@ -236,7 +240,8 @@ function LoginPageContent() {
                     autoComplete="username"
                 />
                 <TextInputField
-                    label="Password *"
+                    label="Password"
+                    required
                     placeholder="Enter password"
                     errorMessage={passwordError}
                     isError={!!passwordError}

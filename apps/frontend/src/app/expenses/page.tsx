@@ -32,6 +32,7 @@ import { formatCurrencyPrecise } from '@/lib/format';
 import {
   EXPENDITURE_STATUSES,
   EXPENDITURE_STATUS_LABELS,
+  EXPENSE_CATEGORIES,
   Expenditure,
   Project,
 } from '@/types';
@@ -43,14 +44,6 @@ const MONTHS = [
 
 const SORT_OPTIONS = ['Amount', 'Date'];
 const ROWS_PER_PAGE = 10;
-
-// Not exported: Next.js rejects non-page exports from a page module.
-const EXPENSE_CATEGORIES = [
-  'General',
-  'Travel',
-  'Travel Foreign',
-  'Visitor / Honorarium',
-];
 
 export default function ExpensePage() {
   return (

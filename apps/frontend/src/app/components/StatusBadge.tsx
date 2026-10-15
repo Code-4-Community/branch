@@ -63,7 +63,6 @@ export default function StatusBadge({ status, onClick, selected }: StatusBadgePr
         ...style,
         cursor: 'pointer',
         border: selected ? '2px solid var(--color-core-black)' : '2px solid transparent',
-        opacity: selected ? 1 : 0.55,
       }}
     >
       {label}

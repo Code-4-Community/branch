@@ -87,7 +87,7 @@ function fillValidForm() {
   fireEvent.change(screen.getByLabelText('Select a project'), {
     target: { value: 'Project Name 2' },
   });
-  fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+  fireEvent.change(screen.getByPlaceholderText('Describe the expense'), {
     target: { value: 'A test description' },
   });
   fireEvent.click(screen.getByText('mock-select-file'));
@@ -110,7 +110,7 @@ describe('AddExpenseModal Component', () => {
     expect(screen.getByText('Type of Expense*')).toBeInTheDocument();
     expect(screen.getByText('Project*')).toBeInTheDocument();
     expect(screen.getByText('Description*')).toBeInTheDocument();
-    expect(screen.getByText('Upload Receipt')).toBeInTheDocument();
+    expect(screen.getByText('Upload Receipt*')).toBeInTheDocument();
   });
 
   it('renders the date input', () => {
@@ -163,7 +163,7 @@ describe('AddExpenseModal Component', () => {
 
     // The receipt is intentionally not part of isFormValid, so the button
     // enables here, before any file is selected.
-    fireEvent.change(screen.getByPlaceholderText('Placeholder'), {
+    fireEvent.change(screen.getByPlaceholderText('Describe the expense'), {
       target: { value: 'A test description' },
     });
     expect(screen.getByText('Submit For Review')).not.toBeDisabled();

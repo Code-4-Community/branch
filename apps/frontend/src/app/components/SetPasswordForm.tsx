@@ -96,7 +96,8 @@ export default function SetPasswordForm({
       <div className="flex flex-col gap-4 w-full !mb-10">
         {includeCode && (
           <TextInputField
-            label="Verification code *"
+            label="Verification code"
+            required
             placeholder="Enter verification code"
             errorMessage={codeError}
             isError={!!codeError}
@@ -108,7 +109,8 @@ export default function SetPasswordForm({
           />
         )}
         <TextInputField
-          label="New Password *"
+          label="New Password"
+          required
           placeholder="Enter new password"
           errorMessage={newPasswordError}
           isError={!!newPasswordError}
@@ -119,7 +121,8 @@ export default function SetPasswordForm({
           autoComplete="new-password"
         />
         <TextInputField
-          label="Confirm Password *"
+          label="Confirm Password"
+          required
           placeholder="Retype password"
           errorMessage={confirmPasswordError}
           isError={!!confirmPasswordError}

@@ -25,7 +25,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     '!border-[1px] !border-solid !border-black-500 !bg-transparent !text-core-black hover:!bg-black-100 disabled:!text-black-500',
   ghost: '!bg-transparent !text-core-black hover:!bg-black-100 disabled:!text-black-500',
   danger:
-    '!bg-error-red !text-core-white hover:!bg-error-light-red disabled:!bg-error-light-red',
+    '!bg-error-red !text-core-white hover:!bg-error-light-red disabled:!bg-error-light-red disabled:!opacity-60',
 };
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

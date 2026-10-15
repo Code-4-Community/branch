@@ -684,7 +684,7 @@ function ReportsPageContent() {
                         </div>
 
                         <div>
-                          <label style={{ fontWeight: 600, fontSize: '14px' }}>Project</label>
+                          <label style={{ fontWeight: 600, fontSize: '14px' }}>Project*</label>
                           <NativeSelect.Root disabled={projects.length === 0}>
                             <NativeSelect.Field
                               value={generateProjectId}

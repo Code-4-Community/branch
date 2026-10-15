@@ -341,7 +341,13 @@ export default function DonationsPage() {
                     >
                       Add New Donation
                     </Dialog.Title>
-                    <CloseButton onClick={() => setShowNewDonation(false)} disabled={saving} />
+                    <CloseButton
+                      onClick={() => {
+                        setShowNewDonation(false);
+                        resetNewDonation();
+                      }}
+                      disabled={saving}
+                    />
                   </Dialog.Header>
                   <Dialog.Body>
                     <Stack gap={4}>
@@ -374,6 +380,7 @@ export default function DonationsPage() {
                           </span>
                         )}
                       </div>
+                      <label className="!text-sm !font-bold">Donor*</label>
                       <DropdownSelector
                         options={donorOptions}
                         placeholder="Select a donor"
@@ -386,6 +393,7 @@ export default function DonationsPage() {
                       {donorError && (
                         <span className="!text-xs !text-error-red">Select a donor</span>
                       )}
+                      <label className="!text-sm !font-bold">Project*</label>
                       <DropdownSelector
                         options={projectOptions}
                         placeholder="Select a project"

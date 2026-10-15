@@ -208,7 +208,7 @@ export default function DonorsPage() {
   const handleSave = async () => {
     const hasOrgError = !newOrganization.trim();
     const hasNameError = !newContactName.trim();
-    const hasEmailError = !newContactEmail.trim();
+    const hasEmailError = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newContactEmail.trim());
 
     setOrgError(hasOrgError);
     setNameError(hasNameError);
@@ -332,7 +332,13 @@ export default function DonorsPage() {
                     >
                       Add New Donor
                     </Dialog.Title>
-                    <CloseButton onClick={() => setShowNewDonor(false)} disabled={saving} />
+                    <CloseButton
+                      onClick={() => {
+                        setShowNewDonor(false);
+                        resetNewDonor();
+                      }}
+                      disabled={saving}
+                    />
                   </Dialog.Header>
                   <Dialog.Body>
                     <Stack gap={4}>
