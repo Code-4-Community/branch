@@ -83,6 +83,6 @@ The 403 is intentionally identical whether or not the address exists, so registr
 
 This is the real control, not the Cognito pool config: `authenticateRequest` rejects any Cognito identity whose `sub` has no `branch.users` row, so a Cognito user created out of band is inert. Full flow: admin `POST /users` → invitee `POST /auth/register` with that email → `POST /auth/verify-email` with the emailed code → `POST /auth/login`.
 
-**Bootstrapping the first admin** is a manual SQL statement in every environment, because `is_admin` can only be set by an existing admin: `make grant-admin EMAIL=…` locally, or the equivalent `UPDATE` against RDS in production.
+**Bootstrapping the first admin** is a manual SQL statement in every environment, because `is_admin` can only be set by an existing admin: `make grant-admin EMAIL=…` locally, or the equivalent `UPDATE` against the DSQL cluster in production.
 
 The auth lambda uses `USER_PASSWORD_AUTH` via the AWS SDK, not the SRP library. `POST /auth/login` returns either a token set or `{ ChallengeName, Session }`; `POST /auth/respond-challenge` completes it. Adding a challenge type is a row in `CHALLENGE_SPECS` — enabling MFA is a Terraform change, not a code change.

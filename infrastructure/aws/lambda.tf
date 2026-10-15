@@ -237,9 +237,6 @@ resource "aws_lambda_function" "functions" {
       DB_PORT = "5432"
       DB_NAME = "postgres"
 
-      # Still read by dsql-cutover.yml, which refuses to run once it equals DB_HOST.
-      DSQL_HOST = local.dsql_endpoint
-
       # Not secrets: the user pool ID is public, and the app client is created
       # with generate_secret = false, so there is no SECRET_HASH to protect.
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.branch_user_pool.id

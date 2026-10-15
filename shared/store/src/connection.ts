@@ -42,9 +42,7 @@ function postgresConfig(): PoolConfig {
     password: process.env.DB_PASSWORD ?? 'password',
     database: process.env.DB_NAME ?? 'branch_db',
 
-    // rds.force_ssl = 1 rejects unencrypted connections. Local postgres has no TLS.
-    // TODO: pin the RDS CA bundle instead of skipping verification.
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: false,
 
     // Bound a runaway query well under the 30s lambda timeout.
     statement_timeout: 10000,

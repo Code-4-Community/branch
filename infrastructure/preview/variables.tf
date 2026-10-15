@@ -7,7 +7,7 @@ variable "pr_number" {
 # from the ACTUAL prod lambda config (branch-auth + branch-reports). Passing it in
 # keeps prod as the single source of truth for DB_HOST / DB creds / Cognito ids /
 # reports bucket rather than duplicating -- or re-deriving -- them here.
-# Preview envs deliberately reuse the shared RDS + Cognito pool (data risk is
+# Preview envs deliberately reuse the shared database + Cognito pool (data risk is
 # accepted); migrations are NEVER run from this module -- the generated DB types
 # hardcode the `branch.` schema prefix, so a per-PR schema would require per-PR
 # type regeneration and rebuilding every lambda. A PR that adds a migration
