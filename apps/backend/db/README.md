@@ -89,8 +89,8 @@ CONCURRENTLY` and `VACUUM` don't work here — they can't run in a transaction.
 
 ## Writing for Aurora DSQL
 
-Production is moving from RDS to Aurora DSQL (see [the cutover](#the-rds--aurora-dsql-cutover)),
-and every migration has to run on both. CI enforces all of this with `dsql-lint`:
+Production runs on Aurora DSQL, while local dev and CI run Postgres, so every
+migration has to run on both. CI enforces all of this with `dsql-lint`:
 
 - **One DDL statement per file, and no DML beside it.** DSQL allows one DDL per
   transaction and never mixes it with `INSERT`/`UPDATE`/`DELETE`. A backfill is its own

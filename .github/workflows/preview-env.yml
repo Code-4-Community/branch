@@ -138,7 +138,7 @@ jobs:
             | del(.NODE_ENV, .AWS_REGION, .AWS_DEFAULT_REGION, .AWS_ACCESS_KEY_ID, .AWS_SECRET_ACCESS_KEY, .AWS_SESSION_TOKEN)
           ')
           # Fail loudly rather than shipping a preview that 401s on every DB call.
-          for key in DB_HOST DB_NAME DB_USER DB_PASSWORD COGNITO_USER_POOL_ID COGNITO_CLIENT_ID; do
+          for key in DB_HOST DB_NAME DB_USER COGNITO_USER_POOL_ID COGNITO_CLIENT_ID; do
             value=$(jq -r --arg k "$key" '.[$k] // ""' <<<"$ENV_JSON")
             if [ -z "$value" ]; then
               echo "::error::branch-auth/branch-reports did not provide $key; preview lambdas would be misconfigured."
