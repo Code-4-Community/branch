@@ -22,12 +22,14 @@ export const LOGIN_PATH = '/login';
  */
 export const DEFAULT_LANDING_PATH = '/projects';
 export const ADMIN_LANDING_PATH = '/dashboard';
+export const STAFF_CONSOLE_PATH = '/staff';
 
 /**
  * Asks the policy rather than reading `isAdmin`, so widening `dashboard:view`
  * later moves the landing page with it instead of leaving this behind.
  */
 export function landingPathFor(subject: RbacSubject): string {
+  if (can(subject, 'impersonation:console')) return STAFF_CONSOLE_PATH;
   return can(subject, 'dashboard:view') ? ADMIN_LANDING_PATH : DEFAULT_LANDING_PATH;
 }
 

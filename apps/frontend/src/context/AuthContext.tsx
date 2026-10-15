@@ -14,15 +14,19 @@ import { AUTH_ME_KEY } from '@/lib/queries';
 import {
   authedFetch,
   endSession,
+  onImpersonationEnded,
   onSessionExpired,
   refreshSession,
 } from '@/lib/authClient';
 import {
+  clearImpersonationSession,
   clearTokens,
   getAccessToken,
+  getImpersonationSession,
   getRefreshToken,
   getTokenExpMs,
   saveTokens,
+  setImpersonationSession,
 } from '@/lib/authTokens';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +59,22 @@ export interface AuthUser {
    * into a signed-in session that is denied everything.
    */
   rbac: RbacSubject;
+  /** A staff account acting as itself. False while impersonating. */
+  isStaff?: boolean;
+  /** Set while a staff account is switched into this user. */
+  impersonation?: Impersonation | null;
+}
+
+export type ImpersonationMode = 'read_only' | 'full';
+
+/** The staff account behind the session, as GET /auth/me reports it. */
+export interface Impersonation {
+  userId: number;
+  name: string;
+  email: string;
+  sessionId: string;
+  mode: ImpersonationMode;
+  expiresAt: string;
 }
 
 export type ChallengeName =
@@ -99,6 +119,10 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   refresh: () => Promise<boolean>;
   reloadUser: () => Promise<void>;
+  /** Staff only. Resolves with the target's session once it is in place. */
+  startImpersonation: (targetUserId: number, mode: ImpersonationMode) => Promise<AuthUser>;
+  /** Back to the staff account. Safe to call when not impersonating. */
+  stopImpersonation: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (
     email: string,
@@ -196,6 +220,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = useCallback(() => authedFetch<AuthUser>('/auth/me'), []);
 
+  /**
+   * Swap whose session this is. The whole cache goes, not just /auth/me: every
+   * other entry was fetched as the previous identity.
+   */
+  const replaceIdentity = useCallback(
+    (next: AuthUser | null) => {
+      queryClient.clear();
+      queryClient.setQueryData(AUTH_ME_KEY, next);
+    },
+    [queryClient],
+  );
+
   /** Writes the session straight into the cache, the one source of `user`. */
   const setUser = useCallback(
     (next: AuthUser | null) => {
@@ -254,6 +290,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
       }),
     [setUser],
+  );
+
+  // The server ended a switch-in (expiry, or another tab): fall back to staff.
+  useEffect(
+    () =>
+      onImpersonationEnded(() => {
+        fetchMe()
+          .then((me) => replaceIdentity(isValidUser(me) ? me : null))
+          .catch(() => endSession());
+      }),
+    [fetchMe, replaceIdentity],
   );
 
   // Proactive refresh, rescheduled from each new token's exp. Without this the
@@ -361,7 +408,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [consumeAuthResponse],
   );
 
+  const startImpersonation = useCallback(
+    async (targetUserId: number, mode: ImpersonationMode): Promise<AuthUser> => {
+      const { sessionId } = await authedFetch<{ sessionId: string }>('/auth/impersonation', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId, mode }),
+        asSelf: true,
+      });
+      setImpersonationSession(sessionId);
+      try {
+        const me = await fetchMe();
+        if (!isValidUser(me)) throw new Error('Malformed /auth/me response');
+        replaceIdentity(me);
+        return me;
+      } catch (error) {
+        clearImpersonationSession();
+        throw error;
+      }
+    },
+    [fetchMe, replaceIdentity],
+  );
+
+  const stopImpersonation = useCallback(async () => {
+    const sessionId = getImpersonationSession();
+    if (!sessionId) return;
+    clearImpersonationSession();
+    // Best effort: the session expires on its own within the hour regardless.
+    await authedFetch(`/auth/impersonation/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+      asSelf: true,
+    }).catch(() => undefined);
+    const me = await fetchMe();
+    replaceIdentity(isValidUser(me) ? me : null);
+  }, [fetchMe, replaceIdentity]);
+
   const logout = useCallback(async () => {
+    await stopImpersonation().catch(() => undefined);
     // retryOn401: false — refreshing a session we are discarding is pointless.
     await authedFetch('/auth/logout', {
       method: 'POST',
@@ -370,8 +452,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Best effort: clear locally even if the server call fails.
     });
     endSession();
-    setUser(null);
-  }, [setUser]);
+    // Clear, not just null: the next account in this tab must not see this one's cache.
+    replaceIdentity(null);
+  }, [replaceIdentity, stopImpersonation]);
 
   const reloadUser = useCallback(async () => {
     try {
@@ -417,6 +500,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         refresh: refreshSession,
         reloadUser,
+        startImpersonation,
+        stopImpersonation,
         forgotPassword,
         resetPassword,
       }}

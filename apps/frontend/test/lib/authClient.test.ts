@@ -3,10 +3,16 @@ import {
   __resetRefreshStateForTests,
   authedFetch,
   endSession,
+  onImpersonationEnded,
   onSessionExpired,
   refreshSession,
 } from '@/lib/authClient';
-import { STORAGE_KEYS } from '@/lib/authTokens';
+import {
+  STORAGE_KEYS,
+  clearTokens,
+  getImpersonationSession,
+  setImpersonationSession,
+} from '@/lib/authTokens';
 
 function makeToken(claims: Record<string, unknown>) {
   const payload = btoa(JSON.stringify(claims))
@@ -64,6 +70,7 @@ function callsTo(fetchMock: jest.Mock, fragment: string) {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   __resetRefreshStateForTests();
 });
 
@@ -265,5 +272,61 @@ describe('ApiError', () => {
     const error = new ApiError('nope', 401, { message: 'nope' });
     expect(error).toBeInstanceOf(Error);
     expect(error.status).toBe(401);
+  });
+});
+
+describe('authedFetch while impersonating', () => {
+  const SESSION = 'session-1';
+  const ended = { status: 401, body: { message: 'Impersonation session has ended', code: 'IMPERSONATION_EXPIRED' } };
+  const headerOf = (call: unknown[]) =>
+    ((call[1] as RequestInit).headers as Record<string, string>)['X-Impersonate-Session'];
+
+  beforeEach(() => {
+    seed();
+    setImpersonationSession(SESSION);
+  });
+
+  it('sends the session beside the staff token', async () => {
+    const fetchMock = mockFetch({ '/projects': [{ body: [] }] });
+
+    await authedFetch('/projects');
+
+    expect(headerOf(fetchMock.mock.calls[0])).toBe(SESSION);
+    expect(authHeaderOf(fetchMock.mock.calls[0])).toBe(`Bearer ${VALID_ACCESS}`);
+  });
+
+  it("leaves it off for the staff console's own calls", async () => {
+    const fetchMock = mockFetch({ '/auth/impersonation': [{ body: {} }] });
+
+    await authedFetch('/auth/impersonation', { method: 'POST', asSelf: true });
+
+    expect(headerOf(fetchMock.mock.calls[0])).toBeUndefined();
+  });
+
+  it('drops an ended session and re-reads as the staff account, without refreshing', async () => {
+    const onEnded = jest.fn();
+    onImpersonationEnded(onEnded);
+    const fetchMock = mockFetch({ '/auth/me': [ended, { body: { userId: 50 } }], '/auth/refresh': [{}] });
+
+    await expect(authedFetch('/auth/me')).resolves.toEqual({ userId: 50 });
+
+    expect(getImpersonationSession()).toBeNull();
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(callsTo(fetchMock, '/auth/refresh')).toHaveLength(0);
+    expect(headerOf(callsTo(fetchMock, '/auth/me')[1])).toBeUndefined();
+  });
+
+  it('never re-sends a write as the staff account', async () => {
+    const fetchMock = mockFetch({ '/expenditures': [ended] });
+
+    await expect(authedFetch('/expenditures', { method: 'POST' })).rejects.toMatchObject({ status: 401 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(getImpersonationSession()).toBeNull();
+  });
+
+  it('is cleared with the tokens on sign-out', () => {
+    clearTokens();
+    expect(getImpersonationSession()).toBeNull();
   });
 });

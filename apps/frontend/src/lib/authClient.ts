@@ -1,7 +1,9 @@
 import { ApiError, apiFetch } from './api';
 import {
+  clearImpersonationSession,
   clearTokens,
   getAccessToken,
+  getImpersonationSession,
   getRefreshToken,
   isExpiredOrExpiring,
   saveTokens,
@@ -45,6 +47,28 @@ export function endSession(): void {
       console.error('onSessionExpired listener threw:', error);
     }
   }
+}
+
+const impersonationListeners = new Set<() => void>();
+
+/**
+ * Subscribe to the server ending a switch-in (expired, or ended from another
+ * tab). The staff account's own session is still good when this fires.
+ */
+export function onImpersonationEnded(listener: () => void): () => void {
+  impersonationListeners.add(listener);
+  return () => impersonationListeners.delete(listener);
+}
+
+const IMPERSONATION_CODES = new Set([
+  'IMPERSONATION_EXPIRED',
+  'IMPERSONATION_FORBIDDEN',
+]);
+
+function isImpersonationFailure(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const code = (error.body as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' && IMPERSONATION_CODES.has(code);
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -94,6 +118,11 @@ export function refreshSession(): Promise<boolean> {
 export interface AuthedRequestOptions extends RequestInit {
   /** Set false to skip the refresh-and-retry dance (used when signing out). */
   retryOn401?: boolean;
+  /**
+   * Send as the signed-in staff account even while switched in. For the staff
+   * console's own calls: starting and ending a session.
+   */
+  asSelf?: boolean;
 }
 
 /**
@@ -102,7 +131,33 @@ export interface AuthedRequestOptions extends RequestInit {
  */
 export async function authedFetch<T>(
   path: string,
-  { retryOn401 = true, ...options }: AuthedRequestOptions = {},
+  { asSelf = false, ...options }: AuthedRequestOptions = {},
+): Promise<T> {
+  const sessionId = asSelf ? null : getImpersonationSession();
+  if (!sessionId) return sessionFetch<T>(path, options);
+
+  try {
+    return await sessionFetch<T>(path, {
+      ...options,
+      headers: { ...options.headers, 'X-Impersonate-Session': sessionId },
+    });
+  } catch (error) {
+    if (!isImpersonationFailure(error)) throw error;
+    // The switch-in is over, not the session: drop it and say so. A read is
+    // retried as the staff account, so the bootstrap /auth/me lands on the
+    // console instead of signing staff out; a write is never re-sent as someone
+    // else.
+    clearImpersonationSession();
+    for (const listener of impersonationListeners) listener();
+    const method = (options.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') throw error;
+    return sessionFetch<T>(path, options);
+  }
+}
+
+async function sessionFetch<T>(
+  path: string,
+  { retryOn401 = true, ...options }: Omit<AuthedRequestOptions, 'asSelf'>,
 ): Promise<T> {
   let token = getAccessToken();
 
@@ -124,7 +179,9 @@ export async function authedFetch<T>(
     return await apiFetch<T>(path, { ...options, token: token ?? undefined });
   } catch (error) {
     const isUnauthorized = error instanceof ApiError && error.status === 401;
-    if (!isUnauthorized || !retryOn401) throw error;
+    // An ended switch-in is a 401 too, but the token is fine: never refresh for it.
+    if (!isUnauthorized || !retryOn401 || isImpersonationFailure(error))
+      throw error;
 
     if (!(await refreshSession())) {
       endSession();
@@ -144,4 +201,5 @@ export async function authedFetch<T>(
 export function __resetRefreshStateForTests(): void {
   refreshInFlight = null;
   listeners.clear();
+  impersonationListeners.clear();
 }

@@ -70,10 +70,44 @@ export function saveTokens({
 
 export function clearTokens(): void {
   if (typeof window === 'undefined') return;
+  clearImpersonationSession();
   try {
     window.localStorage.removeItem(STORAGE_KEYS.ACCESS);
     window.localStorage.removeItem(STORAGE_KEYS.ID);
     window.localStorage.removeItem(STORAGE_KEYS.REFRESH);
+  } catch {
+    // Nothing useful to do.
+  }
+}
+
+/**
+ * The staff console's switch-in, if any. sessionStorage rather than
+ * localStorage: it is scoped to one tab, so other tabs stay the staff account.
+ */
+const IMPERSONATION_KEY = 'branch_impersonation_session';
+
+export function getImpersonationSession(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage.getItem(IMPERSONATION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setImpersonationSession(sessionId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(IMPERSONATION_KEY, sessionId);
+  } catch {
+    // Storage unavailable — the switch-in simply won't survive a reload.
+  }
+}
+
+export function clearImpersonationSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(IMPERSONATION_KEY);
   } catch {
     // Nothing useful to do.
   }

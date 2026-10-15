@@ -58,7 +58,7 @@ Import direction is one-way and must stay that way: `api.ts` ← `authClient.ts`
 
 **No Cognito SDK on the client.** The browser only ever talks to the backend's `/auth/*` routes; the auth lambda does the Cognito work.
 
-**Session.** Tokens (`branch_access_token` / `branch_id_token` / `branch_refresh_token`) live in localStorage, owned exclusively by `src/lib/authTokens.ts`. `grep -rn "branch_access_token" src/` must only ever match that file.
+**Session.** Tokens (`branch_access_token` / `branch_id_token` / `branch_refresh_token`) live in localStorage, and the staff impersonation session id (`branch_impersonation_session`) in sessionStorage, all owned exclusively by `src/lib/authTokens.ts`. `grep -rn "branch_access_token" src/` must only ever match that file.
 
 **Identity comes from `GET /auth/me`, never from decoding a token.** `is_admin` lives only in Postgres and there is no pre-token-generation trigger, so it is not a JWT claim; a Cognito *access* token carries neither `email` nor `name` either. `AuthProvider` calls `/auth/me` on mount (skipping the call entirely when no tokens are stored) and exposes `user`, `isAuthenticated`, `isAdmin`, `isLoading`. Do not add a "fall back to decoding the ID token" path.
 
@@ -80,6 +80,8 @@ Both live in `src/app/components/Permission.tsx`. Record-scoped actions take a `
 **Never gate on `isAdmin` in a component.** It cannot express "admin or director" (the Donors page) or "the author, unless it is already approved" (an expense), and a second copy of a rule is one that drifts from the API. `isAdmin` remains only for the role badge in `Header`.
 
 Tests: `test/rbac.ts` has `adminSubject` / `directorSubject` / `memberSubject` and a `session()` builder. The shared `render` from `test/utils.tsx` signs in as an admin by default — pass `{ subject }` to render as someone else, or `renderWithLiveAuth` for the handful of tests that exercise `AuthProvider` itself.
+
+**Staff impersonation.** A staff account (`rbac.isStaff`) lands on `/staff`, the staff console, which is the only page it can open as itself. `startImpersonation(userId, 'read_only' | 'full')` stores the server's session id in **sessionStorage** (`authTokens.ts`, so the switch-in is per tab) and `authedFetch` sends it as `X-Impersonate-Session` on every call. `/auth/me` then reports the *target*, so every page, permission and nav item is the target's with no further code. `ImpersonationBanner` (mounted in `providers.tsx`) shows who you are viewing as and exits via `stopImpersonation()`. Both calls clear the whole query cache, because every entry was fetched as the other identity; `logout()` now does too. When the server ends a session (`IMPERSONATION_EXPIRED`), `authedFetch` drops the id and retries a GET as the staff account, never a write. Console calls that must go out as staff pass `asSelf: true`. See `shared/rbac/README.md`.
 
 **Challenges.** `login()` returns `{ status: 'authenticated' }` or `{ status: 'challenge', ... }`. `NEW_PASSWORD_REQUIRED` is handled by the login page; the other challenge names are plumbed through `respondToChallenge` and become reachable if MFA is switched on in `infrastructure/aws/cognito.tf`, needing only a UI step.
 
