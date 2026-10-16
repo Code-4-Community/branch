@@ -10,7 +10,7 @@ interface FileUploadProps {
   value: File | null;
   /** Called with the stored object URL once the upload lands, or null on clear. */
   onChange: (file: File | null, objectUrl: string | null) => void;
-  onReject?: () => void;
+  onReject?: (reason: string) => void;
   /** Performs the upload and resolves to the stored object URL. */
   upload: (file: File, onProgress: (transferredBytes: number) => void) => Promise<string>;
   /** When set, the dropzone is inert and explains why. */
@@ -50,7 +50,7 @@ export default function FileUpload({ value, onChange, onReject, upload, disabled
         (accepted: File[], rejections: FileRejection[]) => {
         if (rejections.length > 0) {
             setUploadFailed(false);
-            onReject?.();
+            onReject?.(rejections[0].errors[0]?.code ?? 'file-invalid-type');
             return;
         }
         if (accepted[0]) startUpload(accepted[0]);
@@ -129,7 +129,7 @@ export default function FileUpload({ value, onChange, onReject, upload, disabled
       </p>
 
       <p style={{ fontSize: '12px', color: 'var(--color-black-500)', margin: '4px 0 0' }}>
-        {disabledReason ?? 'PDF only'}
+        {disabledReason ?? 'PDF only, max 10MB'}
       </p>
 
       {uploadFailed && (

@@ -5,7 +5,7 @@
  */
 import { describe, test, expect, beforeAll, beforeEach, afterEach, afterAll, jest } from '@jest/globals';
 import { Pool, PoolClient } from 'pg';
-import { ensureSchema, resetData } from '../../../db/testkit';
+import { ensureSchema, resetData, reconcileRollups } from '../../../db/testkit';
 
 jest.mock('../auth', () => {
   const { createAuthResolver } = jest.requireActual<typeof import('@branch/lambda-http')>(
@@ -14,7 +14,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -27,7 +27,21 @@ jest.mock('../auth', () => {
 });
 
 import { handler } from '../handler';
-import db from '../db';
+import {
+  closeConnection,
+  createProject,
+  db,
+  editExpenditure,
+  recordDonation,
+  recordExpenditure,
+  recordReport,
+  removeDonation,
+  removeDonor,
+  removeExpenditure,
+  removeProject,
+  removeReport,
+  updateProject,
+} from '@branch/store';
 import { authenticateRequest } from '../auth';
 
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
@@ -122,6 +136,7 @@ beforeEach(async () => {
   await client.query('DELETE FROM branch.expenditures');
   await client.query('DELETE FROM branch.project_donations');
   await client.query('DELETE FROM branch.reports');
+  await reconcileRollups(client);
 });
 
 afterEach(() => {
@@ -130,7 +145,7 @@ afterEach(() => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
+  await closeConnection();
 });
 
 async function get(rawPath: string) {
@@ -154,20 +169,33 @@ async function bucketsFor(projectId: number): Promise<number> {
   return rows[0].n;
 }
 
-describe('backfill and reset', () => {
-  test('truncate + reseed rebuilds both rollups through the triggers', async () => {
-    // resetData truncates the rollups too; the triggers put the figures back.
+const today = new Date().toISOString().slice(0, 10);
+
+function monthsAgo(n: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+const travel = {
+  project_id: 1,
+  entered_by: 1,
+  amount: 250,
+  category: 'Travel',
+  status: 'approved',
+  spent_on: today,
+};
+
+describe('reset', () => {
+  test('resetData leaves both rollups in step with the base tables', async () => {
     await resetData(client);
     await auditRollups(client);
   });
 });
 
-describe('expenditure_rollup trigger', () => {
-  test('INSERT lands in a bucket and reaches the dashboard', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE)
-    `);
+describe('expenditure spend reaches the dashboard', () => {
+  test('recordExpenditure lands in a bucket and reaches the dashboard', async () => {
+    await recordExpenditure(travel);
     await auditRollups(client);
 
     const body = await get('/dashboard');
@@ -175,25 +203,18 @@ describe('expenditure_rollup trigger', () => {
   });
 
   test('unapproved rows are rolled up but stay out of every spend figure', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE),
-             (1, 1, 900, 'Travel', 'pending',  CURRENT_DATE)
-    `);
+    await recordExpenditure(travel);
+    await recordExpenditure({ ...travel, amount: 900, status: 'pending' });
     await auditRollups(client);
 
-    // Status is part of the grain, so both rows are stored — separately.
     expect(await bucketsFor(1)).toBe(2);
     const body = await get('/dashboard');
     expect(body.summary.totalSpent).toBe(250);
   });
 
   test('two NULL-category rows share one bucket', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 50, NULL, 'approved', DATE '2026-03-11'),
-             (1, 1, 25, NULL, 'approved', DATE '2026-03-12')
-    `);
+    await recordExpenditure({ ...travel, amount: 50, category: null, spent_on: '2026-03-11' });
+    await recordExpenditure({ ...travel, amount: 25, category: null, spent_on: '2026-03-12' });
     await auditRollups(client);
 
     const { rows } = await client.query(`
@@ -205,12 +226,9 @@ describe('expenditure_rollup trigger', () => {
     expect(rows[0].expenditure_count).toBe(2);
   });
 
-  test('UPDATE of the amount alone stays in the same bucket', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE)
-    `);
-    await client.query(`UPDATE branch.expenditures SET amount = 400 WHERE project_id = 1`);
+  test('editing the amount alone stays in the same bucket', async () => {
+    const row = await recordExpenditure(travel);
+    await editExpenditure(row.expenditure_id, { amount: 400 });
     await auditRollups(client);
 
     expect(await bucketsFor(1)).toBe(1);
@@ -219,83 +237,38 @@ describe('expenditure_rollup trigger', () => {
   });
 
   test.each([
-    ['category', `SET category = 'Equipment'`],
-    ['month', `SET spent_on = CURRENT_DATE - INTERVAL '2 months'`],
-    ['status', `SET status = 'denied'`],
-    ['project', `SET project_id = 2`],
-  ])('UPDATE crossing %s decrements the old bucket and increments the new', async (_col, setClause) => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE)
-    `);
-    await client.query(`UPDATE branch.expenditures ${setClause} WHERE project_id = 1`);
+    ['category', { category: 'Equipment' }],
+    ['month', { spent_on: monthsAgo(2) }],
+    ['status', { status: 'denied' }],
+  ])('an edit crossing %s decrements the old bucket and increments the new', async (_label, patch) => {
+    const row = await recordExpenditure(travel);
+    await editExpenditure(row.expenditure_id, patch as Record<string, unknown>);
     await auditRollups(client);
   });
 
   test('a status change moves spend off the dashboard', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE)
-    `);
-    await client.query(`UPDATE branch.expenditures SET status = 'denied' WHERE project_id = 1`);
+    const row = await recordExpenditure(travel);
+    await editExpenditure(row.expenditure_id, { status: 'denied' });
     await auditRollups(client);
 
     const body = await get('/dashboard');
     expect(body.summary.totalSpent).toBe(0);
   });
 
-  test('DELETE decrements the bucket', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE),
-             (1, 1, 100, 'Travel', 'approved', CURRENT_DATE)
-    `);
-    await client.query(`DELETE FROM branch.expenditures WHERE amount = 100`);
+  test('removeExpenditure decrements the bucket', async () => {
+    await recordExpenditure(travel);
+    const second = await recordExpenditure({ ...travel, amount: 100 });
+    await removeExpenditure(second.expenditure_id);
     await auditRollups(client);
 
     const body = await get('/dashboard');
     expect(body.summary.totalSpent).toBe(250);
   });
 
-  test('one statement updating many rows moves every one of them', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 10, 'Travel',    'pending', CURRENT_DATE),
-             (1, 1, 20, 'Equipment', 'pending', CURRENT_DATE),
-             (2, 1, 30, 'Travel',    'pending', CURRENT_DATE)
-    `);
-    await auditRollups(client);
-
-    await client.query(`UPDATE branch.expenditures SET status = 'approved'`);
-    await auditRollups(client);
-
-    expect((await get('/dashboard')).summary.totalSpent).toBe(60);
-  });
-
-  test('TRUNCATE clears the rollup even though it fires no row triggers', async () => {
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (1, 1, 250, 'Travel', 'approved', CURRENT_DATE)
-    `);
-    await client.query('TRUNCATE branch.expenditures');
-    await auditRollups(client);
-
-    expect(await bucketsFor(1)).toBe(0);
-    expect((await get('/dashboard')).summary.totalSpent).toBe(0);
-  });
-
   test('deleting a project cascades without orphaning or resurrecting a bucket', async () => {
-    // Cascade order is undefined, so the decrement must tolerate a bucket
-    // that is already gone rather than re-inserting it.
-    await client.query(`
-      INSERT INTO branch.expenditures (project_id, entered_by, amount, category, status, spent_on)
-      VALUES (4, 1, 250, 'Travel', 'approved', CURRENT_DATE)
-    `);
-    await client.query(`
-      INSERT INTO branch.reports (project_id, title, object_url, report_type)
-      VALUES (4, 'r', 's3://r', 'technical')
-    `);
-    await client.query(`DELETE FROM branch.projects WHERE project_id = 4`);
+    await recordExpenditure({ ...travel, project_id: 4 });
+    await recordReport({ project_id: 4, title: 'r', object_url: 's3://r', report_type: 'technical' });
+    await removeProject(4);
     await auditRollups(client);
 
     const orphans = await client.query(`
@@ -308,17 +281,18 @@ describe('expenditure_rollup trigger', () => {
   });
 });
 
-describe('project_rollup trigger', () => {
-  test('a new project gets a zeroed rollup row', async () => {
-    const { rows } = await client.query(`
-      INSERT INTO branch.projects (name, description, total_budget, start_date, currency)
-      VALUES ('fresh', 'x', 500, CURRENT_DATE, 'USD') RETURNING project_id
-    `);
+describe('project overview figures', () => {
+  test('createProject seeds a zeroed rollup row', async () => {
+    const created = await createProject(
+      { name: 'fresh', description: 'x', total_budget: 500, currency: 'USD' },
+      [],
+      'Student',
+    );
     await auditRollups(client);
 
     const rollup = await client.query(
       'SELECT * FROM branch.project_rollup WHERE project_id = $1',
-      [rows[0].project_id],
+      [created.project_id],
     );
     expect(rollup.rows).toHaveLength(1);
     expect(rollup.rows[0].member_count).toBe(0);
@@ -326,29 +300,25 @@ describe('project_rollup trigger', () => {
   });
 
   test('donations move totalDonated on the project overview', async () => {
-    await client.query(`
-      INSERT INTO branch.project_donations (donor_id, project_id, amount) VALUES (1, 1, 500)
-    `);
+    const donation = await recordDonation({ donor_id: 1, project_id: 1, amount: 500 });
     await auditRollups(client);
     expect((await get('/1/overview')).stats.totalDonated).toBe(500);
 
-    await client.query(`UPDATE branch.project_donations SET amount = 650 WHERE project_id = 1`);
-    await auditRollups(client);
-    expect((await get('/1/overview')).stats.totalDonated).toBe(650);
-
-    await client.query(`DELETE FROM branch.project_donations WHERE project_id = 1`);
+    await removeDonation(donation.donation_id);
     await auditRollups(client);
     expect((await get('/1/overview')).stats.totalDonated).toBe(0);
   });
 
-  test('membership churn keeps member_count exact through delete-then-insert', async () => {
-    // syncMemberships deletes then re-inserts, so the counter drops and climbs.
-    await client.query(`DELETE FROM branch.project_memberships WHERE project_id = 1`);
+  test('deleting a donor takes its donations off the overview', async () => {
+    await recordDonation({ donor_id: 1, project_id: 1, amount: 500 });
     await auditRollups(client);
-    await client.query(`
-      INSERT INTO branch.project_memberships (project_id, user_id, role)
-      VALUES (1, 1, 'Student'), (1, 2, 'Student')
-    `);
+    await removeDonor(1);
+    await auditRollups(client);
+    expect((await get('/1/overview')).stats.totalDonated).toBe(0);
+  });
+
+  test('roster replacement keeps member_count exact through delete-then-insert', async () => {
+    await updateProject(1, {}, [{ user_id: 1 }, { user_id: 2 }], 'Student');
     await auditRollups(client);
 
     const { rows } = await client.query(
@@ -357,58 +327,14 @@ describe('project_rollup trigger', () => {
     expect(rows[0].member_count).toBe(2);
   });
 
-  test('moving a donation between projects debits one and credits the other', async () => {
-    await client.query(`
-      INSERT INTO branch.project_donations (donor_id, project_id, amount) VALUES (1, 1, 500)
-    `);
-    await client.query(`UPDATE branch.project_donations SET project_id = 2 WHERE project_id = 1`);
-    await auditRollups(client);
-
-    expect((await get('/1/overview')).stats.totalDonated).toBe(0);
-    expect((await get('/2/overview')).stats.totalDonated).toBe(500);
-  });
-
-  test('moving a membership between projects debits one and credits the other', async () => {
-    await client.query(`DELETE FROM branch.project_memberships`);
-    await client.query(`
-      INSERT INTO branch.project_memberships (project_id, user_id, role) VALUES (1, 1, 'Student')
-    `);
-    await client.query(`
-      UPDATE branch.project_memberships SET project_id = 2 WHERE project_id = 1 AND user_id = 1
-    `);
-    await auditRollups(client);
-
-    const { rows } = await client.query(
-      'SELECT project_id, member_count FROM branch.project_rollup WHERE project_id IN (1, 2)',
-    );
-    const byProject = new Map(rows.map((r: any) => [r.project_id, r.member_count]));
-    expect(byProject.get(1)).toBe(0);
-    expect(byProject.get(2)).toBe(1);
-  });
-
-  test('TRUNCATE of donations, memberships and reports zeroes their counters', async () => {
-    await client.query(`
-      INSERT INTO branch.project_donations (donor_id, project_id, amount) VALUES (1, 1, 500)
-    `);
-    await client.query(`
-      INSERT INTO branch.reports (project_id, title, object_url, report_type)
-      VALUES (1, 'a', 's3://a', 'technical')
-    `);
-    await client.query('TRUNCATE branch.project_donations, branch.project_memberships, branch.reports');
-    await auditRollups(client);
-
-    const { rows } = await client.query('SELECT * FROM branch.project_rollup WHERE project_id = 1');
-    expect(rows[0].member_count).toBe(0);
-    expect(rows[0].donation_count).toBe(0);
-    expect(rows[0].report_count).toBe(0);
-    expect(Number(rows[0].total_donated)).toBe(0);
-  });
-
   test('reports move report_count', async () => {
-    await client.query(`
-      INSERT INTO branch.reports (project_id, title, object_url, report_type)
-      VALUES (1, 'a', 's3://a', 'technical'), (1, 'b', 's3://b', 'narrative')
-    `);
+    await recordReport({ project_id: 1, title: 'a', object_url: 's3://a', report_type: 'technical' });
+    const b = await recordReport({
+      project_id: 1,
+      title: 'b',
+      object_url: 's3://b',
+      report_type: 'narrative',
+    });
     await auditRollups(client);
 
     const { rows } = await client.query(
@@ -416,7 +342,7 @@ describe('project_rollup trigger', () => {
     );
     expect(rows[0].report_count).toBe(2);
 
-    await client.query(`DELETE FROM branch.reports WHERE project_id = 1 AND title = 'a'`);
+    await removeReport(b.report_id);
     await auditRollups(client);
   });
 });
@@ -433,6 +359,7 @@ describe('rollup-backed read paths agree with the base tables', () => {
              (2, 1, 500, 'Travel',    'approved', date_trunc('year', CURRENT_DATE)),
              (2, 1,  50, NULL,        'approved', date_trunc('year', CURRENT_DATE))
     `);
+    await reconcileRollups(client);
   });
 
   test('dashboard totalSpent equals the approved sum for the year', async () => {

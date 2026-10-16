@@ -109,6 +109,21 @@ resource "aws_iam_role_policy" "lambda_ses_send" {
   })
 }
 
+resource "aws_iam_role_policy" "lambda_dsql_connect" {
+  name = "branch-lambda-dsql-connect"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "LambdaDsqlConnect"
+      Effect   = "Allow"
+      Action   = ["dsql:DbConnectAdmin"]
+      Resource = aws_dsql_cluster.branch.arn
+    }]
+  })
+}
+
 # Get AWS account ID for unique bucket naming
 data "aws_caller_identity" "current" {}
 
@@ -215,12 +230,12 @@ resource "aws_lambda_function" "functions" {
   # runtime provides, and the handlers already default to us-east-2.
   environment {
     variables = {
-      NODE_ENV    = "production"
-      DB_HOST     = aws_db_instance.branch_rds.address
-      DB_USER     = data.infisical_secrets.rds_folder.secrets["username"].value
-      DB_PASSWORD = data.infisical_secrets.rds_folder.secrets["password"].value
-      DB_PORT     = try(data.infisical_secrets.rds_folder.secrets["db_port"].value, "5432")
-      DB_NAME     = try(data.infisical_secrets.rds_folder.secrets["db_name"].value, aws_db_instance.branch_rds.db_name)
+      NODE_ENV = "production"
+      # Aurora DSQL: no password, @branch/store mints an IAM token per connection.
+      DB_HOST = local.dsql_endpoint
+      DB_USER = "admin"
+      DB_PORT = "5432"
+      DB_NAME = "postgres"
 
       # Not secrets: the user pool ID is public, and the app client is created
       # with generate_secret = false, so there is no SECRET_HASH to protect.

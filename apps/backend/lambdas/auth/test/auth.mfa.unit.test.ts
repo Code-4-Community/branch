@@ -29,7 +29,7 @@ jest.mock('../auth', () => ({
 
 const mockExecuteTakeFirst = jest.fn();
 
-jest.mock('../db', () => {
+jest.mock('@branch/store', () => {
   const selectChain: any = {
     where: () => selectChain,
     selectAll: () => selectChain,
@@ -38,9 +38,7 @@ jest.mock('../db', () => {
   };
   return {
     __esModule: true,
-    default: {
-      selectFrom: () => selectChain,
-    },
+    db: { selectFrom: () => selectChain },
   };
 });
 

@@ -14,7 +14,7 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 import { handler } from '../handler';
 import { authenticateRequest } from '../auth';
 
@@ -30,7 +30,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -93,7 +93,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await pool.end();
-  await db.destroy();
+  await closeConnection();
 });
 
 

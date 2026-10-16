@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 // Mock the database module BEFORE importing handler
-jest.mock('../db');
+jest.mock('@branch/store');
 // Memberships the mocked session should appear to have. Named `mock*` so it can
 // be referenced from the jest.mock factory below.
 // Mutated per test to give the mocked session memberships. `beforeEach` in each
@@ -49,11 +49,21 @@ jest.mock('@aws-sdk/client-s3', () => ({
 jest.mock('../mailer');
 
 import { handler } from '../handler';
-import db from '../db';
+import {
+  db,
+  recordExpenditure,
+  editExpenditure,
+  removeExpenditure,
+  ExpenditureStatusChangedError,
+} from '@branch/store';
 import { authenticateRequest } from '../auth';
 import { sendExpenseStatusEmail } from '../mailer';
+import { ExpenditureValidationUtils } from '../validation-utils';
 
 const mockDb = db as any;
+const mockRecordExpenditure = recordExpenditure as jest.MockedFunction<typeof recordExpenditure>;
+const mockEditExpenditure = editExpenditure as jest.MockedFunction<typeof editExpenditure>;
+const mockRemoveExpenditure = removeExpenditure as jest.MockedFunction<typeof removeExpenditure>;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockSendExpenseStatusEmail = sendExpenseStatusEmail as jest.MockedFunction<typeof sendExpenseStatusEmail>;
 
@@ -514,14 +524,27 @@ describe('POST /expenditures unit tests', () => {
           projectID: 1,
           amount: 800,
           status: 'approved',
-          receipt_url: 'https://s3.amazonaws.com/branch-receipts/receipt.pdf',
+          receipt_url: 'https://branch-reports.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf',
         })
       );
 
       expect(res.statusCode).toBe(201);
       const json = JSON.parse(res.body);
       expect(json.body.status).toBe('approved');
-      expect(json.body.receiptUrl).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+      expect(json.body.receiptUrl).toBe('https://branch-reports.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf');
+    });
+
+    test("400: rejects a receipt stored under another project's prefix", async () => {
+      const res = await handler(
+        postEvent({
+          projectID: 1,
+          amount: 800,
+          receiptUrl: 'https://branch-reports.s3.us-east-2.amazonaws.com/receipts/2/other.pdf',
+        })
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(mockRecordExpenditure).not.toHaveBeenCalled();
     });
 
     test('404: returns 404 when project not found', async () => {
@@ -595,12 +618,7 @@ describe('POST /expenditures unit tests', () => {
         }),
       });
 
-      // Mock: insert throws error
-      mockDb.insertInto.mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          executeTakeFirst: (jest.fn() as any).mockRejectedValue(new Error('Database connection failed')),
-        }),
-      });
+      mockRecordExpenditure.mockRejectedValue(new Error('Database connection failed'));
 
       const res = await handler(
         postEvent({
@@ -648,7 +666,9 @@ describe('POST /expenditures unit tests', () => {
       mockDb.selectFrom.mockReturnValue({
         selectAll: jest.fn().mockReturnValue({
           orderBy: jest.fn().mockReturnValue({
-            execute: jest.fn().mockReturnValue(fakeExpenditures as any),
+            orderBy: jest.fn().mockReturnValue({
+              execute: jest.fn().mockReturnValue(fakeExpenditures as any),
+            }),
           }),
         }),
       });
@@ -671,9 +691,11 @@ describe('POST /expenditures unit tests', () => {
       mockDb.selectFrom.mockReturnValueOnce({
         selectAll: jest.fn().mockReturnValue({
           orderBy: jest.fn().mockReturnValue({
-            limit: jest.fn().mockReturnValue({
-              offset: jest.fn().mockReturnValue({
-                execute: jest.fn().mockReturnValue([fakeExpenditures[0]] as any),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockReturnValue({
+                offset: jest.fn().mockReturnValue({
+                  execute: jest.fn().mockReturnValue([fakeExpenditures[0]] as any),
+                }),
               }),
             }),
           }),
@@ -857,12 +879,12 @@ describe('DELETE /expenditures/{id} unit tests', () => {
       expect(res.statusCode).toBe(404);
       expect(JSON.parse(res.body).message).toBe('Expenditure not found');
       // deleteFrom should never be reached if the expenditure lookup fails
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveExpenditure).not.toHaveBeenCalled();
     });
 
     test('404: row already gone by the time delete executes (race condition)', async () => {
       mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
-      mockDb.deleteFrom.mockReturnValue(mockDelete(0n));
+      mockRemoveExpenditure.mockResolvedValue(0n);
 
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(404);
@@ -879,7 +901,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
 
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(404);
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveExpenditure).not.toHaveBeenCalled();
     });
 
     test('403: a member of the project who did not submit it is rejected', async () => {
@@ -890,7 +912,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(403);
       expect(JSON.parse(res.body).message).toBe('You can only delete expenses you submitted');
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveExpenditure).not.toHaveBeenCalled();
     });
 
     // Directing the project is not enough either -- that rule went away with
@@ -902,7 +924,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
 
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(403);
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveExpenditure).not.toHaveBeenCalled();
     });
 
     test('403: the submitter cannot delete once it has been approved', async () => {
@@ -915,7 +937,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(403);
       expect(JSON.parse(res.body).message).toMatch(/Approved expenses/);
-      expect(mockDb.deleteFrom).not.toHaveBeenCalled();
+      expect(mockRemoveExpenditure).not.toHaveBeenCalled();
     });
   });
 
@@ -929,7 +951,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
       mockMemberships.length = 0;
       process.env.REPORTS_BUCKET_NAME = 'bucket';
       mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(withReceipt));
-      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+      mockRemoveExpenditure.mockResolvedValue(1n);
       mockS3Send.mockResolvedValue({});
     });
 
@@ -961,7 +983,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
   test('an expenditure with no receipt makes no S3 call', async () => {
     process.env.REPORTS_BUCKET_NAME = 'bucket';
     mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
-    mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+    mockRemoveExpenditure.mockResolvedValue(1n);
 
     const res = await handler(idEvent('DELETE', '5'));
 
@@ -970,10 +992,40 @@ describe('DELETE /expenditures/{id} unit tests', () => {
     expect(mockS3Send).not.toHaveBeenCalled();
   });
 
+  test("never deletes a receipt stored under another project's prefix", async () => {
+    process.env.REPORTS_BUCKET_NAME = 'bucket';
+    mockDb.selectFrom.mockReturnValueOnce(
+      mockSelectExpenditure({
+        ...fakeExpenditure,
+        receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/2/theirs.pdf',
+      }),
+    );
+    mockRemoveExpenditure.mockResolvedValue(1n);
+
+    const res = await handler(idEvent('DELETE', '5'));
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).receiptDeleted).toBe(false);
+    expect(mockS3Send).not.toHaveBeenCalled();
+  });
+
+  test('409 when the expense was reviewed between the check and the delete', async () => {
+    mockAuthenticateRequest.mockResolvedValue(studentAuthContext);
+    mockDb.selectFrom.mockReturnValue(mockSelectExpenditure({ ...fakeExpenditure, entered_by: 2 }));
+    mockRemoveExpenditure.mockRejectedValue(
+      Object.assign(new ExpenditureStatusChangedError('approved'), { status: 'approved' }),
+    );
+
+    const res = await handler(idEvent('DELETE', '5'));
+
+    expect(res.statusCode).toBe(409);
+    expect(mockRemoveExpenditure).toHaveBeenCalledWith(5, 'pending');
+  });
+
   describe('Success cases', () => {
     test('200: admin can delete without a membership lookup', async () => {
       mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
-      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+      mockRemoveExpenditure.mockResolvedValue(1n);
 
       const res = await handler(idEvent('DELETE', '5'));
 
@@ -990,7 +1042,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
       mockDb.selectFrom.mockReturnValue(
         mockSelectExpenditure({ ...fakeExpenditure, entered_by: 2 }),
       );
-      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+      mockRemoveExpenditure.mockResolvedValue(1n);
 
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(200);
@@ -1003,7 +1055,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
       mockDb.selectFrom.mockReturnValue(
         mockSelectExpenditure({ ...fakeExpenditure, entered_by: 2 }),
       );
-      mockDb.deleteFrom.mockReturnValue(mockDelete(1n));
+      mockRemoveExpenditure.mockResolvedValue(1n);
 
       const res = await handler(idEvent('DELETE', '5'));
       expect(res.statusCode).toBe(200);
@@ -1032,17 +1084,9 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
     updated?: Record<string, unknown>,
     submitter?: { name: string; email: string } | null,
   ) {
-    mockDb.updateTable.mockReturnValue({
-      set: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          returningAll: jest.fn().mockReturnValue({
-            executeTakeFirst: (jest.fn() as any).mockResolvedValue(
-              existing === null ? undefined : (updated ?? existing),
-            ),
-          }),
-        }),
-      }),
-    });
+    mockEditExpenditure.mockResolvedValue(
+      (existing === null ? undefined : (updated ?? existing)) as never,
+    );
 
     mockDb.selectFrom.mockImplementation((table: string) => {
       if (table === 'branch.users') {
@@ -1139,25 +1183,18 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
   });
 
   test('200: admin notes are persisted alongside the status', async () => {
-    const setSpy: any = jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        returningAll: jest.fn().mockReturnValue({
-          executeTakeFirst: (jest.fn() as any).mockResolvedValue({
-            expenditure_id: 5,
-            status: 'needs_more_info',
-            admin_notes: 'Need the itemised receipt',
-          }),
-        }),
-      }),
-    });
-    mockDb.updateTable.mockReturnValue({ set: setSpy });
+    mockEditExpenditure.mockResolvedValue({
+      expenditure_id: 5,
+      status: 'needs_more_info',
+      admin_notes: 'Need the itemised receipt',
+    } as never);
 
     const res = await handler(
       patchStatusEvent(5, { status: 'needs_more_info', adminNotes: 'Need the itemised receipt' }),
     );
 
     expect(res.statusCode).toBe(200);
-    expect(setSpy).toHaveBeenCalledWith({
+    expect(mockEditExpenditure).toHaveBeenCalledWith(5, {
       status: 'needs_more_info',
       admin_notes: 'Need the itemised receipt',
     });
@@ -1392,5 +1429,16 @@ describe('GET /expenditures/{id}/receipt unit tests', () => {
 
     const res = await handler(receiptEvent(5));
     expect(res.statusCode).toBe(401);
+  });
+});
+describe('ExpenditureValidationUtils.validateExpenditureUpdate', () => {
+  test('an explicit null clears category, description and receipt', () => {
+    expect(
+      ExpenditureValidationUtils.validateExpenditureUpdate({
+        category: null,
+        description: null,
+        receiptUrl: null,
+      }),
+    ).toEqual({ category: null, description: null, receiptUrl: null });
   });
 });

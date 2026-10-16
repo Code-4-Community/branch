@@ -11,8 +11,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # frontend-ci is a required check: workflow-level `paths:` leaves it pending forever, a skipped job passes.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect frontend changes
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "$BASE_SHA" HEAD | grep -E \
+            '^(apps/frontend/|shared/|\.github/actions/build-shared-packages/|\.github/workflows/frontend-ci\.yml$)' || true)
+
+          if [ -n "$changed" ]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "$changed" | sed 's/^/changed: /'
+          else
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
+            echo "No frontend-relevant changes."
+          fi
+
   frontend-ci:
     name: frontend-ci
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

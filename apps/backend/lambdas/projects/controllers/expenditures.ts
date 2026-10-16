@@ -1,6 +1,6 @@
 import { json, RouteHandler, serverError } from '@branch/lambda-http';
 import { can } from '@branch/rbac';
-import db from '../db';
+import { db } from '@branch/store';
 import { requireVisibleProject } from './project-guard';
 
 // GET /projects/{id}/expenditures

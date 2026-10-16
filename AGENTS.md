@@ -25,12 +25,14 @@ BRANCH is a non-profit accounting platform (projects, donors, donations, expendi
 
 - **Frontend:** Next.js 15.5 (App Router, Turbopack), React 19, Chakra UI v3 + Tailwind v4, JWT-in-localStorage auth.
 - **Backend:** AWS Lambda (Node 20), TypeScript, Kysely + PostgreSQL, AWS Cognito auth. Each service is self-contained, deployed as `branch-{service}`.
-- **Infra:** Terraform 1.13.0, state in S3 (`branch-tf-state`, S3-native locking), secrets via Infisical. Frontend is a static export on S3 + CloudFront (SPA); backend on Lambda + API Gateway; RDS Postgres 17.
+- **Infra:** Terraform 1.13.0, state in S3 (`branch-tf-state`, S3-native locking), secrets via Infisical. Frontend is a static export on S3 + CloudFront (SPA); backend on Lambda + API Gateway; Aurora DSQL (IAM-token auth).
 - **Monorepo:** Nx 16 (nx-cloud cache). Per-app `package.json` (not a single workspace install) — backend lambdas and frontend each `npm ci` independently.
 
 ## Shared packages (critical)
 
-Four `file:`-linked packages dedupe code across the repo:
+Five `file:`-linked packages dedupe code across the repo:
+
+- **`@branch/store`** (`shared/store/`) — the lambdas' only database connection and only writer: a read-only `db` plus one named operation per write, each keeping the rollups in step. Connects to Aurora DSQL with IAM tokens when `DB_HOST` is a DSQL endpoint (production), and to plain Postgres otherwise (local dev, CI).
 
 - **`@branch/types`** (`shared/types/`) — types only, no runtime. Exports DB row types (`DB`, `BranchUsers`, ...) + auth DTOs (`AuthContext`, `AuthenticatedUser`, `AccessLevel`, `AuthorizationCheck`). It is the **single declaration** of those DTOs: `@branch/lambda-auth` depends on this package and re-exports them, so never add a second copy anywhere. `db-types.d.ts` is **generated** from `apps/backend/db/migrations/**` by the `Schema Change Checks` workflow (or locally by `make types`) — never hand-edit it.
 - **`@branch/rbac`** (`shared/rbac/`) — the authorization policy, as one table of rules plus a pure `can`/`authorize`. **The lambdas and the frontend both evaluate this module**, so a disabled button and the 403 behind it cannot disagree. It is the only place a permission is defined; do not re-derive one from `isAdmin` in a component or a controller. Read `shared/rbac/README.md` — it carries the role matrix — before changing who may do what.

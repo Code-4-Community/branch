@@ -151,7 +151,7 @@ describe('ReportsPage', () => {
 
         const dialog = await screen.findByRole('dialog');
         expect(within(dialog).getByText('Generate New Report')).toBeInTheDocument();
-        expect(within(dialog).getByText('Project')).toBeInTheDocument();
+        expect(within(dialog).getByText('Project*')).toBeInTheDocument();
         expect(within(dialog).getByText('Format')).toBeInTheDocument();
     });
 

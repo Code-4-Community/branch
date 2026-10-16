@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 
 jest.mock('../auth', () => {
   // dispatch() resolves the caller through resolveAuth, so an auto-mock would
@@ -14,7 +14,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -99,7 +99,7 @@ describe('Reports e2e tests', () => {
 
   afterAll(async () => {
     await pool.end();
-    await db.destroy();
+    await closeConnection();
   });
 
   describe('Health check', () => {

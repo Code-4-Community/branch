@@ -7,6 +7,7 @@ import TextInputField from './TextInputField';
 import DatePickerField from './DatePickerField';
 import StaffPicker from './StaffPicker';
 import { useApi } from '@/hooks/useApi';
+import { isInAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import { ADMIN_MEMBER_ROLE } from '@/types';
 import type {
   AssignableStaff,
@@ -74,19 +75,8 @@ function validate(values: ProjectFormValues): FieldErrors {
 
   if (!values.startDate) errors.startDate = 'Please select a valid date';
 
-  // The "in progress" checkbox is what makes an end date optional, so the two
-  // are validated together rather than independently.
-  if (!values.inProgress) {
-    if (
-      !values.endDate ||
-      (values.startDate && values.endDate < values.startDate)
-    ) {
-      errors.endDate = 'Please select a date AFTER the start date';
-    }
-  }
-
-  if (values.members.length === 0) {
-    errors.members = 'Select AT LEAST 1 staff member for the project';
+  if (values.endDate && values.startDate && values.endDate < values.startDate) {
+    errors.endDate = 'Please select a date AFTER the start date';
   }
 
   return errors;
@@ -238,6 +228,9 @@ export default function ProjectFormModal({
       onOpenChange={(e) => {
         if (!e.open) onClose();
       }}
+      onInteractOutside={(e) => {
+        if (isInAnchoredPopover(e.detail.target)) e.preventDefault();
+      }}
       scrollBehavior="inside"
     >
       <Portal>
@@ -343,13 +336,10 @@ export default function ProjectFormModal({
 
                 <StaffPicker
                   label="Assigned Staff"
-                  required
                   options={staff}
                   isLoading={staffLoading}
                   value={values.members}
                   onChange={(v) => update('members', v)}
-                  isError={showError('members')}
-                  errorMessage={errors.members}
                   disabled={saving}
                 />
 

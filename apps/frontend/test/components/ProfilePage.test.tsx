@@ -169,16 +169,69 @@ describe('Profile Page', () => {
     );
   });
 
-  it('sends a password reset email', async () => {
-    mockLoadedPage({ '/auth/forgot-password': { message: 'sent' } });
+  it('lets the user enter the emailed code and set a new password', async () => {
+    mockLoadedPage({
+      '/auth/forgot-password': { message: 'sent' },
+      '/auth/reset-password': { message: 'ok' },
+    });
     render(<ProfilePage />);
     await screen.findByRole('heading', { level: 2, name: 'Ada Lovelace' });
 
     await userEvent.click(screen.getByRole('button', { name: 'Send Reset Email' }));
 
     expect(
-      await screen.findByText('We sent a reset link to ada@example.com.'),
+      await screen.findByText(/We sent a verification code to ada@example.com/),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/auth/forgot-password',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ email: 'ada@example.com' }),
+        }),
+      ),
+    );
+
+    await userEvent.type(screen.getByPlaceholderText('Enter verification code'), '123456');
+    await userEvent.type(screen.getByPlaceholderText('Enter new password'), 'NewPassword1!');
+    await userEvent.type(screen.getByPlaceholderText('Retype password'), 'NewPassword1!');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset Password' }));
+
+    await waitFor(() =>
+      expect(mockApiFetch).toHaveBeenCalledWith(
+        '/auth/reset-password',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            email: 'ada@example.com',
+            code: '123456',
+            newPassword: 'NewPassword1!',
+          }),
+        }),
+      ),
+    );
+    expect(await screen.findByText('Your password has been changed.')).toBeInTheDocument();
+  });
+
+  it('keeps the reset form open when the verification code is wrong', async () => {
+    mockLoadedPage({
+      '/auth/forgot-password': { message: 'sent' },
+      '/auth/reset-password': new ApiError('Invalid verification code', 400),
+    });
+    render(<ProfilePage />);
+    await screen.findByRole('heading', { level: 2, name: 'Ada Lovelace' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Send Reset Email' }));
+    await screen.findByPlaceholderText('Enter verification code');
+
+    await userEvent.type(screen.getByPlaceholderText('Enter verification code'), '000000');
+    await userEvent.type(screen.getByPlaceholderText('Enter new password'), 'NewPassword1!');
+    await userEvent.type(screen.getByPlaceholderText('Retype password'), 'NewPassword1!');
+    await userEvent.click(screen.getByRole('button', { name: 'Reset Password' }));
+
+    expect(await screen.findByText('Invalid verification code')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset Password' })).toBeInTheDocument();
+    expect(screen.queryByText('Your password has been changed.')).not.toBeInTheDocument();
   });
 
   it('surfaces a load failure instead of a blank page', async () => {

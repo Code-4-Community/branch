@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 import { dispatch, json, type Route } from '@branch/lambda-http';
 
 // Mock the database module BEFORE importing handler
-jest.mock('../db');
+jest.mock('@branch/store');
 // Memberships the mocked session should appear to have. Named `mock*` so it can
 // be referenced from the jest.mock factory below.
 const mockMemberships: Array<{ project_id: number; role: string }> = [];
@@ -38,11 +38,14 @@ jest.mock('@aws-sdk/client-cognito-identity-provider', () => {
 });
 
 import { handler } from '../handler';
-import db from '../db';
+import { db, updateUser, createUser, removeUser } from '@branch/store';
 import { authenticateRequest } from '../auth';
 import { before } from 'node:test';
 
 const mockDb = db as any;
+const mockUpdateUser = updateUser as jest.MockedFunction<typeof updateUser>;
+const mockCreateUser = createUser as jest.MockedFunction<typeof createUser>;
+const mockRemoveUser = removeUser as jest.MockedFunction<typeof removeUser>;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
 
@@ -84,15 +87,7 @@ function mockExistingUserForPatch(updated?: Record<string, unknown>) {
 
   // patchUser writes and reads back in one statement, so the row the handler
   // answers with is the one the UPDATE's RETURNING produces.
-  mockDb.updateTable.mockReturnValue({
-    set: jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        returningAll: jest.fn().mockReturnValue({
-          executeTakeFirst: (jest.fn() as any).mockResolvedValue(updated ?? existing),
-        }),
-      }),
-    }),
-  });
+  mockUpdateUser.mockResolvedValue((updated ?? existing) as never);
 }
 
 function mockAdminAuth() {
@@ -343,12 +338,7 @@ describe('POST /users unit tests', () => {
         where: jest.fn().mockReturnValue(whereChain),
       });
 
-      // Mock the insert
-      mockDb.insertInto.mockReturnValue({
-        values: jest.fn().mockReturnValue({
-          execute: (jest.fn() as any).mockResolvedValue(undefined),
-        }),
-      });
+      mockCreateUser.mockResolvedValue({ user_id: 1 } as never);
 
       const res = await handler(
         postEvent({
@@ -486,16 +476,7 @@ describe('PATCH /users/{userId} unit tests', () => {
 
   describe('Success Cases', () => {
     test('404: returns 404 when user does not exist', async () => {
-      // Nothing matched the id, so the UPDATE returns no row.
-      mockDb.updateTable.mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            returningAll: jest.fn().mockReturnValue({
-              executeTakeFirst: (jest.fn() as any).mockResolvedValue(undefined),
-            }),
-          }),
-        }),
-      });
+      mockUpdateUser.mockResolvedValue(undefined);
 
       const res = await handler(patchEvent(999, { name: 'Whoever' }));
 
@@ -539,7 +520,7 @@ describe('PATCH /users/{userId} unit tests', () => {
       // Only the provided field should be passed to .set(). toStrictEqual (unlike
       // toEqual) does NOT ignore undefined keys, so this fails if the handler ever
       // regresses to setting every column and leaving omitted ones undefined.
-      const setCall = (mockDb.updateTable.mock.results[0].value.set as jest.Mock).mock.calls[0][0];
+      const setCall = mockUpdateUser.mock.calls[0][1];
       expect(setCall).toStrictEqual({ name: 'New Name' });
     });
   });

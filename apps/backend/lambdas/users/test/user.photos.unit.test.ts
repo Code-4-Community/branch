@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
-jest.mock('../db');
+jest.mock('@branch/store');
 
 // Memberships the mocked session should appear to have. None matter here --
 // profile:* is self-scoped -- but resolveAuth still has to build a subject.
@@ -33,10 +33,11 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
 }));
 
 import { handler } from '../handler';
-import db from '../db';
+import { db, updateUser } from '@branch/store';
 import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;
+const mockUpdateUser = updateUser as jest.MockedFunction<typeof updateUser>;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 
 // Only the identity is mocked: dispatch and the controllers run the real
@@ -154,22 +155,14 @@ describe('PATCH /users/{userId} profileImage', () => {
     // patchUser settles the update, the 404 and the response body in one
     // statement, so the chain ends in returningAll().executeTakeFirst() rather
     // than execute() followed by a re-read.
-    mockDb.updateTable.mockReturnValue({
-      set: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          returningAll: jest.fn().mockReturnValue({
-            executeTakeFirst: (jest.fn() as any).mockResolvedValue({
-              user_id: userId,
-              name: 'Ada Lovelace',
-              email: 'ada@example.com',
-              is_admin: false,
-              profile_image: null,
-              created_at: null,
-            }),
-          }),
-        }),
-      }),
-    });
+    mockUpdateUser.mockResolvedValue({
+      user_id: userId,
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+      is_admin: false,
+      profile_image: null,
+      created_at: null,
+    } as never);
   }
 
   test('accepts a key this service minted for the same user', async () => {

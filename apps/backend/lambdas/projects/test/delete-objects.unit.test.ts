@@ -29,13 +29,10 @@ jest.mock('../auth', () => ({
 }));
 
 const mockDeleteExecute = jest.fn();
-jest.mock('../db', () => ({
+jest.mock('@branch/store', () => ({
   __esModule: true,
-  default: {
-    deleteFrom: () => ({
-      where: () => ({ execute: (...a: unknown[]) => mockDeleteExecute(...a) }),
-    }),
-  },
+  db: {},
+  removeProject: (...a: unknown[]) => mockDeleteExecute(...a),
 }));
 
 const mockS3Send = jest.fn<(command: any) => Promise<any>>();
@@ -81,7 +78,7 @@ describe('DELETE /projects/{id} object cleanup', () => {
     process.env.REPORTS_BUCKET_NAME = 'bucket';
     mockSubject.isAdmin = true;
   mockAuthenticateRequest.mockResolvedValue(adminContext as never);
-    mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 1n }] as never);
+    mockDeleteExecute.mockResolvedValue(1n as never);
   });
 
   test('clears both the receipts and reports prefixes for that project', async () => {
@@ -163,7 +160,7 @@ describe('DELETE /projects/{id} object cleanup', () => {
   });
 
   test('touches nothing when the row was already gone', async () => {
-    mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 0n }] as never);
+    mockDeleteExecute.mockResolvedValue(0n as never);
     listReturns({ 'receipts/7/': ['receipts/7/a.pdf'] });
 
     const res = await handler(deleteEvent(7));

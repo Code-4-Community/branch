@@ -30,7 +30,7 @@ resource "aws_ses_domain_mail_from" "app" {
 resource "aws_route53_record" "ses_verification" {
   count = local.create_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = "_amazonses.${var.app_domain}"
   type    = "TXT"
   ttl     = 600
@@ -40,7 +40,7 @@ resource "aws_route53_record" "ses_verification" {
 resource "aws_route53_record" "ses_dkim" {
   count = local.create_dns ? 3 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = "${aws_ses_domain_dkim.app[0].dkim_tokens[count.index]}._domainkey.${var.app_domain}"
   type    = "CNAME"
   ttl     = 600
@@ -50,7 +50,7 @@ resource "aws_route53_record" "ses_dkim" {
 resource "aws_route53_record" "ses_mail_from_mx" {
   count = local.create_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = aws_ses_domain_mail_from.app[0].mail_from_domain
   type    = "MX"
   ttl     = 600
@@ -60,7 +60,7 @@ resource "aws_route53_record" "ses_mail_from_mx" {
 resource "aws_route53_record" "ses_mail_from_spf" {
   count = local.create_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = aws_ses_domain_mail_from.app[0].mail_from_domain
   type    = "TXT"
   ttl     = 600
@@ -70,7 +70,7 @@ resource "aws_route53_record" "ses_mail_from_spf" {
 resource "aws_route53_record" "spf" {
   count = local.create_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = var.app_domain
   type    = "TXT"
   ttl     = 600
@@ -80,7 +80,7 @@ resource "aws_route53_record" "spf" {
 resource "aws_route53_record" "dmarc" {
   count = local.create_dns ? 1 : 0
 
-  zone_id = aws_route53_zone.app[0].zone_id
+  zone_id = local.zone_id
   name    = "_dmarc.${var.app_domain}"
   type    = "TXT"
   ttl     = 600

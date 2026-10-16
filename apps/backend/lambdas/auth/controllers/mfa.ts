@@ -7,7 +7,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
-import db from '../db';
+import { db } from '@branch/store';
 import { cognitoClient } from '../services/cognito';
 
 /**

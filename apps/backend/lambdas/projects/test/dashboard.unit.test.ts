@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
-jest.mock('../db');
+jest.mock('@branch/store');
 // Memberships the mocked session should appear to have. Named `mock*` so it can
 // be referenced from the jest.mock factory below.
 const mockMemberships: Array<{ project_id: number; role: string }> = [];
@@ -25,7 +25,7 @@ jest.mock('../auth', () => {
 });
 
 import { handler } from '../handler';
-import db from '../db';
+import { db } from '@branch/store';
 import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;

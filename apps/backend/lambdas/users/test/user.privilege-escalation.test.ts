@@ -7,7 +7,7 @@
  */
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
-jest.mock('../db');
+jest.mock('@branch/store');
 // Memberships the mocked session should appear to have. Named `mock*` so it can
 // be referenced from the jest.mock factory below.
 const mockMemberships: Array<{ project_id: number; role: string }> = [];
@@ -32,10 +32,11 @@ jest.mock('../auth', () => {
 });
 
 import { handler } from '../handler';
-import db from '../db';
+import { db, updateUser } from '@branch/store';
 import { authenticateRequest } from '../auth';
 
 const mockDb = db as any;
+const mockUpdateUser = updateUser as jest.MockedFunction<typeof updateUser>;
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<
   typeof authenticateRequest
 >;
@@ -66,7 +67,16 @@ function mockDbForPatch() {
       }),
     }),
   });
-  mockDb.updateTable.mockReturnValue({ set: mockSet });
+  mockUpdateUser.mockImplementation(async (_id, values) => {
+    mockSet(values);
+    return {
+      user_id: 2,
+      name: 'Regular User',
+      email: 'user@example.com',
+      is_admin: false,
+      profile_image: null,
+    } as never;
+  });
 }
 
 /** Non-admin, userId 2 — so /2 is "self". */

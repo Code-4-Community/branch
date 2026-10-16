@@ -1,8 +1,8 @@
 # Database migrations
 
-Schema changes are plain `.sql` files in `migrations/`, applied by [kysely's
-`Migrator`](https://kysely.dev/docs/migrations). They are applied to **production
-automatically when your PR merges**.
+Schema changes are plain `.sql` files in `migrations/`, applied by
+[Flyway](https://documentation.red-gate.com/flyway). They are applied to
+**production automatically when your PR merges**.
 
 ## Changing the schema
 
@@ -10,7 +10,7 @@ automatically when your PR merges**.
 cd apps/backend
 make up                                   # if the stack isn't already running
 
-make new-migration NAME=add_expenditure_notes   # creates migrations/<utc>_add_expenditure_notes.sql
+make new-migration NAME=add_expenditure_notes   # creates migrations/V<utc>__add_expenditure_notes.sql
 # ...write your SQL...
 make migrate                              # applies it, reseeds if empty, regenerates types, prints status
 ```
@@ -59,31 +59,66 @@ and CI will reject the change.
 
 ## How it works
 
-- `migrations/*.sql` — applied in filename order. `make new-migration` generates a
-  UTC `YYYYMMDDHHMMSS_` prefix so concurrent PRs can't collide.
+- `migrations/V<version>__<description>.sql` — applied in version order.
+  `make new-migration` generates a UTC `VYYYYMMDDHHMMSS__` prefix so concurrent PRs
+  can't collide. The double underscore is Flyway's separator and is not optional.
 - `seed.sql` — dev/test data only, **never applied to production**.
 - `testkit.ts` — `ensureSchema()` / `resetData()` used by the lambda tests.
-- `src/` — the runner CLI, the type generator, and the shared post-processing that
-  keeps local and CI type output byte-identical.
+- `flyway.sh` — the only place Flyway is configured. Uses the flyway on `PATH`,
+  otherwise the pinned image, so docker is the only prerequisite.
+- `src/` — seeding and schema-rebuild commands, the type generator, and the shared
+  post-processing that keeps local and CI type output byte-identical.
 
-**What's applied is tracked in the database**, in `branch.kysely_migration` — one row
-per applied migration (`name`, `timestamp`). "Pending" is just the `.sql` files on
-disk minus the rows in that table. It's an ordinary table, so in any environment:
+**What's applied is tracked in the database**, in `branch.flyway_schema_history` —
+one row per applied migration, including a checksum of the file. "Pending" is the
+`.sql` files on disk minus the rows in that table. It's an ordinary table, so in any
+environment:
 
 ```sql
-select * from branch.kysely_migration order by name;
+select version, description, checksum, success from branch.flyway_schema_history
+ order by installed_rank;
 ```
 
-All pending migrations run inside a **single transaction** with
-`search_path = branch, public`, so table names can be unqualified and a failure
-part-way through rolls the whole run back. That's also why `CREATE INDEX
-CONCURRENTLY` and `VACUUM` don't work here — they can't run in a transaction. This
-database is tiny; a plain `CREATE INDEX` is fine.
+The checksum is why a merged migration can never be edited: Flyway compares the file
+against the recorded checksum on the next run and fails the deploy.
 
-Out-of-order merges are allowed (`allowUnorderedMigrations`): if your migration
-merges after someone whose timestamp is later, it simply applies late. The
-alternative — the default — is a production deploy that fails with `corrupted
-migrations` and can only be unblocked by hand-editing `kysely_migration` in RDS.
+Each migration file runs inside its **own transaction** with
+`search_path = branch, public`, so table names can be unqualified and a failure
+part-way through a file rolls that file back. That's also why `CREATE INDEX
+CONCURRENTLY` and `VACUUM` don't work here — they can't run in a transaction.
+
+## Writing for Aurora DSQL
+
+Production runs on Aurora DSQL, while local dev and CI run Postgres, so every
+migration has to run on both. CI enforces all of this with `dsql-lint`:
+
+- **One DDL statement per file, and no DML beside it.** DSQL allows one DDL per
+  transaction and never mixes it with `INSERT`/`UPDATE`/`DELETE`. A backfill is its own
+  migration. (`V0000` is the one exception: its `.sql.conf` sets
+  `executeInTransaction=false`.)
+- **`CREATE INDEX ${async} ...`** — DSQL builds every index asynchronously. Flyway waits
+  for the build before the next migration.
+- **No `SERIAL`, triggers, PL/pgSQL or `TRUNCATE`.** Ids come from a
+  `CREATE SEQUENCE ... CACHE 1` (its own migration) and `INT DEFAULT nextval(...)`.
+  `LANGUAGE sql` functions are fine.
+- **At most 3,000 rows changed**, cascades included.
+- **Always give `NUMERIC` a precision and scale.** DSQL stores a bare `NUMERIC` as
+  `numeric(18,6)`, so `12.34` comes back as `12.340000`.
+
+`${async}` in a migration is a Flyway placeholder. It expands to nothing on
+PostgreSQL and to `ASYNC` on Aurora DSQL (`flyway.sh` switches on a DSQL `DB_HOST`).
+Placeholders are Flyway's, so `testkit.ts` substitutes them itself when it applies
+the files directly — add any new one to `PLACEHOLDERS` there as well as to
+`flyway.sh`, or the tests fail on a postgres syntax error.
+
+Against a DSQL host, `flyway.sh` connects as `admin` to database `postgres` with an
+IAM token it mints from the caller's AWS credentials. It also mounts the pinned
+`flyway-database-dsql` plugin, which the Flyway CLI does not bundle.
+
+Out-of-order merges are allowed (`outOfOrder`): if your migration merges after
+someone whose timestamp is later, it simply applies late. The alternative — the
+default — is a production deploy that fails and can only be unblocked by
+hand-editing `flyway_schema_history` on the cluster.
 
 ## In CI
 
@@ -91,44 +126,26 @@ migrations` and can only be unblocked by hand-editing `kysely_migration` in RDS.
 | --- | --- |
 | PR opened/updated with a migration | A bot posts a checklist comment. `migrations-fresh` applies every migration to an empty Postgres, checks idempotency, and verifies the committed types match. `migrations-guard` rejects edits to already-merged migrations, bad filenames, and unsafe SQL. |
 | Types are stale | The `Schema Change Checks` workflow regenerates `shared/types/db-types.d.ts` and pushes it to your branch. **Expect one red `migrations-fresh` run before that commit lands** — that's normal, not a flake. |
-| PR merges to main | The `migrate` job in `lambda-deploy.yml` snapshots RDS, applies pending migrations, and only then lets the lambda zips deploy. A failed migration blocks the code deploy. |
+| PR merges to main | The `migrate` job in `lambda-deploy.yml` applies pending migrations to the DSQL cluster, and only then lets the lambda zips deploy. A failed migration blocks the code deploy. |
 | Preview environments | Migrations are **never** applied there — previews share the production database. A PR that adds a migration cannot be fully previewed; endpoints using the new columns will fail until it merges. |
 
 If a migration fails in CI, production is left on the old schema **and** the old
 code. Fix it forward with a new commit.
 
-Two rollback levers exist, both free at this database's size and both a ~20-minute
-manual restore-into-a-new-instance procedure, not a button:
+**There is no pre-migration snapshot.** DSQL has no `CreateDBSnapshot`, and no AWS
+Backup plan covers the cluster yet, so a bad migration is fixed forward. The last
+RDS snapshot, `branch-rds-final-20261015`, holds the data as of the cutover.
 
-- a `branch-premigrate-<utc>-<sha>` snapshot taken before every migration run, tagged
-  with the commit. The five most recent are kept — manual snapshots never expire on
-  their own, so the job prunes older ones.
-- 7 days of point-in-time recovery (`backup_retention_period` in
-  `infrastructure/aws/main.tf`), which can restore to any second in the window.
+The `migrate` job refuses to run against an **empty** target, on the assumption that
+it means `DB_HOST` is pointing somewhere unexpected, and against a populated schema
+with no Flyway history, which is a clone rather than production.
 
-## One-time: adopting an existing database
+## History
 
-`0000_baseline_schema.sql` is the schema as it existed before migrations, and is the
-only migration allowed to use `IF NOT EXISTS` — that's what lets it be applied to a
-database that already has these tables.
+Production moved from RDS Postgres 17 to Aurora DSQL on 2026-10-15 (#404–#406), and
+RDS was deleted afterwards. `V0000` is a DSQL-shaped squash of the RDS-era
+migrations; nothing has ever run it against RDS.
 
-`IF NOT EXISTS` skips the **entire** `CREATE TABLE` when the table exists, so it
-cannot detect a column or constraint that differs. Before running the migrator
-against a pre-existing database, diff it:
 
-```bash
-# use a pg_dump matching the server's major version
-pg_dump --schema-only --schema=branch --no-owner --no-privileges --no-comments \
-        -T 'branch.kysely_migration*' -d "$URL" | grep -v '^--'
-```
-
-Run that against a local database with only the baseline applied, and against the
-target; `diff -u` the two. Once it's empty, run `npm run migrate` against the target
-with a human watching — the baseline no-ops and records itself in the ledger.
-
-If the schemas genuinely diverge, use `npm run db -- stamp 0000_baseline_schema` to
-record it without executing, then write a follow-up migration reconciling the
-difference.
-
-The `migrate` job refuses to run if `0000_baseline_schema` is still pending, on the
-assumption that it means `DB_HOST` is pointing somewhere unexpected.
+**Local databases built before the squash** still record nine applied versions, and
+Flyway refuses to migrate them. Run `make down-v && make up` once.

@@ -45,6 +45,12 @@ resource "aws_iam_role_policy_attachment" "ci_plan_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
+# Plan needs dsql read access; ReadOnlyAccess is not guaranteed to include it.
+resource "aws_iam_role_policy_attachment" "ci_plan_dsql_readonly" {
+  role       = aws_iam_role.ci_plan.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonAuroraDSQLReadOnlyAccess"
+}
+
 resource "aws_iam_role_policy" "ci_plan_state_lock" {
   name = "tfstate-lock"
   role = aws_iam_role.ci_plan.id
@@ -185,13 +191,6 @@ resource "aws_iam_role_policy" "ci_preview" {
         Action   = "logs:*"
         Resource = "*"
       },
-      # Resolve the shared RDS endpoint to build DB_HOST for preview lambdas.
-      {
-        Sid      = "DescribeRds"
-        Effect   = "Allow"
-        Action   = ["rds:DescribeDBInstances"]
-        Resource = "*"
-      },
       # Frontend hosting: sync builds into / delete prefixes from the shared
       # preview bucket, and invalidate the shared distribution.
       {
@@ -236,14 +235,13 @@ resource "aws_iam_role_policy" "ci_preview" {
 # ---------------------------------------------------------------------------
 # Migrate role — assumable ONLY from the `production-db` environment.
 # Powers the `migrate` job in .github/workflows/lambda-deploy.yml, which applies
-# apps/backend/db/migrations to the production RDS instance before the new lambda
+# apps/backend/db/migrations to the production DSQL cluster before the new lambda
 # code is deployed.
 #
 # Deliberately NOT branch-ci-apply: applying schema needs to read one lambda's
-# config and snapshot one database, nothing else. The job reads the DB connection
-# off the deployed branch-auth function rather than holding a copy of the
-# credentials, so there is no second place for the prod password to live and
-# rotating it in Infisical needs no CI change.
+# config and connect to one cluster, nothing else. The job reads the DB host off
+# the deployed branch-auth function, so it can never migrate a database the code
+# is not talking to.
 # ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "ci_migrate_assume" {
   statement {
@@ -286,29 +284,11 @@ resource "aws_iam_role_policy" "ci_migrate" {
         Action   = ["lambda:GetFunctionConfiguration"]
         Resource = aws_lambda_function.functions["auth"].arn
       },
-      # DescribeDBInstances is on "*" because the job resolves the instance by
-      # matching DB_HOST rather than by name, so the ARN isn't known up front.
       {
-        Sid      = "ResolveInstanceAndSnapshots"
+        Sid      = "MigrateDsql"
         Effect   = "Allow"
-        Action   = ["rds:DescribeDBInstances", "rds:DescribeDBSnapshots"]
-        Resource = "*"
-      },
-      # Pre-migration snapshot, plus pruning old ones. Backup storage under the
-      # instance's allocated_storage is free, so this costs nothing and is the
-      # only rollback lever that does not require reasoning about timestamps.
-      {
-        Sid    = "PreMigrationSnapshots"
-        Effect = "Allow"
-        Action = [
-          "rds:CreateDBSnapshot",
-          "rds:DeleteDBSnapshot",
-          "rds:AddTagsToResource",
-        ]
-        Resource = [
-          aws_db_instance.branch_rds.arn,
-          "arn:aws:rds:us-east-2:${data.aws_caller_identity.current.account_id}:snapshot:branch-premigrate-*",
-        ]
+        Action   = ["dsql:DbConnectAdmin"]
+        Resource = aws_dsql_cluster.branch.arn
       },
     ]
   })

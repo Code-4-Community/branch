@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import { json, RouteHandler, serverError } from '@branch/lambda-http';
-import db from '../db';
+import { can } from '@branch/rbac';
+import { db } from '@branch/store';
 import { APPROVED_EXPENDITURE_STATUS } from '../validation-utils';
 import { isProjectActive, listRoster, loadAdminHeadcount } from '../services/projects';
 import { requireVisibleProject } from './project-guard';
@@ -221,7 +222,10 @@ export const getOverview: RouteHandler = async (ctx) => {
       expenditureCount: approved.length,
     },
     members,
-    expenditures,
+    // Reviewer notes are admin-only, as on GET /expenditures.
+    expenditures: can(ctx.auth.subject, 'expense:viewAdminNotes')
+      ? expenditures
+      : expenditures.map(({ admin_notes: _adminNotes, ...rest }) => rest),
     isActive: isProjectActive(project.end_date),
   });
 };

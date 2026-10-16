@@ -31,16 +31,9 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
         />
         {getPageNumbers(currentPage, totalPages).map((page, index) =>
           page === '...' ? (
-            <Button
-              key={`ellipsis-${index}`}
-              backgroundColor="var(--color-core-white)"
-              color="var(--color-core-green)"
-              border="1px solid"
-              borderColor="var(--color-core-green)"
-              cursor="default"
-            >
+            <span key={`ellipsis-${index}`} style={{ color: 'var(--color-core-green)' }}>
               ...
-            </Button>
+            </span>
           ) : (
             <Button
               key={page}

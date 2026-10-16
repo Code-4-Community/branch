@@ -26,9 +26,9 @@ export interface Queryable {
 }
 
 /**
- * Byte-order sort, matching the sort kysely's Migrator uses to order migrations.
- * If these two ever disagree, tests and production apply migrations in different
- * orders.
+ * Byte-order sort. Flyway orders by parsed version rather than by filename, but
+ * `V<zero-padded digits>__` sorts identically either way. If that ever stops
+ * being true, tests and production apply migrations in different orders.
  */
 function migrationFiles(): string[] {
   return fs
@@ -37,14 +37,29 @@ function migrationFiles(): string[] {
     .sort();
 }
 
+// Must stay in step with the `-placeholders.*` flags in flyway.sh; tests apply the SQL directly.
+const PLACEHOLDERS: Record<string, string> = { async: '' };
+
+function substitutePlaceholders(sql: string, file: string): string {
+  return sql.replace(/\$\{(\w+)\}/g, (match, name: string) => {
+    const value = PLACEHOLDERS[name];
+    if (value === undefined) {
+      throw new Error(
+        `${file}: unknown Flyway placeholder ${match} -- define it in flyway.sh and in PLACEHOLDERS here`,
+      );
+    }
+    return value;
+  });
+}
+
 let allSql: string | undefined;
 function allMigrationSql(): string {
   allSql ??= migrationFiles()
     .map(
       (file) =>
-        `-- ${file}\n${fs.readFileSync(
-          path.join(MIGRATIONS_DIR, file),
-          'utf8',
+        `-- ${file}\n${substitutePlaceholders(
+          fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8'),
+          file,
         )}`,
     )
     .join('\n');
@@ -62,41 +77,55 @@ export function migrationsFingerprint(): string {
   return crypto.createHash('sha256').update(allMigrationSql()).digest('hex');
 }
 
+export const HISTORY_TABLE = 'flyway_schema_history';
+
 /**
- * Writes kysely's migration ledger as if every migration file had just been
- * applied by the Migrator: branch.kysely_migration with one row per file, plus
- * branch.kysely_migration_lock. The DDL is copied from kysely's Migrator so a
- * later `npm run migrate` finds exactly what it expects.
+ * Writes Flyway's history as if every migration file had just been applied. The
+ * DDL is copied from what Flyway itself creates on PostgreSQL, so a later
+ * `npm run migrate` finds exactly what it expects.
  *
  * Without this, rebuildSchema() would leave a schema whose tables exist but
- * whose ledger is empty -- and since the dev stack and the tests share one local
- * database, the next `make migrate` would try to re-apply every migration and
- * fail on "already exists".
+ * whose history is empty -- and since the dev stack and the tests share one
+ * local database, the next `make migrate` would re-apply every migration,
+ * failing on "already exists".
  */
 export async function stampLedger(client: Queryable): Promise<void> {
   await client.query(
-    `CREATE TABLE IF NOT EXISTS ${SCHEMA}.kysely_migration (
-       name varchar(255) NOT NULL PRIMARY KEY,
-       "timestamp" varchar(255) NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS ${SCHEMA}.${HISTORY_TABLE} (
+       installed_rank integer NOT NULL PRIMARY KEY,
+       version varchar(50),
+       description varchar(200) NOT NULL,
+       type varchar(20) NOT NULL,
+       script varchar(1000) NOT NULL,
+       checksum integer,
+       installed_by varchar(100) NOT NULL,
+       installed_on timestamp NOT NULL DEFAULT now(),
+       execution_time integer NOT NULL,
+       success boolean NOT NULL)`,
   );
   await client.query(
-    `CREATE TABLE IF NOT EXISTS ${SCHEMA}.kysely_migration_lock (
-       id varchar(255) NOT NULL PRIMARY KEY,
-       is_locked integer NOT NULL DEFAULT 0)`,
-  );
-  await client.query(
-    `INSERT INTO ${SCHEMA}.kysely_migration_lock (id, is_locked)
-     VALUES ('migration_lock', 0) ON CONFLICT (id) DO NOTHING`,
+    `CREATE INDEX IF NOT EXISTS ${HISTORY_TABLE}_s_idx
+       ON ${SCHEMA}.${HISTORY_TABLE} (success)`,
   );
 
-  const now = new Date().toISOString();
+  // Flyway stores the description with the underscores turned back into spaces.
   const rows = migrationFiles()
-    .map((file) => `('${file.slice(0, -'.sql'.length)}', '${now}')`)
+    .map((file, index) => {
+      const [version, description] = file
+        .slice(1, -'.sql'.length)
+        .split('__', 2);
+      return (
+        `(${index + 1}, '${version}', '${description.replace(/_/g, ' ')}',` +
+        ` 'SQL', '${file}', NULL, current_user, 0, TRUE)`
+      );
+    })
     .join(', ');
   if (rows) {
     await client.query(
-      `INSERT INTO ${SCHEMA}.kysely_migration (name, "timestamp")
-       VALUES ${rows} ON CONFLICT (name) DO NOTHING`,
+      `INSERT INTO ${SCHEMA}.${HISTORY_TABLE}
+         (installed_rank, version, description, type, script, checksum,
+          installed_by, execution_time, success)
+       VALUES ${rows} ON CONFLICT (installed_rank) DO NOTHING`,
     );
   }
 }
@@ -114,8 +143,8 @@ export async function rebuildSchema(client: Queryable): Promise<void> {
   await client.query(`SET search_path TO ${SCHEMA}, public`);
   try {
     // A parameterless multi-statement query goes over the simple query protocol
-    // and runs as one implicit transaction -- the same all-or-nothing semantics
-    // kysely's Migrator gives us in production.
+    // and runs as one implicit transaction. Flyway commits per file rather than
+    // per run, so this is stricter than production, not looser.
     await client.query(allMigrationSql());
   } finally {
     await client.query('RESET search_path');
@@ -168,7 +197,7 @@ async function truncateAll(client: Queryable): Promise<string> {
     const { rows } = await client.query(
       `SELECT quote_ident(schemaname) || '.' || quote_ident(tablename) AS t
          FROM pg_tables
-        WHERE schemaname = '${SCHEMA}' AND tablename NOT LIKE 'kysely_migration%'
+        WHERE schemaname = '${SCHEMA}' AND tablename <> '${HISTORY_TABLE}'
         ORDER BY tablename`,
     );
     const tables = (rows ?? []).map((row) => row.t as string);
@@ -184,18 +213,113 @@ async function truncateAll(client: Queryable): Promise<string> {
   return truncateStatement;
 }
 
+// The id sequences are unowned (DSQL has no ALTER SEQUENCE ... OWNED BY), so RESTART IDENTITY skips them.
+const RESTART_SEQUENCES = `
+  SELECT setval(format('%I.%I', schemaname, sequencename), 1, false)
+    FROM pg_sequences WHERE schemaname = '${SCHEMA}'`;
+
 /**
- * Call in `beforeEach`. Empties every table, restarts every SERIAL sequence at 1,
+ * Call in `beforeEach`. Empties every table, restarts every id sequence at 1,
  * and re-applies seed.sql -- so seeded ids stay deterministic (users 1-3,
  * projects 1-4, donors 1-3) and rows a test creates land on 4+, exactly as they
  * did when tests re-ran the whole of db_setup.sql.
- *
- * Not covered by TRUNCATE: standalone sequences (ones not owned by a serial
- * column) and materialized views. There are none today.
  */
 export async function resetData(client: Queryable): Promise<void> {
   await client.query(await truncateAll(client));
+  await client.query(RESTART_SEQUENCES);
   await client.query(seedSql());
+  await reconcileRollups(client);
+}
+
+const EXPECTED_EXPENDITURE_ROLLUP = `
+  SELECT project_id,
+         date_trunc('month', spent_on)::date AS month,
+         category,
+         status,
+         SUM(amount) AS total_amount,
+         COUNT(*)::int AS expenditure_count
+    FROM ${SCHEMA}.expenditures
+   GROUP BY project_id, date_trunc('month', spent_on)::date, category, status`;
+
+const EXPECTED_PROJECT_ROLLUP = `
+  SELECT p.project_id,
+         COALESCE(m.c, 0)     AS member_count,
+         COALESCE(d.total, 0) AS total_donated,
+         COALESCE(d.c, 0)     AS donation_count,
+         COALESCE(r.c, 0)     AS report_count
+    FROM ${SCHEMA}.projects p
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.project_memberships GROUP BY project_id) m
+           ON m.project_id = p.project_id
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c, SUM(amount) AS total FROM ${SCHEMA}.project_donations GROUP BY project_id) d
+           ON d.project_id = p.project_id
+    LEFT JOIN (SELECT project_id, COUNT(*) AS c FROM ${SCHEMA}.reports GROUP BY project_id) r
+           ON r.project_id = p.project_id`;
+
+// A zero-count expenditure_rollup row equals a missing one: _remove decrements without deleting.
+export async function findRollupDrift(client: Queryable): Promise<string[]> {
+  const expenditures = await client.query(`
+    WITH expected AS (${EXPECTED_EXPENDITURE_ROLLUP})
+    SELECT 'expenditure_rollup project=' || COALESCE(e.project_id, a.project_id)
+           || ' month=' || COALESCE(e.month, a.month)
+           || ' status=' || COALESCE(e.status, a.status)
+           || ' category=' || COALESCE(e.category, a.category, '<null>')
+           || ' expected=' || COALESCE(e.total_amount, 0) || '/' || COALESCE(e.expenditure_count, 0)
+           || ' actual='   || COALESCE(a.total_amount, 0) || '/' || COALESCE(a.expenditure_count, 0) AS drift
+      FROM expected e
+      FULL OUTER JOIN ${SCHEMA}.expenditure_rollup a
+        ON a.project_id = e.project_id
+       AND a.month = e.month
+       AND a.status = e.status
+       AND (a.category IS NULL) = (e.category IS NULL)
+       AND COALESCE(a.category, '') = COALESCE(e.category, '')
+     WHERE COALESCE(a.expenditure_count, 0) <> COALESCE(e.expenditure_count, 0)
+        OR COALESCE(a.total_amount, 0) <> COALESCE(e.total_amount, 0)`);
+
+  const projects = await client.query(`
+    WITH expected AS (${EXPECTED_PROJECT_ROLLUP})
+    SELECT 'project_rollup project=' || e.project_id
+           || ' expected=' || e.member_count || '/' || e.total_donated || '/' || e.donation_count || '/' || e.report_count
+           || ' actual='   || COALESCE(a.member_count::text, 'ROW MISSING')
+           || '/' || COALESCE(a.total_donated::text, '-')
+           || '/' || COALESCE(a.donation_count::text, '-')
+           || '/' || COALESCE(a.report_count::text, '-') AS drift
+      FROM expected e
+      LEFT JOIN ${SCHEMA}.project_rollup a ON a.project_id = e.project_id
+     WHERE a.project_id IS NULL
+        OR a.member_count <> e.member_count
+        OR a.total_donated <> e.total_donated
+        OR a.donation_count <> e.donation_count
+        OR a.report_count <> e.report_count`);
+
+  return [...(expenditures.rows ?? []), ...(projects.rows ?? [])].map(
+    (row) => row.drift as string,
+  );
+}
+
+export async function assertRollupsConsistent(client: Queryable): Promise<void> {
+  const drift = await findRollupDrift(client);
+  if (drift.length > 0) {
+    throw new Error(
+      `rollups disagree with the base tables:\n  ${drift.join('\n  ')}`,
+    );
+  }
+}
+
+export async function reconcileRollups(client: Queryable): Promise<void> {
+  await client.query(`DELETE FROM ${SCHEMA}.expenditure_rollup`);
+  await client.query(
+    `INSERT INTO ${SCHEMA}.expenditure_rollup
+       (project_id, month, category, status, total_amount, expenditure_count)
+     SELECT project_id, month, category, status, total_amount, expenditure_count
+       FROM (${EXPECTED_EXPENDITURE_ROLLUP}) AS expected`,
+  );
+  await client.query(`DELETE FROM ${SCHEMA}.project_rollup`);
+  await client.query(
+    `INSERT INTO ${SCHEMA}.project_rollup
+       (project_id, member_count, total_donated, donation_count, report_count)
+     SELECT project_id, member_count, total_donated, donation_count, report_count
+       FROM (${EXPECTED_PROJECT_ROLLUP}) AS expected`,
+  );
 }
 
 /**

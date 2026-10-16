@@ -1,6 +1,6 @@
 import type { RouteCtx } from '@branch/lambda-http';
 import { json, serverError } from '@branch/lambda-http';
-import db from '../db';
+import { db, createDonor as storeCreateDonor, removeDonor } from '@branch/store';
 import { DonorValidationUtils } from '../validation-utils';
 
 // Authentication and the route's permission are enforced by dispatch before any
@@ -67,14 +67,11 @@ export async function createDonor({ event }: RouteCtx) {
   const { organization, contactName, contactEmail } = validationResult;
 
   try {
-    await db
-      .insertInto('branch.donors')
-      .values({
-        organization,
-        contact_name: contactName ?? null,
-        contact_email: contactEmail ?? null,
-      })
-      .executeTakeFirst();
+    await storeCreateDonor({
+      organization,
+      contact_name: contactName ?? null,
+      contact_email: contactEmail ?? null,
+    });
   } catch (err) {
     return serverError(err, 'Failed to create donor');
   }
@@ -97,8 +94,8 @@ export async function deleteDonor({ params }: RouteCtx) {
     return json(400, { message: 'id must be a positive integer' });
   }
 
-  const deleted = await db.deleteFrom('branch.donors').where('donor_id', '=', Number(id)).execute();
-  if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+  const deleted = await removeDonor(Number(id));
+  if (deleted === 0n) {
     return json(404, { message: 'Donor not found' });
   }
 

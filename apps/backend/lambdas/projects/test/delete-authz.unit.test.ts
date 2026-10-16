@@ -29,13 +29,10 @@ jest.mock('../auth', () => ({
 }));
 
 const mockDeleteExecute = jest.fn();
-jest.mock('../db', () => ({
+jest.mock('@branch/store', () => ({
   __esModule: true,
-  default: {
-    deleteFrom: () => ({
-      where: () => ({ execute: (...a: unknown[]) => mockDeleteExecute(...a) }),
-    }),
-  },
+  db: {},
+  removeProject: (...a: unknown[]) => mockDeleteExecute(...a),
 }));
 
 import { handler } from '../handler';
@@ -61,7 +58,7 @@ const staffContext = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockSubject.isAdmin = true;
-  mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 1n }]);
+  mockDeleteExecute.mockResolvedValue(1n);
 });
 
 describe('DELETE /projects/{id}', () => {
@@ -96,7 +93,7 @@ describe('DELETE /projects/{id}', () => {
 
   test('404 when an admin targets a project that does not exist', async () => {
     mockAuthenticateRequest.mockResolvedValue(adminContext);
-    mockDeleteExecute.mockResolvedValue([{ numDeletedRows: 0n }]);
+    mockDeleteExecute.mockResolvedValue(0n);
 
     const res = await handler(deleteEvent(999));
 

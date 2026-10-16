@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
-import db from '../db';
+import { db, closeConnection } from '@branch/store';
 
 // mock auth only for now
 jest.mock('../auth', () => {
@@ -15,7 +15,7 @@ jest.mock('../auth', () => {
   const { loadRbacSubject } = jest.requireActual<typeof import('@branch/lambda-auth')>(
     '@branch/lambda-auth',
   );
-  const db = jest.requireActual<typeof import('../db')>('../db').default;
+  const db = jest.requireActual<typeof import('@branch/store')>('@branch/store').db;
   const authenticateRequest = jest.fn();
   return {
     ...jest.requireActual<typeof import('../auth')>('../auth'),
@@ -187,7 +187,7 @@ describe('Expenditures integration tests', () => {
 
   afterAll(async () => {
     await pool.end();
-    await db.destroy();
+    await closeConnection();
   });
 
   describe('Health check', () => {
@@ -313,14 +313,14 @@ describe('Expenditures integration tests', () => {
           projectID: 1,
           amount: 300,
           status: 'approved',
-          receipt_url: 'https://s3.amazonaws.com/branch-receipts/receipt.pdf',
+          receipt_url: 'https://branch-reports.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf',
         })
       );
 
       expect(res.statusCode).toBe(201);
       const body = JSON.parse(res.body);
       expect(body.body.status).toBe('approved');
-      expect(body.body.receiptUrl).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+      expect(body.body.receiptUrl).toBe('https://branch-reports.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf');
 
       const client = await pool.connect();
       try {
@@ -329,7 +329,7 @@ describe('Expenditures integration tests', () => {
         );
         expect(result.rows.length).toBe(1);
         expect(result.rows[0].status).toBe('approved');
-        expect(result.rows[0].receipt_url).toBe('https://s3.amazonaws.com/branch-receipts/receipt.pdf');
+        expect(result.rows[0].receipt_url).toBe('https://branch-reports.s3.us-east-2.amazonaws.com/receipts/1/receipt.pdf');
       } finally {
         client.release();
       }

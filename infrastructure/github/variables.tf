@@ -4,6 +4,12 @@ variable "aws_account_id" {
   default     = "404813129370"
 }
 
+variable "api_base_url" {
+  description = "Backend URL baked into the frontend build; published as vars.API_BASE_URL"
+  type        = string
+  default     = "https://api.branchaccounting.org"
+}
+
 variable "repository_collaborators" {
   description = "List of GitHub users to add as collaborators"
   type = list(object({

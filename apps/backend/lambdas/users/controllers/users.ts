@@ -4,7 +4,7 @@ import {
   AdminDeleteUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { json, reportError, requirePermission, type RouteHandler } from '@branch/lambda-http';
-import db from '../db';
+import { db, createUser as storeCreateUser, updateUser, removeUser } from '@branch/store';
 import { UserValidationUtils } from '../validation-utils';
 import {
   AVATAR_EXTENSIONS,
@@ -203,12 +203,7 @@ export const patchUser: RouteHandler = async ({ event, params, auth }) => {
   // SELECT ahead of it and none behind it. The cost is that a malformed body is
   // now answered before a bad id — a 400 rather than a 404 — which is the same
   // precedence every other validated route here already has.
-  const updatedUser = await db
-    .updateTable('branch.users')
-    .set(updates)
-    .where('user_id', '=', Number(userId))
-    .returningAll()
-    .executeTakeFirst();
+  const updatedUser = await updateUser(Number(userId), updates);
 
   if (!updatedUser) return json(404, { message: 'User not found' });
 
@@ -222,9 +217,9 @@ export const deleteUser: RouteHandler = async ({ params }) => {
   const user = await db.selectFrom('branch.users').where('user_id', '=', Number(userId)).select('email').executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
 
-  const deleted = await db.deleteFrom('branch.users').where('user_id', '=', Number(userId)).execute();
+  const deleted = await removeUser(Number(userId));
 
-  if (!deleted[0] || deleted[0].numDeletedRows === 0n) {
+  if (deleted === 0n) {
     return json(404, { message: 'User not found' });
   }
 
@@ -316,10 +311,7 @@ export const createUser: RouteHandler = async ({ event }) => {
 
   // Insert into database with cognito_sub
   try {
-    await db
-      .insertInto('branch.users')
-      .values({ cognito_sub: cognitoSub, email, name, is_admin: isAdmin, profile_image })
-      .execute();
+    await storeCreateUser({ cognito_sub: cognitoSub, email, name, is_admin: isAdmin, profile_image });
   } catch (err: any) {
     console.error('Database insert error:', err);
     // Rollback: delete Cognito user to keep systems in sync

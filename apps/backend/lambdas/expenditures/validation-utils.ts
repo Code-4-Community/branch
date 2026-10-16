@@ -14,9 +14,9 @@ export interface ExpenditureInput {
 /** The subset of an expenditure its author may revise. */
 export interface ExpenditureUpdate {
     amount?: number;
-    category?: string;
-    description?: string;
-    receiptUrl?: string;
+    category?: string | null;
+    description?: string | null;
+    receiptUrl?: string | null;
     spentOn?: string;
 }
 
@@ -151,23 +151,24 @@ export class ExpenditureValidationUtils {
             update.amount = amount;
         }
 
+        // An explicit null clears the field.
         if (body.category !== undefined) {
             const category = this.validateCategory(body.category);
             if (category instanceof Error) return category;
-            update.category = category;
+            update.category = category ?? null;
         }
 
         if (body.description !== undefined) {
             const description = this.validateDescription(body.description);
             if (description instanceof Error) return description;
-            update.description = description;
+            update.description = description ?? null;
         }
 
-        const rawReceipt = body.receiptUrl ?? body.receipt_url;
+        const rawReceipt = body.receiptUrl !== undefined ? body.receiptUrl : body.receipt_url;
         if (rawReceipt !== undefined) {
             const receiptUrl = this.validateReceiptUrl(rawReceipt);
             if (receiptUrl instanceof Error) return receiptUrl;
-            update.receiptUrl = receiptUrl;
+            update.receiptUrl = receiptUrl ?? null;
         }
 
         if (body.spentOn !== undefined) {

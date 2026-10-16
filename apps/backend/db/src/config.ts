@@ -1,8 +1,11 @@
-import fs from 'node:fs';
+import path from 'node:path';
 import { Pool } from 'pg';
 
 /** Every table lives in this schema; the generated DB types key off it. */
 export const SCHEMA = 'branch';
+
+/** Flyway is pointed at the same directory by flyway.sh. */
+export const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 /**
  * The one place that knows how to reach the database.
@@ -24,24 +27,8 @@ export function databaseUrl(): string {
   return `postgresql://${user}:${password}@${host}:${port}/${name}`;
 }
 
-/**
- * TLS settings. Local postgres speaks plaintext; RDS terminates TLS, and when we
- * connect to it from a GitHub runner the traffic crosses the public internet, so
- * CI sets DB_SSL_CA to the AWS bundle and gets full certificate verification.
- * DB_SSL=true without a CA falls back to encrypted-but-unverified.
- */
-function sslConfig(): false | { ca: string } | { rejectUnauthorized: false } {
-  if (process.env.DB_SSL_CA) {
-    return { ca: fs.readFileSync(process.env.DB_SSL_CA, 'utf8') };
-  }
-  if (process.env.DB_SSL === 'true') {
-    return { rejectUnauthorized: false };
-  }
-  return false;
-}
-
 export function createPool(): Pool {
-  return new Pool({ connectionString: databaseUrl(), ssl: sslConfig() });
+  return new Pool({ connectionString: databaseUrl() });
 }
 
 /** Host and database only -- safe to log, unlike databaseUrl(). */

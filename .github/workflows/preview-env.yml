@@ -8,7 +8,7 @@ name: PR Preview Environment
 #
 # Cost: ~$0. Per-PR lambdas + one REST API Gateway (all serverless-at-rest);
 # the frontend is a path prefix on the ONE shared CloudFront distribution
-# (infrastructure/preview-shared). Shared RDS + Cognito are reused as-is;
+# (infrastructure/preview-shared). Shared database + Cognito are reused as-is;
 # migrations are never run here -- structurally, not just to save money: the
 # generated DB types hardcode the `branch.` schema prefix
 # (shared/types/db-types.d.ts), so a per-PR schema would need per-PR type
@@ -138,7 +138,7 @@ jobs:
             | del(.NODE_ENV, .AWS_REGION, .AWS_DEFAULT_REGION, .AWS_ACCESS_KEY_ID, .AWS_SECRET_ACCESS_KEY, .AWS_SESSION_TOKEN)
           ')
           # Fail loudly rather than shipping a preview that 401s on every DB call.
-          for key in DB_HOST DB_NAME DB_USER DB_PASSWORD COGNITO_USER_POOL_ID COGNITO_CLIENT_ID; do
+          for key in DB_HOST DB_NAME DB_USER COGNITO_USER_POOL_ID COGNITO_CLIENT_ID; do
             value=$(jq -r --arg k "$key" '.[$k] // ""' <<<"$ENV_JSON")
             if [ -z "$value" ]; then
               echo "::error::branch-auth/branch-reports did not provide $key; preview lambdas would be misconfigured."
@@ -274,7 +274,7 @@ jobs:
                 `**Open:** ${url}`,
                 `**API:** \`${process.env.API_URL}\``,
                 '',
-                '_Shared RDS + Cognito (prod data); DB migrations are **not** applied here — if this PR adds a migration, endpoints using the new columns will fail until it merges. New commits update this environment in place — a note is posted here on each update. Remove the `test-environment` label or close the PR to tear it down._',
+                '_Shared database + Cognito (prod data); DB migrations are **not** applied here — if this PR adds a migration, endpoints using the new columns will fail until it merges. New commits update this environment in place — a note is posted here on each update. Remove the `test-environment` label or close the PR to tear it down._',
               ].join('\n');
             } else {
               body = `🌿 **Test environment updated in place** ✅ — Click [here](${url}) to open. <sub>updated for ${sha} · [logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})</sub>`;

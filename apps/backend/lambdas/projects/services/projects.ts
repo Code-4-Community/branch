@@ -1,4 +1,3 @@
-import { Transaction } from 'kysely';
 import {
   S3Client,
   ListObjectsV2Command,
@@ -6,9 +5,9 @@ import {
 } from '@aws-sdk/client-s3';
 import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
-import db from '../db';
+import { db } from '@branch/store';
 import { ADMIN_MEMBER_ROLE, type MemberDisplayRole } from '@branch/rbac';
-import { APPROVED_EXPENDITURE_STATUS, DEFAULT_PROJECT_ROLE, MemberAssignment } from '../validation-utils';
+import { APPROVED_EXPENDITURE_STATUS, MemberAssignment } from '../validation-utils';
 
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
 
@@ -203,49 +202,6 @@ export async function loadAdminHeadcount(projectIds: number[]): Promise<{
     admins: Number(totalRow?.count ?? 0),
     storedAdmins: indexByProject(storedRows, (r) => Number(r.count ?? 0)),
   };
-}
-
-/**
- * Replaces a project's roster with `members` inside the caller's transaction.
- *
- * Delete-then-insert rather than a diff: the set is small and bounded by the
- * staff list, and doing it in one transaction means a failed insert cannot
- * leave the project with nobody assigned.
- *
- * An entry with no `role` keeps the role that member already held. The staff
- * picker submits bare ids, and "Director" is derived from these rows, so
- * defaulting them all to Student would make every ordinary project edit strip
- * the project's directors of their role.
- */
-export async function syncMemberships(
-  trx: Transaction<DB>,
-  projectId: number,
-  members: MemberAssignment[],
-): Promise<void> {
-  const existing = await trx
-    .selectFrom('branch.project_memberships')
-    .where('project_id', '=', projectId)
-    .select(['user_id', 'role'])
-    .execute();
-  const heldRole = new Map(existing.map((row) => [row.user_id, row.role]));
-
-  await trx
-    .deleteFrom('branch.project_memberships')
-    .where('project_id', '=', projectId)
-    .execute();
-
-  if (members.length === 0) return;
-
-  await trx
-    .insertInto('branch.project_memberships')
-    .values(
-      members.map((m) => ({
-        project_id: projectId,
-        user_id: m.user_id,
-        role: m.role ?? heldRole.get(m.user_id) ?? DEFAULT_PROJECT_ROLE,
-      })),
-    )
-    .execute();
 }
 
 export const ADMIN_ASSIGNMENT_MESSAGE =
