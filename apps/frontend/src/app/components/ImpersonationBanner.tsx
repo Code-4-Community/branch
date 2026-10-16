@@ -12,11 +12,6 @@ function timeOf(iso: string): string {
   });
 }
 
-/**
- * Shown on every page while a staff account is switched into someone else, so
- * nobody forgets whose data they are looking at, or that a full session's
- * writes are real.
- */
 export default function ImpersonationBanner() {
   const { user, stopImpersonation } = useAuth();
   const router = useRouter();

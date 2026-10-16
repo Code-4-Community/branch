@@ -4,14 +4,12 @@ import { DIRECTOR_ROLES } from '@branch/lambda-auth';
 import type { ImpersonationMode } from '@branch/lambda-auth';
 import { db, endImpersonationSession, startImpersonationSession } from '@branch/store';
 
-/** How long one switch-in lasts before the staff console has to start another. */
 export const SESSION_TTL_MS = 60 * 60 * 1000;
 
 const MODES: readonly ImpersonationMode[] = ['read_only', 'full'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TARGET_LIMIT = 200;
 
-/** GET /auth/impersonation/targets?search= -- everyone a staff account may switch into. */
 export const handleListTargets: RouteHandler = async ({ event }) => {
   const search = String(event.queryStringParameters?.search ?? '').trim();
 
@@ -52,7 +50,6 @@ export const handleListTargets: RouteHandler = async ({ event }) => {
       name: u.name,
       email: u.email,
       isAdmin: u.is_admin === true,
-      // Never signed in: their account exists but nothing they see is real yet.
       pending: u.cognito_sub === null,
       directorProjectCount: counts.get(u.user_id)?.directs ?? 0,
       memberProjectCount: counts.get(u.user_id)?.member ?? 0,
@@ -60,7 +57,6 @@ export const handleListTargets: RouteHandler = async ({ event }) => {
   });
 };
 
-/** POST /auth/impersonation { targetUserId, mode } -- start a switch-in. */
 export const handleStartImpersonation: RouteHandler = async ({ event, auth }) => {
   const body = parseBody(event);
   const targetUserId = Number(body?.targetUserId);
@@ -96,11 +92,7 @@ export const handleStartImpersonation: RouteHandler = async ({ event, auth }) =>
   });
 };
 
-/**
- * DELETE /auth/impersonation/:sessionId -- end a switch-in. Called as the staff
- * account itself, without the impersonation header, so a read-only session can
- * always be left. Idempotent.
- */
+// Called as the staff account, without the impersonation header, so a read-only session can always be left.
 export const handleEndImpersonation: RouteHandler = async ({ params, auth }) => {
   if (!UUID.test(params.sessionId)) return json(404, { message: 'Session not found' });
 

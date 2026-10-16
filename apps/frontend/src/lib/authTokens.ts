@@ -80,10 +80,7 @@ export function clearTokens(): void {
   }
 }
 
-/**
- * The staff console's switch-in, if any. sessionStorage rather than
- * localStorage: it is scoped to one tab, so other tabs stay the staff account.
- */
+/** sessionStorage, not localStorage: tab-scoped, so other tabs stay the staff account. */
 const IMPERSONATION_KEY = 'branch_impersonation_session';
 
 export function getImpersonationSession(): string | null {

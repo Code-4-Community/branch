@@ -51,10 +51,6 @@ export function endSession(): void {
 
 const impersonationListeners = new Set<() => void>();
 
-/**
- * Subscribe to the server ending a switch-in (expired, or ended from another
- * tab). The staff account's own session is still good when this fires.
- */
 export function onImpersonationEnded(listener: () => void): () => void {
   impersonationListeners.add(listener);
   return () => impersonationListeners.delete(listener);
@@ -118,10 +114,6 @@ export function refreshSession(): Promise<boolean> {
 export interface AuthedRequestOptions extends RequestInit {
   /** Set false to skip the refresh-and-retry dance (used when signing out). */
   retryOn401?: boolean;
-  /**
-   * Send as the signed-in staff account even while switched in. For the staff
-   * console's own calls: starting and ending a session.
-   */
   asSelf?: boolean;
 }
 
@@ -143,10 +135,7 @@ export async function authedFetch<T>(
     });
   } catch (error) {
     if (!isImpersonationFailure(error)) throw error;
-    // The switch-in is over, not the session: drop it and say so. A read is
-    // retried as the staff account, so the bootstrap /auth/me lands on the
-    // console instead of signing staff out; a write is never re-sent as someone
-    // else.
+    // Reads retry as staff so bootstrap /auth/me lands on the console; a write is never re-sent as someone else.
     clearImpersonationSession();
     for (const listener of impersonationListeners) listener();
     const method = (options.method ?? 'GET').toUpperCase();

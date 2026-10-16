@@ -59,15 +59,12 @@ export interface AuthUser {
    * into a signed-in session that is denied everything.
    */
   rbac: RbacSubject;
-  /** A staff account acting as itself. False while impersonating. */
   isStaff?: boolean;
-  /** Set while a staff account is switched into this user. */
   impersonation?: Impersonation | null;
 }
 
 export type ImpersonationMode = 'read_only' | 'full';
 
-/** The staff account behind the session, as GET /auth/me reports it. */
 export interface Impersonation {
   userId: number;
   name: string;
@@ -119,9 +116,7 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   refresh: () => Promise<boolean>;
   reloadUser: () => Promise<void>;
-  /** Staff only. Resolves with the target's session once it is in place. */
   startImpersonation: (targetUserId: number, mode: ImpersonationMode) => Promise<AuthUser>;
-  /** Back to the staff account. Safe to call when not impersonating. */
   stopImpersonation: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (
@@ -220,10 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = useCallback(() => authedFetch<AuthUser>('/auth/me'), []);
 
-  /**
-   * Swap whose session this is. The whole cache goes, not just /auth/me: every
-   * other entry was fetched as the previous identity.
-   */
+  /** Clears the whole cache, not just /auth/me: every entry was fetched as the previous identity. */
   const replaceIdentity = useCallback(
     (next: AuthUser | null) => {
       queryClient.clear();
@@ -292,7 +284,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [setUser],
   );
 
-  // The server ended a switch-in (expiry, or another tab): fall back to staff.
   useEffect(
     () =>
       onImpersonationEnded(() => {
@@ -433,7 +424,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const sessionId = getImpersonationSession();
     if (!sessionId) return;
     clearImpersonationSession();
-    // Best effort: the session expires on its own within the hour regardless.
     await authedFetch(`/auth/impersonation/${encodeURIComponent(sessionId)}`, {
       method: 'DELETE',
       asSelf: true,
@@ -452,7 +442,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Best effort: clear locally even if the server call fails.
     });
     endSession();
-    // Clear, not just null: the next account in this tab must not see this one's cache.
     replaceIdentity(null);
   }, [replaceIdentity, stopImpersonation]);
 

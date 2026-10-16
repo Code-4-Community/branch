@@ -153,10 +153,7 @@ types:
 	  -e TYPES_OUT=/shared/types/db-types.d.ts \
 	  migrator npm run --silent types
 
-# usage: make create-staff EMAIL=dev@example.com NAME="Dev Name"
-#
-# Hidden staff account (see shared/rbac/README.md). Runs on the host against
-# whatever COGNITO_USER_POOL_ID / DB_HOST / AWS credentials are exported.
+# Runs on the host, against whatever COGNITO_USER_POOL_ID / DB_HOST / AWS credentials are exported.
 create-staff:
 	@test -n "$(EMAIL)" -a -n "$(NAME)" || (echo 'usage: make create-staff EMAIL=dev@example.com NAME="Dev Name"' && exit 1)
 	@npm --prefix lambdas/users run --silent create-staff -- --email "$(EMAIL)" --name "$(NAME)"

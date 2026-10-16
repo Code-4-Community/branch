@@ -357,11 +357,6 @@ describe('authenticateRequest', () => {
   });
 });
 
-/**
- * Routes each query by table. The identity query is filtered by its one
- * `where`; the session query by all of them, so a test proves the session is
- * bound to the calling staff account and not just looked up by id.
- */
 function makeImpersonationDb(users: any[], sessions: any[]) {
   const chain = (run: (filters: [string, unknown][]) => unknown[]) => {
     const filters: [string, unknown][] = [];

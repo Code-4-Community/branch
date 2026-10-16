@@ -5,8 +5,7 @@ export interface NewImpersonationSession {
   staffUserId: number
   targetUserId: number
   mode: ImpersonationMode
-  // Passed in rather than defaulted by the column, so expiry is compared against
-  // one clock: the lambda's.
+  // Not defaulted by the column, so expiry is compared against one clock: the lambda's.
   startedAt: Date
   expiresAt: Date
 }
@@ -28,7 +27,7 @@ export async function startImpersonationSession(values: NewImpersonationSession)
   })
 }
 
-/** Bound to the staff account, so one cannot end another's session. Idempotent. */
+/** Bound to the staff account, so one cannot end another's session. */
 export async function endImpersonationSession(sessionId: string, staffUserId: number): Promise<void> {
   await tx(async (trx) =>
     trx
@@ -41,7 +40,6 @@ export async function endImpersonationSession(sessionId: string, staffUserId: nu
   )
 }
 
-/** The `onImpersonatedWrite` hook for `dispatch`. */
 export async function recordImpersonationAction(
   impersonator: Pick<Impersonator, 'sessionId'>,
   method: string,
@@ -56,7 +54,6 @@ export async function recordImpersonationAction(
   )
 }
 
-/** Only the provisioning script creates these; no route can set is_staff. */
 export async function createStaffUser(values: {
   cognitoSub: string
   email: string

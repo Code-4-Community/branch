@@ -219,9 +219,7 @@ export const POLICY = {
   'accounts:delete': unscoped(ADMIN_ONLY, admin),
 
   // -- Impersonation --------------------------------------------------------
-  // The only actions a staff subject passes; see the gate in authorizeAny.
-  // While impersonating the subject is the target's, so these deny and a
-  // switch cannot be chained.
+  // While impersonating the subject is the target's, so these deny and a switch cannot be chained.
   'impersonation:console': unscoped(STAFF_ONLY, (s) => s.isStaff),
   'impersonation:start': unscoped(STAFF_ONLY, (s) => s.isStaff),
 } satisfies Record<string, PolicyEntry<any>>;
@@ -287,7 +285,6 @@ export function authorizeAny(
 
   const s = subject ?? ANONYMOUS;
 
-  // A staff account holds no rights of its own, whatever a rule below says.
   if (s.isStaff && !STAFF_ACTIONS.has(action)) return deny(STAFF_MUST_SWITCH);
 
   // Fail closed. A caller that forgot the resource must not get a rule

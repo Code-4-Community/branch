@@ -29,10 +29,6 @@ function roleOf(t: Target): string {
   return t.memberProjectCount > 0 ? 'Member' : 'No projects';
 }
 
-/**
- * The staff console: the only page a staff account can open as itself. Picking
- * a user starts a session as them; the banner in providers.tsx is the way back.
- */
 export default function StaffConsolePage() {
   const api = useApi();
   const router = useRouter();
@@ -77,7 +73,6 @@ export default function StaffConsolePage() {
       router.replace(landingPathFor(me.rbac));
     } catch (err) {
       setSwitching(null);
-      // Rethrown so the full-access dialog stays open and shows it.
       setError(
         err instanceof Error ? err.message : 'Could not switch into this user',
       );

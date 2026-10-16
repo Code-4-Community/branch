@@ -59,7 +59,6 @@ function mockSelfAuth(userId = 1) {
   } as any);
 }
 
-/** Any where/select chain ending in executeTakeFirst, whatever its length. */
 function selectChain(row: unknown) {
   const chain: any = {
     where: jest.fn(() => chain),

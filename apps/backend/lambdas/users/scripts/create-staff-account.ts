@@ -1,15 +1,4 @@
-/**
- * Provision a hidden staff account. The only way one is ever created: no route
- * can set users.is_staff.
- *
- *   COGNITO_USER_POOL_ID=... DB_HOST=... \
- *     npm run create-staff -- --email dev@example.com --name "Dev Name"
- *
- * Mirrors POST /users: AdminCreateUser mails the invite with a temp password,
- * then the row is inserted with that sub; a failed insert deletes the Cognito
- * user again. Against production, DB_HOST is the DSQL endpoint and the caller's
- * AWS credentials mint the IAM token.
- */
+// The only way a staff account is created: no route can set users.is_staff.
 import {
   AdminCreateUserCommand,
   AdminDeleteUserCommand,

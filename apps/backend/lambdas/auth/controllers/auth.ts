@@ -220,7 +220,6 @@ export const handleMe: RouteHandler = async ({ auth }) => {
     isAdmin: me.isAdmin,
     isStaff: me.isStaff,
     profileImage: await resolveProfileImage(me.profileImage),
-    // Set while a staff account is switched in; the banner reads it.
     impersonation: auth.context.user?.impersonator ?? null,
     // The RBAC subject travels with identity so the browser evaluates the same
     // policy against the same facts the lambdas used. Without it the frontend

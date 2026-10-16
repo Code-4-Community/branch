@@ -83,7 +83,6 @@ function makeWrapper(subject: RbacSubject | null, auth: Record<string, unknown> 
 interface Options extends Omit<RenderOptions, 'wrapper'> {
   /** `null` renders signed out. Defaults to an admin. */
   subject?: RbacSubject | null;
-  /** Overrides merged into the `useAuth()` value, e.g. a `user` or an action mock. */
   auth?: Record<string, unknown>;
 }
 

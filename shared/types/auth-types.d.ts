@@ -35,14 +35,12 @@ export interface AuthenticatedDbUser {
 
 export type ImpersonationMode = 'read_only' | 'full';
 
-/** The staff account behind an impersonated request. */
 export interface Impersonator {
   userId: number;
   name: string;
   email: string;
   sessionId: string;
   mode: ImpersonationMode;
-  /** ISO timestamp. */
   expiresAt: string;
 }
 
@@ -52,9 +50,7 @@ export interface AuthenticatedUser {
   /** The JWT `email` claim. Not the same field as `dbUser.email`. */
   email?: string;
   isAdmin: boolean;
-  /** False while impersonating: every identity field is then the target's. */
   isStaff?: boolean;
-  /** Set when a staff account is acting as this user. */
   impersonator?: Impersonator;
   cognitoGroups?: string[];
   /** Set whenever `AuthContext.isAuthenticated` is true. */
@@ -71,10 +67,6 @@ export interface AuthenticatedUser {
 export interface AuthContext {
   user?: AuthenticatedUser;
   isAuthenticated: boolean;
-  /**
-   * Why an otherwise valid token was refused, when "Authentication required"
-   * would mislead. Only impersonation sets it today.
-   */
   failure?: AuthFailure;
 }
 
