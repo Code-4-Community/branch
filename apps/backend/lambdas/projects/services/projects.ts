@@ -224,11 +224,7 @@ export async function findAdminUserIds(members: MemberAssignment[]): Promise<num
   return admins.map((row) => row.user_id);
 }
 
-/**
- * Rejects member ids that are not real users, so FK errors never reach the
- * client as a 500. A staff account counts as unknown: it can never hold a
- * membership, and the error must not confirm one exists.
- */
+/** Rejects member ids that are not real users, so FK errors never 500; a staff id counts as unknown so none is confirmed. */
 export async function findUnknownUserIds(members: MemberAssignment[]): Promise<number[]> {
   if (members.length === 0) return [];
   const ids = members.map((m) => m.user_id);

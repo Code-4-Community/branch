@@ -7,10 +7,6 @@
 export interface RbacSubject {
   userId: number | null;
   isAdmin: boolean;
-  /**
-   * A hidden staff account acting as itself. Always false while impersonating:
-   * the subject is then the target's.
-   */
   isStaff: boolean;
   /** Every project this user has any membership row on. */
   memberProjectIds: number[];

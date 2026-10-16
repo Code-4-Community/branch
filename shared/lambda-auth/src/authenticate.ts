@@ -48,7 +48,6 @@ export function extractToken(event: any): string | null {
   return authHeader;
 }
 
-/** Sent by the staff console on every request made while switched in. */
 export const IMPERSONATION_HEADER = 'x-impersonate-session';
 
 export function extractImpersonationSession(event: any): string | null {
@@ -141,11 +140,6 @@ export async function authenticateRequest(
   return { user, isAuthenticated: true };
 }
 
-/**
- * The caller's `branch.users` row fanned out over its memberships, in one round
- * trip. LEFT because a user with no memberships must still authenticate; an
- * inner join would sign them out.
- */
 async function selectIdentity(
   db: QueryableDb,
   column: 'u.cognito_sub' | 'u.user_id',
@@ -215,13 +209,7 @@ function refuse(failure: AuthFailure): AuthContext {
   return { isAuthenticated: false, failure };
 }
 
-/**
- * Swap a staff caller for the user their session names. Everything downstream —
- * the subject, list scoping, `entered_by` — then sees only the target.
- *
- * A header from a non-staff caller is refused rather than ignored: silently
- * serving them as themselves would hide a client bug or a probe.
- */
+/** A header from a non-staff caller is refused, not ignored: ignoring it would hide a client bug or a probe. */
 async function impersonate(
   db: QueryableDb,
   staff: CallerRow,

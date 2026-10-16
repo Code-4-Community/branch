@@ -74,7 +74,6 @@ export async function dispatch(
   }
 }
 
-/** `auth` is kept on a refusal when the caller was identified, so it can be audited. */
 type Gate =
   | { auth: RequestAuth; response?: undefined }
   | { auth?: RequestAuth; response: APIGatewayProxyResult };

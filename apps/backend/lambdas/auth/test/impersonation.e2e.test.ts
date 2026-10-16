@@ -1,6 +1,4 @@
-// Real authenticateRequest, real dispatch, real DB: only the JWT signature check
-// is faked, and the token is simply the caller's Cognito sub. Mocked by the path
-// @branch/lambda-auth resolves it from, which is its own node_modules, not ours.
+// Mocked at the path @branch/lambda-auth resolves it from: its own node_modules, not ours.
 jest.mock(require.resolve('aws-jwt-verify', { paths: [require.resolve('@branch/lambda-auth')] }), () => ({
   CognitoJwtVerifier: {
     create: () => ({ verify: async (token: string) => ({ sub: token }) }),
@@ -21,7 +19,6 @@ const pool = new Pool({
   ssl: false,
 });
 
-// Seed user 4 directs project 1; user 6 is a student on project 2.
 const TARGET = 4;
 
 beforeAll(async () => {
@@ -151,7 +148,6 @@ test('full: cannot chain a switch, and every write is audited with its outcome',
       WHERE session_id = $1 ORDER BY created_at`,
     [session],
   );
-  // Refused attempts are part of the trail, not just writes that landed.
   expect(rows).toEqual([
     { method: 'POST', path: '/auth/impersonation', status_code: 403 },
     { method: 'POST', path: '/auth/mfa-setup', status_code: 403 },

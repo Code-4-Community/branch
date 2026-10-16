@@ -21,8 +21,7 @@ const cognitoClient = new CognitoIdentityProviderClient({
 
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
-// Staff accounts are invisible here: every read filters them out and the column
-// itself is never returned. A staff id answers 404, exactly like a missing one.
+// A staff id answers 404, exactly like a missing one, so none is confirmed.
 const USER_COLUMNS = [
   'user_id',
   'cognito_sub',

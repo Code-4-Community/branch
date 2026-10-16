@@ -46,8 +46,6 @@ export const routes: Route[] = [
   { method: 'POST', pattern: '/auth/mfa-verify', access: 'authenticated', impersonation: 'blocked', handler: handleMfaVerify },
   { method: 'POST', pattern: '/auth/mfa-disable', access: 'authenticated', impersonation: 'blocked', handler: handleMfaDisable },
   { method: 'GET', pattern: '/auth/mfa-status', access: 'authenticated', impersonation: 'blocked', handler: handleMfaStatus },
-  // Staff console. MFA above is blocked while impersonating: it acts on the
-  // caller's Cognito session, which is then the staff account's.
   { method: 'GET', pattern: '/auth/impersonation/targets', permission: 'impersonation:console', handler: handleListTargets },
   { method: 'POST', pattern: '/auth/impersonation', permission: 'impersonation:start', handler: handleStartImpersonation },
   { method: 'DELETE', pattern: '/auth/impersonation/:sessionId', permission: 'impersonation:start', handler: handleEndImpersonation },

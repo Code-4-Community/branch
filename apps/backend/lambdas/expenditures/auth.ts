@@ -18,5 +18,4 @@ export const resolveAuth = createAuthResolver(authenticateRequest, (context) =>
   loadRbacSubject(db, context),
 );
 
-/** Audit row per write made while a staff account is impersonating. */
 export const onImpersonatedWrite = recordImpersonationAction;
