@@ -263,6 +263,9 @@ function LoginPageContent() {
             <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
             </Link>
+            <Link href="/help" className="!text-core-green ![font-family:var(--font-body)] !text-[16px]">
+                Help
+            </Link>
         </form>
         </div>
     );

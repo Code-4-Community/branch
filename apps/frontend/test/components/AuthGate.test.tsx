@@ -121,6 +121,21 @@ describe('AuthGate', () => {
     });
   });
 
+  describe('open routes', () => {
+    it.each([
+      ['an anonymous visitor', () => session()],
+      ['a signed-in member', () => session({ subject: memberSubject() })],
+      ['a session still resolving', () => session({ isLoading: true })],
+    ])('shows /help to %s without redirecting', (_label, make) => {
+      currentPath = '/help/sign-in';
+      authState = make();
+      renderGate();
+
+      expect(screen.getByTestId('protected-content')).toBeInTheDocument();
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+  });
+
   describe('admin routes', () => {
     it('shows a no-access panel to a non-admin instead of redirecting', () => {
       currentPath = '/reports';
