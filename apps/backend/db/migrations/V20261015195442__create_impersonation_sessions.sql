@@ -1,7 +1,4 @@
--- V20261015195442__create_impersonation_sessions
---
--- One row per staff switch-in. No foreign keys: the audit trail must outlive
--- the users it names.
+-- No foreign keys: the audit trail must outlive the users it names.
 
 CREATE TABLE impersonation_sessions (
     session_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),

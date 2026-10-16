@@ -1,7 +1,3 @@
--- V20261015195443__create_impersonation_actions
---
--- Every mutating request made while impersonating in full mode.
-
 CREATE TABLE impersonation_actions (
     action_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id  UUID NOT NULL,
