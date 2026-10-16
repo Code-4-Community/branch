@@ -160,8 +160,6 @@ function mockQueryError(err: Error) {
 
 // Mocks the query chain used by the handler to fetch a single expenditure
 function mockSelectExpenditure(result: any, name?: string) {
-  // GET /expenditures/{id} reads the row and the submitter and project names
-  // in one joined statement, so those names arrive as columns on the row.
   return mockQuery((calls: string[]) =>
     calls.includes('innerJoin') && result && name
       ? { ...result, project_name: name, submitted_by_name: name }

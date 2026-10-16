@@ -263,7 +263,6 @@ export async function purgeSoftDeleted(client: Queryable): Promise<void> {
   }
 }
 
-/** Seed ids the parity tests delete: one of each kind, plus a project and a user with children. */
 export const PARITY_DELETES = {
   expenditure: 1,
   donation: 2,
