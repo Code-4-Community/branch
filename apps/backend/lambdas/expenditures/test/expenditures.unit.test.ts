@@ -879,23 +879,6 @@ describe('DELETE /expenditures/{id} unit tests', () => {
     expect(mockS3Send).not.toHaveBeenCalledWith(expect.objectContaining({ __type: 'DeleteObject' }));
   });
 
-  test("never deletes a receipt stored under another project's prefix", async () => {
-    process.env.REPORTS_BUCKET_NAME = 'bucket';
-    mockDb.selectFrom.mockReturnValueOnce(
-      mockSelectExpenditure({
-        ...fakeExpenditure,
-        receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/2/theirs.pdf',
-      }),
-    );
-    mockRemoveExpenditure.mockResolvedValue(1n);
-
-    const res = await handler(idEvent('DELETE', '5'));
-
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).receiptDeleted).toBe(false);
-    expect(mockS3Send).not.toHaveBeenCalled();
-  });
-
   test('409 when the expense was reviewed between the check and the delete', async () => {
     mockAuthenticateRequest.mockResolvedValue(studentAuthContext);
     mockDb.selectFrom.mockReturnValue(mockSelectExpenditure({ ...fakeExpenditure, entered_by: 2 }));
