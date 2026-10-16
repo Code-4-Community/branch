@@ -1,4 +1,4 @@
-export type Section = 'Your account' | 'Expenses' | 'Projects' | 'Donors & donations' | 'Reports' | 'Team';
+export type Section = 'Accounts' | 'Expenses' | 'Projects' | 'Donors & donations' | 'Reports';
 
 export interface GuideStep {
   text: string;
@@ -12,15 +12,21 @@ export interface Guide {
   section: Section;
   adminOnly?: boolean;
   steps: GuideStep[];
+  notes?: string[];
 }
 
-export const SECTIONS: Section[] = ['Your account', 'Expenses', 'Projects', 'Donors & donations', 'Reports', 'Team'];
+export const SECTIONS: Section[] = ['Accounts', 'Expenses', 'Projects', 'Donors & donations', 'Reports'];
 
 export const GUIDES: Guide[] = [
   {
     slug: 'sign-in',
     title: 'Sign in',
-    section: 'Your account',
+    notes: [
+      'First time? Use the temporary password from your welcome email. BRANCH then asks you to pick your own.',
+      'The menu only shows pages your role can use.',
+      'You only see projects you are staff on. Admins see everything.',
+    ],
+    section: 'Accounts',
     steps: [
       {
         text: 'On the [login page](/login), enter your email and password, then click Login.',
@@ -37,7 +43,8 @@ export const GUIDES: Guide[] = [
   {
     slug: 'reset-password',
     title: 'Reset your password',
-    section: 'Your account',
+    notes: ['No email? Check spam, or click Resend code.'],
+    section: 'Accounts',
     steps: [
       {
         text: 'On the [login page](/login), click Forgot password?',
@@ -56,7 +63,7 @@ export const GUIDES: Guide[] = [
   {
     slug: 'profile',
     title: 'Edit your profile',
-    section: 'Your account',
+    section: 'Accounts',
     steps: [
       {
         text: 'Go to [Profile](/profile) and click Edit Profile.',
@@ -69,7 +76,8 @@ export const GUIDES: Guide[] = [
   {
     slug: 'two-factor',
     title: 'Turn on two-factor sign-in',
-    section: 'Your account',
+    notes: ['Once it is on, you need a code from the app every time you sign in.'],
+    section: 'Accounts',
     steps: [
       {
         text: 'Go to [Profile](/profile) and click Set Up Two-Factor.',
@@ -83,6 +91,11 @@ export const GUIDES: Guide[] = [
   {
     slug: 'expenses',
     title: 'Submit an expense',
+    notes: [
+      'An expense only counts toward a project’s spending once an admin approves it.',
+      'You can submit expenses only for projects you are staff on.',
+      'You can edit or delete your expense while it is Pending or Needs Info. After that, only an admin can change it.',
+    ],
     section: 'Expenses',
     steps: [
       {
@@ -106,6 +119,11 @@ export const GUIDES: Guide[] = [
   {
     slug: 'review-expenses',
     title: 'Review an expense',
+    notes: [
+      'Approving adds the expense to the project’s spending and the Dashboard.',
+      'Needs Info sends it back so the submitter can fix it.',
+      'Only admins can read admin notes, so tell the submitter directly what is missing.',
+    ],
     section: 'Expenses',
     adminOnly: true,
     steps: [
@@ -129,6 +147,11 @@ export const GUIDES: Guide[] = [
   {
     slug: 'projects',
     title: 'Add a project',
+    notes: [
+      'Staff you add can see the project and submit expenses for it.',
+      'A project moves to Archived after its end date. Tick “still in progress” if it has none.',
+      'Deleting a project also deletes its expenses, donations, staff and reports.',
+    ],
     section: 'Projects',
     adminOnly: true,
     steps: [
@@ -152,6 +175,7 @@ export const GUIDES: Guide[] = [
   {
     slug: 'donors',
     title: 'Add a donor',
+    notes: ['Add the donor before you record their donations.', 'Project directors can view donors but not add them.'],
     section: 'Donors & donations',
     adminOnly: true,
     steps: [
@@ -170,6 +194,7 @@ export const GUIDES: Guide[] = [
   {
     slug: 'donations',
     title: 'Record a donation',
+    notes: ['Each donation goes to one project. Split a gift across projects by recording it once per project.'],
     section: 'Donors & donations',
     adminOnly: true,
     steps: [
@@ -188,6 +213,7 @@ export const GUIDES: Guide[] = [
   {
     slug: 'reports',
     title: 'Create a report',
+    notes: ['Each report covers one project.', 'Already have a report file? Click Upload Report to store it here.'],
     section: 'Reports',
     adminOnly: true,
     steps: [
@@ -211,7 +237,11 @@ export const GUIDES: Guide[] = [
   {
     slug: 'accounts',
     title: 'Invite a user',
-    section: 'Team',
+    notes: [
+      'Tick Admin only for people who should manage everything.',
+      'Everyone else sees only the projects you add them to as staff.',
+    ],
+    section: 'Accounts',
     adminOnly: true,
     steps: [
       {

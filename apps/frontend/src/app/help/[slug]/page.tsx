@@ -5,14 +5,12 @@ import { assetPath } from '@/lib/asset';
 import { GUIDES, guideBySlug } from '../guides';
 import AdminTag from '../AdminTag';
 
-// Static export: every guide is known at build time, so each gets its own document.
 export function generateStaticParams() {
   return GUIDES.map((g) => ({ slug: g.slug }));
 }
 
 export const dynamicParams = false;
 
-// Steps mark app pages as [label](/path).
 function withLinks(text: string) {
   return text.split(/(\[[^\]]+\]\([^)]+\))/).map((part, i) => {
     const m = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
@@ -65,6 +63,25 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
           </li>
         ))}
       </ol>
+      {guide.notes && (
+        <aside
+          style={{
+            marginTop: 32,
+            padding: '16px 20px',
+            backgroundColor: '#EAEFEB',
+            borderRadius: 8,
+            fontSize: 16,
+            lineHeight: 1.5,
+          }}
+        >
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: '#2D6138', margin: '0 0 8px' }}>Good to know</h2>
+          <ul style={{ listStyle: 'disc', paddingLeft: 20, margin: 0, display: 'grid', gap: 4 }}>
+            {guide.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </aside>
+      )}
     </article>
   );
 }
