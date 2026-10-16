@@ -52,7 +52,6 @@ const PUBLIC_PREFIXES = [
   '/reset-password',
 ] as const;
 
-/** Reachable with or without a session, and nobody gets bounced off them. */
 const OPEN_PREFIXES = ['/help'] as const;
 
 /**

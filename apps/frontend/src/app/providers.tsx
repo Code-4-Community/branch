@@ -24,8 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(makeQueryClient);
   const pathname = usePathname() ?? '/';
 
-  // Open pages (help) are prerendered with real content, and Chakra's Emotion
-  // styles inline into SSR HTML and break hydration, so they skip the app shell.
+  // Chakra's Emotion styles break hydration on prerendered open pages.
   if (classifyRoute(pathname) === 'open') return <>{children}</>;
 
   return (
