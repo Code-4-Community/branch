@@ -131,7 +131,17 @@ function LoginPageContent() {
         try {
             handleResult(await respondToChallenge({ ...challenge, newPassword }));
         } catch (err) {
-            reportError(err);
+            // Not reportError(): its passwordError only renders on the credentials step.
+            if (err instanceof ApiError && err.status === 401) {
+                setChallenge(null);
+                setStep('credentials');
+                setFormError('Your sign-in session expired. Sign in again with your temporary password.');
+            } else if (err instanceof ApiError) {
+                setFormError(err.message);
+            } else {
+                console.error('Set-password failed with a non-ApiError:', err);
+                setFormError('Cannot reach the server. Check your connection and try again.');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -262,6 +272,9 @@ function LoginPageContent() {
             </Button>
             <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
+            </Link>
+            <Link href="/help" className="!text-core-green ![font-family:var(--font-body)] !text-[16px]">
+                Help
             </Link>
         </form>
         </div>

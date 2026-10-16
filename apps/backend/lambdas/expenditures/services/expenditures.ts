@@ -17,7 +17,18 @@ export const RECEIPT_CONTENT_TYPE = 'application/pdf';
 // Receipts live in the same bucket as reports, under their own prefix.
 export function receiptKeyFromUrl(objectUrl: string): string | null {
   const match = objectUrl.match(/^https:\/\/[^/]+\/(receipts\/.+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+/** The key only if it sits under this project's prefix, so one project's row cannot name another's receipt. */
+export function receiptKeyForProject(objectUrl: string, projectId: number): string | null {
+  const key = receiptKeyFromUrl(objectUrl);
+  return key && key.startsWith(`receipts/${projectId}/`) && !key.includes('..') ? key : null;
 }
 
 export async function countExpenditures(projectId: number | null, scope: ExpenditureScope): Promise<number> {
@@ -51,7 +62,9 @@ export async function queryExpenditures(
 ) {
   let query = db.selectFrom('branch.expenditures').where('deleted_at', 'is', null).selectAll();
   if (projectId !== null) query = query.where('project_id', '=', projectId);
-  const scoped = applyExpenditureScope(query, scope).orderBy('spent_on', 'desc');
+  const scoped = applyExpenditureScope(query, scope)
+    .orderBy('spent_on', 'desc')
+    .orderBy('expenditure_id', 'desc');
 
   return page ? scoped.limit(page.limit).offset(page.offset).execute() : scoped.execute();
 }
@@ -109,8 +122,9 @@ export async function findExpenditureById(id: number) {
     .executeTakeFirst();
 }
 
-export async function deleteExpenditureById(id: number): Promise<bigint> {
-  return removeExpenditure(id);
+/** `expectedStatus` is the status the caller was authorized against; a change under the lock throws. */
+export async function deleteExpenditureById(id: number, expectedStatus: string): Promise<bigint> {
+  return removeExpenditure(id, expectedStatus);
 }
 
 /**
@@ -129,9 +143,9 @@ export type ExpenditureEdit = Pick<
  * `undefined` when there was nothing to set (the caller already holds the row)
  * or when no row matched the id.
  */
-export async function updateExpenditure(id: number, values: ExpenditureEdit) {
+export async function updateExpenditure(id: number, values: ExpenditureEdit, expectedStatus: string) {
   if (Object.keys(values).length === 0) return undefined;
-  return editExpenditure(id, values);
+  return editExpenditure(id, values, expectedStatus);
 }
 
 export async function getUserContact(userId: number) {
@@ -153,6 +167,12 @@ export async function updateExpenditureStatus(
     id,
     adminNotes === undefined ? { status } : { status, admin_notes: adminNotes },
   );
+}
+
+/** Same rule as report uploads: basename only, URL-safe characters only. */
+export function safeReceiptFileName(fileName: string): string | null {
+  const safe = fileName.replace(/^.*[\\/]/, '').replace(/[^A-Za-z0-9._-]/g, '_');
+  return /[A-Za-z0-9]/.test(safe) ? safe : null;
 }
 
 export async function presignUploadUrl(projectId: number, fileName: string): Promise<{ uploadUrl: string; objectUrl: string }> {

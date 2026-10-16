@@ -435,7 +435,8 @@ describe('GET /reports/upload-url unit tests', () => {
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(project));
+    // The project lookup, then POST /reports' duplicate-objectUrl check.
+    mockDb.selectFrom = jest.fn().mockReturnValueOnce(mockQuery(project)).mockReturnValue(mockQuery(undefined));
   }
 
   beforeEach(() => {
@@ -615,7 +616,8 @@ describe('POST /reports unit tests', () => {
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
-    mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery(project));
+    // The project lookup, then POST /reports' duplicate-objectUrl check.
+    mockDb.selectFrom = jest.fn().mockReturnValueOnce(mockQuery(project)).mockReturnValue(mockQuery(undefined));
   }
 
   beforeEach(() => {
@@ -697,6 +699,13 @@ describe('POST /reports unit tests', () => {
       const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
       expect(res.statusCode).toBe(403);
       expect(JSON.parse(res.body).message).toBe('Only administrators can do this');
+    });
+
+    test('409: an objectUrl already registered as a report is refused', async () => {
+      mockDb.selectFrom = jest.fn().mockReturnValue(mockQuery({ project_id: 1, report_id: 7 }));
+      const res = await handler(postEvent({ title: 'T', projectId: 1, objectUrl: fakeObjectUrl }));
+      expect(res.statusCode).toBe(409);
+      expect(mockRecordReport).not.toHaveBeenCalled();
     });
 
     test('404: nonexistent project returns 404', async () => {

@@ -559,16 +559,19 @@ describe('POST /register — claim-on-register', () => {
     expect(mockSet.mock.calls[0][0]).not.toHaveProperty('is_admin');
   });
 
-  it('returns 409 without calling Cognito when the row is already claimed', async () => {
+  it('answers an already-claimed email exactly like an unknown one, without calling Cognito', async () => {
     mockExecuteTakeFirst.mockResolvedValue({
       user_id: 1,
       email: 'ashley@branch.org',
       cognito_sub: 'existing-sub',
     });
+    const claimed = await handler(event('/register', 'POST', validBody));
 
-    const res = await handler(event('/register', 'POST', validBody));
+    mockExecuteTakeFirst.mockResolvedValue(undefined);
+    const unknown = await handler(event('/register', 'POST', validBody));
 
-    expect(res.statusCode).toBe(409);
+    expect(claimed.statusCode).toBe(403);
+    expect(claimed.body).toBe(unknown.body);
     expect(mockSend).not.toHaveBeenCalled();
   });
 

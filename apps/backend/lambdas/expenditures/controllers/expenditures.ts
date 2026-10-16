@@ -2,6 +2,7 @@ import type { RouteHandler } from '@branch/lambda-http';
 import { json, requirePermission, serverError } from '@branch/lambda-http';
 import { can } from '@branch/rbac';
 import type { ExpenseResource } from '@branch/rbac';
+import { ExpenditureStatusChangedError } from '@branch/store';
 import { ExpenditureValidationUtils } from '../validation-utils';
 import * as expendituresService from '../services/expenditures';
 import { expenditureScope } from '../services/scope';
@@ -25,6 +26,11 @@ function resourceOf(expenditure: {
     enteredBy: expenditure.entered_by,
     status: expenditure.status,
   };
+}
+
+// The row was reviewed between the permission check and the locked write.
+function statusChanged(err: ExpenditureStatusChangedError) {
+  return json(409, { message: `This expense was just marked ${err.status}; reload and try again` });
 }
 
 // GET /expenditures
@@ -105,6 +111,10 @@ export const createExpenditure: RouteHandler = async ({ event, auth }) => {
   const denied = requirePermission(auth.subject, 'expense:create', { projectId: projectID });
   if (denied) return denied;
 
+  if (receiptUrl && !expendituresService.receiptKeyForProject(receiptUrl, projectID)) {
+    return json(400, { message: "receiptUrl must point at this project's receipts" });
+  }
+
   // A submitter cannot file an already-approved expense. The status field is
   // still accepted so an admin can record a decision at creation time.
   const effectiveStatus = can(auth.subject, 'expense:review') ? status : 'pending';
@@ -153,7 +163,11 @@ export const getUploadUrl: RouteHandler = async ({ event, auth }) => {
   if (!fileName || typeof fileName !== 'string') {
     return json(400, { message: 'fileName is required' });
   }
-  if (fileName.split('.').pop()?.toLowerCase() !== 'pdf') {
+  const safeFileName = expendituresService.safeReceiptFileName(fileName);
+  if (!safeFileName) {
+    return json(400, { message: 'Invalid fileName' });
+  }
+  if (safeFileName.split('.').pop()?.toLowerCase() !== 'pdf') {
     return json(400, { message: 'Only PDF receipts are supported' });
   }
   if (!projectIdStr || !/^\d+$/.test(projectIdStr) || parseInt(projectIdStr, 10) < 1) {
@@ -166,7 +180,7 @@ export const getUploadUrl: RouteHandler = async ({ event, auth }) => {
   const denied = requirePermission(auth.subject, 'expense:uploadReceipt', { projectId });
   if (denied) return denied;
 
-  const { uploadUrl, objectUrl } = await expendituresService.presignUploadUrl(projectId, fileName);
+  const { uploadUrl, objectUrl } = await expendituresService.presignUploadUrl(projectId, safeFileName);
   return json(200, { uploadUrl, objectUrl });
 };
 
@@ -188,7 +202,7 @@ export const getReceipt: RouteHandler = async ({ params, auth }) => {
     return json(404, { message: 'Expenditure has no receipt' });
   }
 
-  const key = expendituresService.receiptKeyFromUrl(expenditure.receipt_url);
+  const key = expendituresService.receiptKeyForProject(expenditure.receipt_url, expenditure.project_id);
   if (!key) {
     return json(422, { message: 'Receipt is not stored in the receipts bucket' });
   }
@@ -265,16 +279,29 @@ export const updateExpenditure: RouteHandler = async ({ event, params, auth }) =
   if (update instanceof Error) {
     return json(400, { message: update.message });
   }
+  if (update.receiptUrl && !expendituresService.receiptKeyForProject(update.receiptUrl, expenditure.project_id)) {
+    return json(400, { message: "receiptUrl must point at this project's receipts" });
+  }
 
   // RETURNING hands back the row the re-read used to fetch. An empty patch
   // writes nothing, so the row already in hand is the current one.
-  const written = await expendituresService.updateExpenditure(Number(id), {
-    ...(update.amount !== undefined ? { amount: update.amount } : {}),
-    ...(update.category !== undefined ? { category: update.category } : {}),
-    ...(update.description !== undefined ? { description: update.description } : {}),
-    ...(update.receiptUrl !== undefined ? { receipt_url: update.receiptUrl } : {}),
-    ...(update.spentOn !== undefined ? { spent_on: new Date(update.spentOn) } : {}),
-  });
+  let written;
+  try {
+    written = await expendituresService.updateExpenditure(
+      Number(id),
+      {
+        ...(update.amount !== undefined ? { amount: update.amount } : {}),
+        ...(update.category !== undefined ? { category: update.category } : {}),
+        ...(update.description !== undefined ? { description: update.description } : {}),
+        ...(update.receiptUrl !== undefined ? { receipt_url: update.receiptUrl } : {}),
+        ...(update.spentOn !== undefined ? { spent_on: new Date(update.spentOn) } : {}),
+      },
+      expenditure.status,
+    );
+  } catch (err) {
+    if (err instanceof ExpenditureStatusChangedError) return statusChanged(err);
+    throw err;
+  }
   const updated = written ?? expenditure;
 
   return json(200, {
@@ -312,7 +339,13 @@ export const deleteExpenditure: RouteHandler = async ({ params, auth }) => {
   const denied = requirePermission(auth.subject, 'expense:delete', resourceOf(expenditure));
   if (denied) return denied;
 
-  const numDeletedRows = await expendituresService.deleteExpenditureById(Number(id));
+  let numDeletedRows: bigint;
+  try {
+    numDeletedRows = await expendituresService.deleteExpenditureById(Number(id), expenditure.status);
+  } catch (err) {
+    if (err instanceof ExpenditureStatusChangedError) return statusChanged(err);
+    throw err;
+  }
   if (numDeletedRows === 0n) {
     return json(404, { message: 'Expenditure not found' });
   }

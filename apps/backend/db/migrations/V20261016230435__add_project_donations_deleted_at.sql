@@ -1,4 +1,4 @@
--- V20261015195658__add_expenditures_deleted_at
+-- V20261016230435__add_project_donations_deleted_at
 --
 -- Flyway runs this file inside a SINGLE transaction, with search_path =
 -- branch, public -- so table names can be unqualified.
@@ -18,4 +18,4 @@
 -- silent drift.
 
 
-ALTER TABLE expenditures ADD COLUMN deleted_at TIMESTAMP;
+ALTER TABLE project_donations ADD COLUMN deleted_at TIMESTAMP;

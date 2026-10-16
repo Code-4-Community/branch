@@ -1,4 +1,4 @@
--- V20261015195702__drop_project_donations_donor_project_unique
+-- V20261016230433__add_projects_deleted_at
 --
 -- Flyway runs this file inside a SINGLE transaction, with search_path =
 -- branch, public -- so table names can be unqualified.
@@ -18,5 +18,4 @@
 -- silent drift.
 
 
--- A donor may give to the same project more than once.
-ALTER TABLE project_donations DROP CONSTRAINT project_donations_donor_id_project_id_key;
+ALTER TABLE projects ADD COLUMN deleted_at TIMESTAMP;

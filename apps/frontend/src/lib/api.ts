@@ -10,7 +10,7 @@ const SERVICE_PORTS: Record<string, string> = {
 function resolveBaseUrl(path: string): string {
   const override = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (override) return override;
-  const service = path.split('/')[1] ?? '';
+  const service = path.split(/[/?]/)[1] ?? '';
   const port = SERVICE_PORTS[service] ?? '3006';
   return `http://localhost:${port}`;
 }
