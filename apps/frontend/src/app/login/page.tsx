@@ -131,7 +131,17 @@ function LoginPageContent() {
         try {
             handleResult(await respondToChallenge({ ...challenge, newPassword }));
         } catch (err) {
-            reportError(err);
+            // Not reportError(): its passwordError only renders on the credentials step.
+            if (err instanceof ApiError && err.status === 401) {
+                setChallenge(null);
+                setStep('credentials');
+                setFormError('Your sign-in session expired. Sign in again with your temporary password.');
+            } else if (err instanceof ApiError) {
+                setFormError(err.message);
+            } else {
+                console.error('Set-password failed with a non-ApiError:', err);
+                setFormError('Cannot reach the server. Check your connection and try again.');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -193,8 +203,11 @@ function LoginPageContent() {
                     </h5>
                     <div className="flex flex-col gap-4 w-full !mb-10">
                         <TextInputField
-                            label="Authentication code *"
+                            label="Authentication code"
+                            required
                             placeholder="123456"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
                             errorMessage={mfaCodeError}
                             isError={!!mfaCodeError}
                             value={mfaCode}
@@ -225,7 +238,8 @@ function LoginPageContent() {
             )}
             <div className="flex flex-col gap-4 w-full !mb-10">
                 <TextInputField
-                    label="Email *"
+                    label="Email"
+                    required
                     placeholder="Enter email address"
                     errorMessage={emailError}
                     isError={!!emailError}
@@ -236,7 +250,8 @@ function LoginPageContent() {
                     autoComplete="username"
                 />
                 <TextInputField
-                    label="Password *"
+                    label="Password"
+                    required
                     placeholder="Enter password"
                     errorMessage={passwordError}
                     isError={!!passwordError}
@@ -257,6 +272,9 @@ function LoginPageContent() {
             </Button>
             <Link href="/forgot-password" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                 Forgot password?
+            </Link>
+            <Link href="/help" className="!text-core-green ![font-family:var(--font-body)] !text-[16px]">
+                Help
             </Link>
         </form>
         </div>

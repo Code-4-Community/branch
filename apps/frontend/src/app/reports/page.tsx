@@ -20,6 +20,7 @@ import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-quer
 import { projectsQuery, reportsPageQuery, reportsAllQuery } from '@/lib/queries';
 import ExpenseFilterMenu, { type FilterGroup } from '../components/ExpenseFilterMenu';
 import { type Project } from '@/lib/reports';
+import { parseApiDate } from '@/lib/format';
 import UploadReportModal from '../components/UploadReportModal';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { FaPlus } from 'react-icons/fa';
@@ -87,9 +88,8 @@ const REPORT_TYPE_OPTIONS: { value: 'technical' | 'narrative'; label: string }[]
 ];
 
 function formatDate(dateString: string | null): string {
-    if (!dateString) return 'MM/DD/YYYY';
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return 'MM/DD/YYYY';
+    const date = parseApiDate(dateString);
+    if (!date) return 'MM/DD/YYYY';
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
     const yyyy = date.getFullYear();
@@ -160,9 +160,8 @@ function ReportsPageContent() {
        const YEAR_OPTIONS = React.useMemo(() => {
            const years = new Set<string>();
            for (const r of reportsAll.data ?? []) {
-               if (r.date_created) {
-                   years.add(new Date(r.date_created).getFullYear().toString());
-               }
+               const created = parseApiDate(r.date_created);
+               if (created) years.add(created.getFullYear().toString());
            }
            return Array.from(years).sort((a, b) => Number(b) - Number(a));
        }, [reportsAll.data]);
@@ -176,7 +175,7 @@ function ReportsPageContent() {
          return all.filter((r) => {
            if (q && !(r.title ?? '').toLowerCase().includes(q)) return false;
            if (selectedYears.length > 0) {
-             const year = r.date_created ? new Date(r.date_created).getFullYear().toString() : '';
+             const year = parseApiDate(r.date_created)?.getFullYear().toString() ?? '';
              if (!selectedYears.includes(year)) return false;
            }
            if (selectedTypes.length > 0) {
@@ -233,10 +232,10 @@ function ReportsPageContent() {
     }, [searchTerm, selectedYears, selectedTypes]);
 
     useEffect(() => {
-        // Selection is scoped to the visible page, so it must not survive a page
-        // change — bulk delete would otherwise remove rows the user can't see.
+        // Selection is scoped to the visible rows, so it must not survive a page
+        // or filter change — bulk delete would otherwise remove rows the user can't see.
         setSelectedIds([]);
-    }, [currentPage]);
+    }, [currentPage, searchTerm, selectedYears, selectedTypes]);
 
     // Default the generate-report picker to the first project once the shared
     // projects query resolves. Was a side effect inside the old fetchProjects.
@@ -684,7 +683,7 @@ function ReportsPageContent() {
                         </div>
 
                         <div>
-                          <label style={{ fontWeight: 600, fontSize: '14px' }}>Project</label>
+                          <label style={{ fontWeight: 600, fontSize: '14px' }}>Project*</label>
                           <NativeSelect.Root disabled={projects.length === 0}>
                             <NativeSelect.Field
                               value={generateProjectId}

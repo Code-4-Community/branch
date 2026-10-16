@@ -37,9 +37,9 @@ afterAll(async () => {
   await pool.end();
 });
 
-test("duplicate email returns 409", async () => {
-  // A CLAIMED row (cognito_sub set) is a genuine conflict. A row without one is
-  // a pending invitation and would be claimed instead -- see the test below.
+test("an already-claimed email gets the same 403 as an uninvited one", async () => {
+  // A CLAIMED row (cognito_sub set) must not be distinguishable from no row, or
+  // registration becomes an oracle for which emails have accounts.
   const client = await pool.connect();
   try {
     await client.query(
@@ -60,9 +60,9 @@ test("duplicate email returns 409", async () => {
     })
   });
 
-  expect(res.status).toBe(409);
+  expect(res.status).toBe(403);
   const body = await res.json();
-  expect(body.message).toContain("already exists");
+  expect(body.code).toBe("INVITATION_REQUIRED");
 });
 
 test("email normalization uppercase matches lowercase in DB", async () => {
@@ -87,9 +87,9 @@ test("email normalization uppercase matches lowercase in DB", async () => {
     })
   });
 
-  expect(res.status).toBe(409);
+  expect(res.status).toBe(403);
   const body = await res.json();
-  expect(body.message).toContain("already exists");
+  expect(body.code).toBe("INVITATION_REQUIRED");
 });
 
 test("uninvited email is refused before Cognito is ever called", async () => {

@@ -86,9 +86,8 @@ export const HISTORY_TABLE = 'flyway_schema_history';
  *
  * Without this, rebuildSchema() would leave a schema whose tables exist but
  * whose history is empty -- and since the dev stack and the tests share one
- * local database, the next `make migrate` would baseline at the adoption
- * version and re-apply every migration written since, failing on "already
- * exists".
+ * local database, the next `make migrate` would re-apply every migration,
+ * failing on "already exists".
  */
 export async function stampLedger(client: Queryable): Promise<void> {
   await client.query(

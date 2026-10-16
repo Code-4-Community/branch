@@ -77,12 +77,12 @@ Automatic on push to `main` touching `apps/backend/lambdas/**` or `shared/types/
 
 **`branch.users.is_admin` is the single source of truth for admin.** There is no promotion from a Cognito group, and no pre-token-generation trigger, so `is_admin` is not a JWT claim — `GET /auth/me` is the only way a client can learn it.
 
-**Account provisioning is invitation-only.** A `branch.users` row with `cognito_sub IS NULL` is a pending invitation, created by `db/seed.sql` or by admin `POST /users` (ADMIN-gated). `POST /auth/register` is public, so it deliberately **cannot create a row** — it only claims an existing invitation, setting `cognito_sub` and never touching `is_admin`. An email with no pending invitation gets 403 `INVITATION_REQUIRED`; an already-claimed one gets 409.
+**Account provisioning is invitation-only.** A `branch.users` row with `cognito_sub IS NULL` is a pending invitation, created by `db/seed.sql` or by admin `POST /users` (ADMIN-gated). `POST /auth/register` is public, so it deliberately **cannot create a row** — it only claims an existing invitation, setting `cognito_sub` and never touching `is_admin`. An email with no pending invitation, or one already claimed, gets 403 `INVITATION_REQUIRED`.
 
-The 403 is intentionally identical whether or not the address exists, so registration cannot be used to enumerate staff emails.
+The 403 is intentionally identical in both cases, so registration cannot be used to enumerate staff emails.
 
 This is the real control, not the Cognito pool config: `authenticateRequest` rejects any Cognito identity whose `sub` has no `branch.users` row, so a Cognito user created out of band is inert. Full flow: admin `POST /users` → invitee `POST /auth/register` with that email → `POST /auth/verify-email` with the emailed code → `POST /auth/login`.
 
-**Bootstrapping the first admin** is a manual SQL statement in every environment, because `is_admin` can only be set by an existing admin: `make grant-admin EMAIL=…` locally, or the equivalent `UPDATE` against RDS in production.
+**Bootstrapping the first admin** is a manual SQL statement in every environment, because `is_admin` can only be set by an existing admin: `make grant-admin EMAIL=…` locally, or the equivalent `UPDATE` against the DSQL cluster in production.
 
 The auth lambda uses `USER_PASSWORD_AUTH` via the AWS SDK, not the SRP library. `POST /auth/login` returns either a token set or `{ ChallengeName, Session }`; `POST /auth/respond-challenge` completes it. Adding a challenge type is a row in `CHALLENGE_SPECS` — enabling MFA is a Terraform change, not a code change.

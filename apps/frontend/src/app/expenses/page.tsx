@@ -28,10 +28,11 @@ import { IoClose } from 'react-icons/io5';
 import ExpensesTable from '../components/ExpensesTable';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 import { getReceiptDownloadUrl } from '@/lib/expenditures';
-import { formatCurrencyPrecise } from '@/lib/format';
+import { formatCurrencyPrecise, parseApiDate } from '@/lib/format';
 import {
   EXPENDITURE_STATUSES,
   EXPENDITURE_STATUS_LABELS,
+  EXPENSE_CATEGORIES,
   Expenditure,
   Project,
 } from '@/types';
@@ -43,14 +44,6 @@ const MONTHS = [
 
 const SORT_OPTIONS = ['Amount', 'Date'];
 const ROWS_PER_PAGE = 10;
-
-// Not exported: Next.js rejects non-page exports from a page module.
-const EXPENSE_CATEGORIES = [
-  'General',
-  'Travel',
-  'Travel Foreign',
-  'Visitor / Honorarium',
-];
 
 export default function ExpensePage() {
   return (
@@ -207,8 +200,8 @@ function ExpensePageContent() {
         if (!matchesId && !matchesDesc && !matchesCat) return false;
       }
       if (selectedMonths.length > 0) {
-        const month = new Date(e.spent_on).getMonth();
-        if (!selectedMonths.includes(MONTHS[month])) return false;
+        const month = parseApiDate(e.spent_on)?.getMonth();
+        if (month === undefined || !selectedMonths.includes(MONTHS[month])) return false;
       }
       if (selectedTypes.length > 0) {
         if (!e.category || !selectedTypes.includes(e.category)) return false;

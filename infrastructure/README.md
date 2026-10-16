@@ -5,7 +5,7 @@ state — there is no top-level root module composing them.
 
 | Module | State key | What it manages |
 |---|---|---|
-| [`aws/`](aws/) | `aws/terraform.tfstate` | Application infra: RDS, Cognito, six Lambdas, API Gateway, S3, CloudFront, CI OIDC roles |
+| [`aws/`](aws/) | `aws/terraform.tfstate` | Application infra: Aurora DSQL, Cognito, six Lambdas, API Gateway, S3, CloudFront, CI OIDC roles |
 | [`github/`](github/) | `github/terraform.tfstate` | Repo settings, branch protection, Actions secrets/variables, PR review bot |
 | [`preview-shared/`](preview-shared/) | `preview-shared/terraform.tfstate` | One S3 bucket + CloudFront distribution shared by all PR previews |
 | [`preview/`](preview/) | `env:/pr-<N>/preview/terraform.tfstate` | Per-PR ephemeral Lambdas + API Gateway, applied in a `pr-<N>` workspace |

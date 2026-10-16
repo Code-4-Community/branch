@@ -12,6 +12,7 @@ interface SectionHeadingProps {
   /** Renders the "View All" affordance. Omit both to hide it. */
   viewAllHref?: string;
   onViewAll?: () => void;
+  viewAllLabel?: string;
 }
 
 /**
@@ -24,11 +25,12 @@ export default function SectionHeading({
   icon,
   viewAllHref,
   onViewAll,
+  viewAllLabel = 'View All',
 }: SectionHeadingProps) {
   const viewAll = (
     <>
       <LuChevronRight aria-hidden />
-      View All
+      {viewAllLabel}
     </>
   );
 

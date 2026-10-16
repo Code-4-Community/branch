@@ -43,7 +43,7 @@ describe('FileUpload Component', () => {
   it('renders the empty dropzone state', () => {
     render(<FileUpload value={null} onChange={() => {}} upload={jest.fn()} />);
     expect(screen.getByText('Upload PDF Receipt')).toBeInTheDocument();
-    expect(screen.getByText('PDF only')).toBeInTheDocument();
+    expect(screen.getByText('PDF only, max 10MB')).toBeInTheDocument();
   });
 
   it('renders FilePreview when a value is provided', () => {

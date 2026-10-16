@@ -22,7 +22,12 @@ export function closeConnection(): Promise<void> {
   return writeDb.destroy()
 }
 
-export { recordExpenditure, editExpenditure, removeExpenditure } from './expenditures'
+export {
+  recordExpenditure,
+  editExpenditure,
+  removeExpenditure,
+  ExpenditureStatusChangedError,
+} from './expenditures'
 export { recordDonation, removeDonation, createDonor, removeDonor } from './donations'
 export { createProject, updateProject, removeProject } from './projects'
 export { recordReport, removeReport } from './reports'

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import { Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import Button from './Button';
 import TextInputField from './TextInputField';
 import { useApi } from '@/hooks/useApi';
 
@@ -76,7 +77,8 @@ export default function AddUserModal({ open, onClose, onSuccess }: AddUserModalP
             <Dialog.Body>
               <Stack gap={4}>
                 <TextInputField
-                  label="Email *"
+                  label="Email"
+                  required
                   placeholder="Enter email address"
                   value={email}
                   onChange={setEmail}
@@ -84,7 +86,8 @@ export default function AddUserModal({ open, onClose, onSuccess }: AddUserModalP
                   errorMessage={emailError}
                 />
                 <TextInputField
-                  label="Name *"
+                  label="Name"
+                  required
                   placeholder="Enter full name"
                   value={name}
                   onChange={setName}
@@ -106,20 +109,10 @@ export default function AddUserModal({ open, onClose, onSuccess }: AddUserModalP
               </Stack>
             </Dialog.Body>
             <Dialog.Footer>
-              <Button
-                variant="outline"
-                borderColor="var(--color-core-green)"
-                onClick={handleClose}
-                disabled={isLoading}
-              >
+              <Button variant="secondary" onClick={handleClose} disabled={isLoading}>
                 Cancel
               </Button>
-              <Button
-                backgroundColor="var(--color-core-green)"
-                color="var(--color-core-white)"
-                onClick={handleSubmit}
-                loading={isLoading}
-              >
+              <Button onClick={handleSubmit} isLoading={isLoading}>
                 Add User
               </Button>
             </Dialog.Footer>

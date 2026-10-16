@@ -12,7 +12,7 @@ Postgres database, and Terraform-managed infrastructure.
 |---|---|
 | Frontend | Next.js 15 (App Router, static export), React 19, Chakra UI v3 + Tailwind v4 |
 | Backend | Six Node 20 Lambdas (`auth`, `donors`, `expenditures`, `projects`, `reports`, `users`), TypeScript, Kysely |
-| Database | PostgreSQL 17 on RDS; SQL migrations run by CI before each deploy |
+| Database | Aurora DSQL (PostgreSQL-compatible, IAM auth); SQL migrations run by CI before each deploy |
 | Auth | AWS Cognito (invitation-only, optional TOTP MFA); authorization policy in `@branch/rbac` |
 | Hosting | S3 + CloudFront for the frontend, API Gateway + Lambda for the API |
 | Infra | Terraform 1.13, state in S3, secrets in Infisical |
@@ -80,7 +80,7 @@ out of band has no matching row and will be rejected.
 Nothing is deployed by hand. Merging to `main` triggers:
 
 - `terraform-apply` for infrastructure changes (gated on the `production` environment)
-- `lambda-deploy` — builds the bundles, snapshots RDS, applies migrations, then
+- `lambda-deploy` — builds the bundles, applies migrations, then
   updates function code
 - `frontend-deploy` — builds the static export, syncs to S3, invalidates CloudFront
 

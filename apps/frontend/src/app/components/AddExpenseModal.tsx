@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Button, Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import { Dialog, Portal, CloseButton, Stack } from '@chakra-ui/react';
+import Button from './Button';
 import DropdownSelector from './DropdownSelector';
 import { useApi } from '@/hooks/useApi';
 import FileUpload from './FileUpload';
@@ -9,10 +10,18 @@ import { FiDollarSign } from 'react-icons/fi';
 import { getReceiptUploadUrl, uploadReceiptToS3 } from '@/lib/expenditures';
 import { Project } from '@/types';
 
-function formatAmountDisplay(digits: string): string {
-  if (!digits) return '';
-  const trimmed = digits.replace(/^0+(?=\d)/, '');
-  return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+/** Keeps digits and one decimal point, at most 9 whole digits and 2 decimals. */
+export function normalizeAmountInput(raw: string): string {
+  const [whole, ...rest] = raw.replace(/[^\d.]/g, '').split('.');
+  const wholeDigits = whole.slice(0, 9);
+  return rest.length > 0 ? `${wholeDigits}.${rest.join('').slice(0, 2)}` : wholeDigits;
+}
+
+function formatAmountDisplay(amount: string): string {
+  if (!amount) return '';
+  const [whole, decimals] = amount.split('.');
+  const grouped = (whole.replace(/^0+(?=\d)/, '') || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return decimals === undefined ? grouped : `${grouped}.${decimals}`;
 }
 interface AddExpenseModalProps {
   open: boolean;
@@ -47,8 +56,10 @@ export default function AddExpenseModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
+  const [submitting, setSubmitting] = useState(false);
+
   const amount = amountDigits ? Number(amountDigits) : 0;
-  
+
   const isFormValid =
     newDate.trim().length > 0 &&
     newType.trim().length > 0 &&
@@ -97,6 +108,7 @@ export default function AddExpenseModal({
   );
 
   async function handleSubmit() {
+    if (submitting) return;
     const hasDateError = !newDate.trim();
     const hasTypeError = !newType.trim();
     const hasDescError = !newDescription.trim();
@@ -119,6 +131,7 @@ export default function AddExpenseModal({
       return;
     }
 
+    setSubmitting(true);
     try {
       await api.post('/expenditures', {
         projectID: selectedProject.project_id,
@@ -133,6 +146,8 @@ export default function AddExpenseModal({
       onSuccess();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to create expense');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -194,9 +209,9 @@ export default function AddExpenseModal({
                           alignItems: 'center',
                           justifyContent: 'center',
                           backgroundColor: 'var(--color-black-100)',
-                          borderTop: '1px solid var(--color-black-200)',
-                          borderRight: '1px solid var(--color-black-200)',
-                          borderBottom: '1px solid var(--color-black-200)',
+                          borderTop: `1px solid ${dateError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
+                          borderRight: `1px solid ${dateError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
+                          borderBottom: `1px solid ${dateError ? 'var(--color-error-red)' : 'var(--color-black-200)'}`,
                           borderRadius: '0 6px 6px 0',
                           pointerEvents: 'none',
                         }}
@@ -209,6 +224,11 @@ export default function AddExpenseModal({
                         </svg>
                       </span>
                     </div>
+                    {dateError && (
+                      <span style={{ color: 'var(--color-error-red)', fontSize: '12px' }}>
+                        Enter a date
+                      </span>
+                    )}
                   </div>
 
                   {/* Amount */}
@@ -236,11 +256,10 @@ export default function AddExpenseModal({
                       </span>
                       <input
                         type="text"
-                        inputMode="numeric"
+                        inputMode="decimal"
                         value={formatAmountDisplay(amountDigits)}
                         onChange={(e) => {
-                          const digitsOnly = e.target.value.replace(/\D/g, '');
-                          setAmountDigits(digitsOnly.slice(0, 9));
+                          setAmountDigits(normalizeAmountInput(e.target.value));
                           setAmountError(false);
                         }}
                         placeholder="Enter the Amount"
@@ -291,6 +310,11 @@ export default function AddExpenseModal({
                       multiSelect={false}
                       value={newProject}
                       onChange={(val) => {
+                        // The receipt was uploaded under the old project's prefix.
+                        if (val !== newProject && receiptUrl) {
+                          setNewFile(null);
+                          setReceiptUrl(null);
+                        }
                         setNewProject(val as string);
                         setProjectError(false);
                       }}
@@ -312,7 +336,7 @@ export default function AddExpenseModal({
                       setNewDescription(e.target.value);
                       setDescError(false);
                     }}
-                    placeholder="Placeholder"
+                    placeholder="Describe the expense"
                     rows={4}
                     maxLength={500}
                     style={{
@@ -338,7 +362,7 @@ export default function AddExpenseModal({
 
                 {/* Upload Receipt */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500 }}>Upload Receipt</label>
+                  <label style={{ fontSize: '14px', fontWeight: 500 }}>Upload Receipt*</label>
                   <FileUpload
                     value={newFile}
                     upload={uploadReceipt}
@@ -348,7 +372,9 @@ export default function AddExpenseModal({
                       setReceiptUrl(objectUrl);
                       setFileError(null);
                     }}
-                    onReject={() => setFileError('File type not supported')}
+                    onReject={(reason) =>
+                      setFileError(reason === 'file-too-large' ? 'File must be under 10MB' : 'File type not supported')
+                    }
                   />
                   {fileError && (
                     <span style={{ color: 'var(--color-error-red)', fontSize: '12px', fontStyle: 'italic', fontWeight: 600 }}>
@@ -366,19 +392,14 @@ export default function AddExpenseModal({
               </Stack>
             </Dialog.Body>
             <Dialog.Footer>
-              <Button
-                variant="outline"
-                borderColor="var(--color-core-green)"
-                onClick={handleClose}
-              >
+              <Button variant="secondary" onClick={handleClose} disabled={submitting}>
                 Cancel
               </Button>
               <Button
-                backgroundColor={isFormValid ? 'var(--color-core-green)' : 'var(--color-primary-500)'}
-                color="var(--color-core-white)"
                 disabled={!isFormValid}
                 onClick={handleSubmit}
-                cursor={isFormValid ? 'pointer' : 'not-allowed'}
+                isLoading={submitting}
+                loadingText="Submitting…"
               >
                 Submit For Review
               </Button>

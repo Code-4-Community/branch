@@ -101,7 +101,7 @@ export default function ForgotPasswordPage() {
                 />
                 <button
                     type="button"
-                    className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3"
+                    className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3 disabled:!text-black-500 disabled:cursor-not-allowed"
                     onClick={handleResend}
                     disabled={isLoading}
                 >
@@ -126,7 +126,8 @@ export default function ForgotPasswordPage() {
             </div>
             <div className="flex flex-col items-start ml-[26px] gap-9">
                 <TextInputField
-                    label="Email *"
+                    label="Email"
+                    required
                     placeholder="Enter email address"
                     errorMessage={emailError}
                     isError={!!emailError}

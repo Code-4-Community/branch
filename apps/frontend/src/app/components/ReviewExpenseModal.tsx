@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Dialog, Portal, CloseButton } from '@chakra-ui/react';
+import { Dialog, Portal, CloseButton } from '@chakra-ui/react';
+import Button from './Button';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   getExpenditure,
@@ -12,15 +13,14 @@ import {
 } from '@/lib/expenditures';
 import {
   EXPENDITURE_STATUSES,
+  EXPENSE_CATEGORIES,
   type ExpenditureDetail,
   type ExpenditureStatus,
 } from '@/types';
 import DropdownSelector from './DropdownSelector';
 import LoadingState from './LoadingState';
 import StatusBadge from './StatusBadge';
-
-/** Mirrors the picker on AddExpenseModal so an edit offers the same choices. */
-const EXPENSE_CATEGORIES = ['General', 'Travel', 'Travel Foreign', 'Visitor / Honorarium'];
+import { parseApiDate } from '@/lib/format';
 
 const INPUT_STYLE: React.CSSProperties = {
   border: '1px solid var(--color-black-400)',
@@ -101,8 +101,9 @@ function Field({
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return '---';
-  return new Date(value).toLocaleDateString('en-US', {
+  const date = parseApiDate(value);
+  if (!date) return '---';
+  return date.toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
@@ -219,7 +220,7 @@ export default function ReviewExpenseModal({
   function editErrors(): Partial<Record<keyof EditForm, string>> {
     const errors: Partial<Record<keyof EditForm, string>> = {};
     if (amountCleared) {
-      errors.amount = 'Enter an amount';
+      errors.amount = 'Enter a valid amount';
     } else if (
       patch.amount !== undefined &&
       (!Number.isFinite(patch.amount) || patch.amount < 0)
@@ -227,7 +228,7 @@ export default function ReviewExpenseModal({
       errors.amount = 'Enter a valid amount';
     }
     if (patch.category !== undefined && !patch.category.trim()) {
-      errors.category = 'Pick an expense type';
+      errors.category = 'Select a type of expense';
     }
     if (patch.description !== undefined && !patch.description.trim()) {
       errors.description = 'Enter a description';
@@ -322,7 +323,7 @@ export default function ReviewExpenseModal({
                           style={INPUT_STYLE}
                         />
                       </Field>
-                      <Field label="Expense Type*" error={fieldErrors.category}>
+                      <Field label="Type of Expense*" error={fieldErrors.category}>
                         <DropdownSelector
                           options={EXPENSE_CATEGORIES}
                           value={form.category}
@@ -336,6 +337,7 @@ export default function ReviewExpenseModal({
                           aria-label="Description"
                           value={form.description}
                           onChange={(e) => setField('description', e.target.value)}
+                          maxLength={500}
                           rows={3}
                           style={{ ...INPUT_STYLE, resize: 'vertical' }}
                         />
@@ -465,7 +467,7 @@ export default function ReviewExpenseModal({
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <label style={VALUE_STYLE} htmlFor="admin-notes">Admin Notes*</label>
+                        <label style={LABEL_STYLE} htmlFor="admin-notes">Admin Notes*</label>
                         <textarea
                           id="admin-notes"
                           value={adminNotes}
@@ -473,7 +475,7 @@ export default function ReviewExpenseModal({
                             setAdminNotes(e.target.value);
                             setNotesError(false);
                           }}
-                          placeholder="Placeholder"
+                          placeholder="Add notes for the submitter"
                           rows={4}
                           style={{
                             border: `1px solid ${notesError ? 'var(--color-error-red)' : 'var(--color-black-400)'}`,
@@ -507,17 +509,17 @@ export default function ReviewExpenseModal({
             </Dialog.Body>
 
             <Dialog.Footer backgroundColor="var(--color-black-100)">
-              <Button variant="outline" borderColor="var(--color-black-500)" onClick={onClose}>
+              <Button variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
               {(canReview || canEdit) && (
                 <Button
-                  backgroundColor="var(--color-primary-500)"
-                  color="var(--color-core-white)"
-                  disabled={saving || loading || !detail || (!canReview && !dirty)}
+                  disabled={loading || !detail || (!canReview && !dirty)}
                   onClick={handleSave}
+                  isLoading={saving}
+                  loadingText="Saving…"
                 >
-                  {saving ? 'Saving...' : 'Save Changes'}
+                  Save Changes
                 </Button>
               )}
             </Dialog.Footer>

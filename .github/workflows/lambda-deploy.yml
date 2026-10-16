@@ -15,10 +15,6 @@ on:
         description: 'Apply pending DB migrations without redeploying lambdas'
         type: boolean
         default: false
-      adopt_baseline:
-        description: 'One-time: let Flyway adopt a populated database that has no schema history'
-        type: boolean
-        default: false
 
 jobs:
   detect-changes:
@@ -176,8 +172,6 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
-    env:
-      FLYWAY_BASELINE_ON_MIGRATE: ${{ inputs.adopt_baseline == true }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -198,7 +192,6 @@ jobs:
       # authoritative writer of that env block (infrastructure/aws/lambda.tf).
       # Aurora DSQL has no password: flyway.sh mints an IAM token from this job's role.
       - name: Resolve DB connection from the deployed lambda config
-        id: conn
         run: |
           set -euo pipefail
           cfg=$(aws lambda get-function-configuration \
@@ -209,28 +202,10 @@ jobs:
               || { echo "::error::$k missing from branch-auth config"; exit 1; }
             echo "$k=$v" >> "$GITHUB_ENV"
           done
-          case "$(jq -r '.DB_HOST' <<<"$cfg")" in
-            *.dsql.*.on.aws) echo "dsql=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
-          esac
-          echo "dsql=false" >> "$GITHUB_OUTPUT"
-          pw=$(jq -er '.DB_PASSWORD' <<<"$cfg")
-          echo "::add-mask::$pw"
-          echo "DB_PASSWORD=$pw" >> "$GITHUB_ENV"
-
-      # The runner reaches RDS over the public internet, so TLS is mandatory here
-      # even though the lambdas currently use ssl:false (they at least stay inside
-      # AWS). AWS publishes the CA bundle, so verification is free.
-      - name: Fetch RDS CA bundle
-        if: steps.conn.outputs.dsql == 'false'
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/rds-ca.pem" \
-            https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
-          echo "DB_SSL=true" >> "$GITHUB_ENV"
-          echo "DB_SSL_CA=$RUNNER_TEMP/rds-ca.pem" >> "$GITHUB_ENV"
 
       # This job runs whenever a push touched db/migrations/** or on any manual
       # dispatch -- neither of which means anything is actually pending. Count what
-      # is, so the snapshot and the apply can be skipped when there is nothing to do.
+      # is, so the apply can be skipped when there is nothing to do.
       - name: Pending migrations (read-only preflight)
         id: status
         run: |
@@ -248,8 +223,6 @@ jobs:
 
       # Empty schema means the wrong DB_HOST; populated with no history means a snapshot or clone -- refuse both.
       - name: Refuse to execute the baseline against production
-        env:
-          ADOPT: ${{ inputs.adopt_baseline }}
         run: |
           set -euo pipefail
           if [ "$(jq -r '.allSchemasEmpty' info.json)" = 'true' ]; then
@@ -257,8 +230,8 @@ jobs:
             exit 1
           fi
           tracked=$(jq -r '.schemaVersion' info.json)
-          if [ "$tracked" = 'null' ] && [ "$ADOPT" != 'true' ]; then
-            echo "::error::the target database has a populated schema \"branch\" but no Flyway history. Refusing to adopt it -- re-run this workflow manually with adopt_baseline if that is genuinely production."
+          if [ "$tracked" = 'null' ]; then
+            echo "::error::the target database has a populated schema \"branch\" but no Flyway history -- refusing to touch it."
             exit 1
           fi
           if [ "$tracked" != 'null' ] \
@@ -266,27 +239,6 @@ jobs:
             echo "::error::V0000__baseline_schema is PENDING on a database Flyway already tracks. The schema history and the schema have drifted -- refusing to run."
             exit 1
           fi
-
-      # Only when something will actually change. Snapshotting a no-op wasted 1-2
-      # minutes per deploy and churned the 5-snapshot retention with junk.
-      # DSQL has no CreateDBSnapshot.
-      - name: Snapshot production before migrating
-        id: snapshot
-        if: steps.status.outputs.pending != '0' && steps.conn.outputs.dsql == 'false'
-        run: |
-          set -euo pipefail
-          INSTANCE=$(aws rds describe-db-instances \
-            --query "DBInstances[?Endpoint.Address=='${DB_HOST}'].DBInstanceIdentifier | [0]" \
-            --output text)
-          [ "$INSTANCE" != "None" ] || { echo "::error::no RDS instance matches DB_HOST"; exit 1; }
-          SNAP="branch-premigrate-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::7}"
-          aws rds create-db-snapshot \
-            --db-instance-identifier "$INSTANCE" --db-snapshot-identifier "$SNAP" \
-            --tags Key=source,Value=github-actions Key=commit,Value="$GITHUB_SHA"
-          aws rds wait db-snapshot-available --db-snapshot-identifier "$SNAP"
-          echo "instance=$INSTANCE" >> "$GITHUB_OUTPUT"
-          echo "id=$SNAP" >> "$GITHUB_OUTPUT"
-          echo "Snapshot $SNAP is available"
 
       - name: Apply migrations
         id: up
@@ -298,23 +250,7 @@ jobs:
 
       - name: Nothing to apply
         if: steps.status.outputs.pending == '0'
-        run: echo "Database is already up to date; skipped the snapshot and the apply."
-
-      # Manual snapshots never expire on their own and survive instance deletion,
-      # so without this every deploy would leave one behind forever. Five is
-      # plenty: anything older than the last few migrations is better served by
-      # point-in-time recovery (backup_retention_period = 7 in
-      # infrastructure/aws/main.tf).
-      # Gate on RAN, not SUCCEEDED: the snapshot exists before the `wait` can fail.
-      - name: Prune old pre-migration snapshots (keep 5)
-        if: always() && steps.snapshot.outcome != 'skipped'
-        continue-on-error: true
-        run: |
-          aws rds describe-db-snapshots --snapshot-type manual \
-            --query "reverse(sort_by(DBSnapshots[?starts_with(DBSnapshotIdentifier,'branch-premigrate-')],&SnapshotCreateTime))[5:].DBSnapshotIdentifier" \
-            --output text | tr '\t' '\n' | while read -r s; do
-              [ -n "$s" ] && aws rds delete-db-snapshot --db-snapshot-identifier "$s"
-            done
+        run: echo "Database is already up to date; nothing applied."
 
       - name: Summarize
         if: always()
@@ -324,12 +260,7 @@ jobs:
           {
             echo "### Database migration"
             echo ""
-            if [ "$PENDING" = "0" ]; then
-              echo "Nothing pending -- no snapshot taken, nothing applied."
-            else
-              echo "Snapshot: \`${{ steps.snapshot.outputs.id || 'not taken' }}\`"
-            fi
-            echo ""
+            [ "$PENDING" = "0" ] && echo "Nothing pending -- nothing applied." && echo ""
             echo '```'
             cat status.log 2>/dev/null || echo '(no status captured)'
             echo '```'

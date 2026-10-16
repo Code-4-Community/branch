@@ -51,6 +51,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [isLoading, isAuthenticated, subject, access, pathname, router]);
 
+  if (access === 'open') return <>{children}</>;
+
   if (isLoading) return <FullPageSpinner />;
 
   // Render suppression — the redirect above is asynchronous, and without these

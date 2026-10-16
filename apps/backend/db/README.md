@@ -118,20 +118,7 @@ IAM token it mints from the caller's AWS credentials. It also mounts the pinned
 Out-of-order merges are allowed (`outOfOrder`): if your migration merges after
 someone whose timestamp is later, it simply applies late. The alternative — the
 default — is a production deploy that fails and can only be unblocked by
-hand-editing `flyway_schema_history` in RDS.
-
-**`outOfOrder` does not extend below the baseline.** `BASELINE_VERSION` in
-`flyway.sh` is the version production was adopted at, and Flyway reports anything at
-or below it as `Below Baseline` — skipped, permanently, with nothing pending, a
-passing `validate` and a green deploy. CI builds from an empty schema, where
-baselining never happens, so CI cannot see it either. The `checks` job therefore
-fails any new migration whose version is not strictly above `BASELINE_VERSION`. Let
-`make new-migration` generate the timestamp and this never comes up.
-
-Files **at or below** the baseline were never run by production, so CI lets them
-change. That is how `V0000` came to be a squash of everything up to
-`20260907213524`. When production moves to DSQL, which runs every file, set
-`BASELINE_VERSION` to `0` and they become immutable like the rest.
+hand-editing `flyway_schema_history` on the cluster.
 
 ## In CI
 
@@ -139,79 +126,26 @@ change. That is how `V0000` came to be a squash of everything up to
 | --- | --- |
 | PR opened/updated with a migration | A bot posts a checklist comment. `migrations-fresh` applies every migration to an empty Postgres, checks idempotency, and verifies the committed types match. `migrations-guard` rejects edits to already-merged migrations, bad filenames, and unsafe SQL. |
 | Types are stale | The `Schema Change Checks` workflow regenerates `shared/types/db-types.d.ts` and pushes it to your branch. **Expect one red `migrations-fresh` run before that commit lands** — that's normal, not a flake. |
-| PR merges to main | The `migrate` job in `lambda-deploy.yml` snapshots RDS, applies pending migrations, and only then lets the lambda zips deploy. A failed migration blocks the code deploy. |
+| PR merges to main | The `migrate` job in `lambda-deploy.yml` applies pending migrations to the DSQL cluster, and only then lets the lambda zips deploy. A failed migration blocks the code deploy. |
 | Preview environments | Migrations are **never** applied there — previews share the production database. A PR that adds a migration cannot be fully previewed; endpoints using the new columns will fail until it merges. |
 
 If a migration fails in CI, production is left on the old schema **and** the old
 code. Fix it forward with a new commit.
 
-Two rollback levers exist, both free at this database's size and both a ~20-minute
-manual restore-into-a-new-instance procedure, not a button:
-
-- a `branch-premigrate-<utc>-<sha>` snapshot taken before every migration run, tagged
-  with the commit. The five most recent are kept — manual snapshots never expire on
-  their own, so the job prunes older ones.
-- 7 days of point-in-time recovery (`backup_retention_period` in
-  `infrastructure/aws/main.tf`), which can restore to any second in the window.
-
-## One-time: adopting an existing database
-
-`V0000__baseline_schema.sql` is the whole schema as of `BASELINE_VERSION`. Before
-adopting a database that was built by hand or by the old Kysely migrator, diff it:
-
-```bash
-# use a pg_dump matching the server's major version
-pg_dump --schema-only --schema=branch --no-owner --no-privileges --no-comments \
-        -T 'branch.flyway_schema_history' -T 'branch.kysely_migration*' -d "$URL" | grep -v '^--'
-```
-
-Run that against a local database built by `make migrate`, and against the target,
-then `diff -u` the two. The only expected differences are the ones the DSQL squash
-introduced: `SERIAL` (integer, owned) sequences where V0000 has unowned BIGINT ones,
-and `NOT VALID` on the two `ON DELETE RESTRICT` foreign keys.
-
-Then adopt it: Flyway writes a single baseline row at `BASELINE_VERSION` from
-`flyway.sh` instead of replaying the files, and everything at or below that version
-counts as applied. If the schemas genuinely diverge, write a follow-up migration
-reconciling the difference — there is no way to record one file as applied on its
-own.
-
-Adoption is **off by default and never happens on a push**: a populated schema with
-no history table is far more often a restored snapshot or a clone than the real
-production database, and adopting one silently is how you end up migrating the wrong
-thing. Run the `Lambda Deploy` workflow by hand with `adopt_baseline` checked, once,
-with a human watching. Locally, compose sets `FLYWAY_BASELINE_ON_MIGRATE=true` so a
-dev database built before Flyway is adopted without ceremony.
+**There is no pre-migration snapshot.** DSQL has no `CreateDBSnapshot`, and no AWS
+Backup plan covers the cluster yet, so a bad migration is fixed forward. The last
+RDS snapshot, `branch-rds-final-20261015`, holds the data as of the cutover.
 
 The `migrate` job refuses to run against an **empty** target, on the assumption that
-it means `DB_HOST` is pointing somewhere unexpected.
+it means `DB_HOST` is pointing somewhere unexpected, and against a populated schema
+with no Flyway history, which is a clone rather than production.
 
-## The RDS → Aurora DSQL cutover
+## History
 
-Terraform creates the cluster (`infrastructure/aws/dsql.tf`) and publishes its
-endpoint to the lambdas as `DSQL_HOST`, which no lambda reads. `@branch/store` and
-`flyway.sh` both switch to IAM auth when `DB_HOST` is a DSQL endpoint, so the whole
-move is one Terraform change to `DB_HOST`. Everything before that change is inert.
+Production moved from RDS Postgres 17 to Aurora DSQL on 2026-10-15 (#404–#406), and
+RDS was deleted afterwards. `V0000` is a DSQL-shaped squash of the RDS-era
+migrations; nothing has ever run it against RDS.
 
-Run each step from the **DSQL cutover** workflow (`.github/workflows/dsql-cutover.yml`):
-
-1. **`migrate`** builds the schema on the empty cluster from `migrations/`.
-2. **Stop writes, and keep them stopped until step 4's apply finishes.** Announce a
-   window. Nothing enforces it: `copy` fails if RDS changed while it ran, but a write
-   that lands on RDS after the copy is lost at the flip. Run `verify` again right
-   before merging the flip.
-3. **`copy`**, with `confirm` set to the DSQL host. It copies every table in FK order,
-   keeping ids and each sequence's counter, then compares a per-table digest and the
-   sequences on both sides and checks the rollups against the base tables. If it
-   fails: `reset`, then `migrate`, then `copy` again.
-4. **Flip** `DB_HOST`/`DB_USER`/`DB_NAME` in `infrastructure/aws/lambda.tf` to
-   `local.dsql_endpoint`/`admin`/`postgres`, drop `DB_PASSWORD`, and set
-   `BASELINE_VERSION=0` in `flyway.sh`. Merge it, and the lambdas pick DSQL up when
-   the apply finishes. To roll back, revert that PR: RDS is untouched and still holds
-   the data as of step 2, but nothing written to DSQL after the flip comes with it.
-5. **Later:** delete `aws_db_instance.branch_rds` after a final snapshot.
-
-Run `verify` any time before the flip to re-check without writing.
 
 **Local databases built before the squash** still record nine applied versions, and
 Flyway refuses to migrate them. Run `make down-v && make up` once.
