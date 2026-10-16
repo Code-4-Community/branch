@@ -257,10 +257,6 @@ const EXPECTED_PROJECT_ROLLUP = `
            ON r.project_id = p.project_id
    WHERE p.deleted_at IS NULL`;
 
-/**
- * Hard-deletes every soft-deleted row, children first. Read-parity tests snapshot the
- * API before and after: a soft-deleted row must read exactly like an absent one.
- */
 export async function purgeSoftDeleted(client: Queryable): Promise<void> {
   for (const table of ['expenditures', 'reports', 'project_donations', 'donors', 'projects', 'users']) {
     await client.query(`DELETE FROM ${SCHEMA}.${table} WHERE deleted_at IS NOT NULL`);

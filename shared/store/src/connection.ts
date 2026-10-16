@@ -58,7 +58,6 @@ function postgresConfig(): PoolConfig {
   }
 }
 
-// Soft-delete bookkeeping: queries filter on deleted_at, but no result row ever carries it.
 export class OmitDeletedAt implements KyselyPlugin {
   transformQuery(args: PluginTransformQueryArgs): RootOperationNode {
     return args.node

@@ -59,7 +59,6 @@ export async function createDonor(
   )
 }
 
-// A donor's donations go with it, stamped with the same time, and their rollup is backed out.
 export async function removeDonor(donorId: number): Promise<bigint> {
   return tx(async (trx) => {
     const deleted = await trx

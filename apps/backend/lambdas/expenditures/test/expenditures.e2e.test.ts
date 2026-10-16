@@ -172,7 +172,6 @@ async function expenditureExists(id: number): Promise<boolean> {
   }
 }
 
-// A delete keeps the row and stamps it
 async function expenditureSoftDeleted(id: number): Promise<boolean> {
   const result = await pool.query(
     'SELECT 1 FROM branch.expenditures WHERE expenditure_id = $1 AND deleted_at IS NOT NULL',
@@ -556,7 +555,6 @@ describe('Expenditures integration tests', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    // As ON DELETE SET NULL left it: the expense survives, its author reads as null.
     test('200: a soft-deleted author reads as null', async () => {
       const id = await firstExpenditureId(1); // entered_by 4
       await removeUser(4);

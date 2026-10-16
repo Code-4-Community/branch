@@ -23,7 +23,6 @@ jest.mock('../auth', () => {
     ),
   };
 });
-// Shared across instances so the assertions below can see that a delete sends no DeleteObject.
 const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
@@ -64,8 +63,6 @@ const mockRemoveReport = removeReport as jest.MockedFunction<typeof removeReport
 const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeof authenticateRequest>;
 const mockReportService = reportService as jest.Mocked<typeof reportService>;
 
-// A query builder whose every method returns itself, so a mock does not break
-// when a filter is added.
 function mockQuery(result: unknown) {
   const methods: Record<string, unknown> = {};
   const builder: any = new Proxy(methods, {
@@ -1011,7 +1008,6 @@ describe('DELETE /reports/{id} unit tests', () => {
       expect(res.statusCode).toBe(403);
     });
 
-    // A soft delete keeps the file so the row can be restored.
     test('200: the generated file is left in S3', async () => {
       process.env.REPORTS_BUCKET_NAME = 'bucket';
       setupReportMock({

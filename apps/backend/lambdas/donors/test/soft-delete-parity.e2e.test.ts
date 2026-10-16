@@ -1,8 +1,3 @@
-/**
- * A soft-deleted row must read exactly like a hard-deleted one. Delete one of each
- * kind through the store, snapshot every GET, purge the soft-deleted rows, and
- * snapshot again: the two must be identical.
- */
 import { describe, test, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
 import { ensureSchema, resetData, purgeSoftDeleted, PARITY_DELETES } from '../../../db/testkit';

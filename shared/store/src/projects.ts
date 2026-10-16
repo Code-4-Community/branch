@@ -91,8 +91,6 @@ export async function updateProject(
   })
 }
 
-// Children are stamped with the project's time (now() is per transaction). Memberships
-// and both rollups are still hard-deleted, as the ON DELETE CASCADE did.
 export async function removeProject(id: number): Promise<bigint> {
   return tx(async (trx) => {
     const deleted = await trx

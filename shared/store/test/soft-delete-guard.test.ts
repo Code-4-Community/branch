@@ -1,10 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-// Every read of a soft-deleted table must filter deleted_at, or deleted rows leak into
-// responses. A static check, so it is a heuristic: the filter has to sit in the same
-// builder chain (or raw SQL template) as the table it guards. Opt a line out with
-// `// soft-delete-ok: <reason>` on the line above.
+// Opt a line out with `// soft-delete-ok: <reason>` on the line above.
 
 const SOFT_TABLES = ['users', 'projects', 'donors', 'project_donations', 'expenditures', 'reports']
 const ROOT = path.resolve(__dirname, '../../..')
@@ -23,7 +20,6 @@ const BUILDER = new RegExp(
   'g',
 )
 const RAW = new RegExp(String.raw`\b(?:FROM|JOIN)\s+branch\.(${SOFT_TABLES.join('|')})\b(?:\s+(?:AS\s+)?(\w+))?`, 'gi')
-// A subquery has no terminator of its own, so its window runs on to the outer one.
 const CHAIN_END = /\.(execute|executeTakeFirst|executeTakeFirstOrThrow|compile|stream)\(/g
 const SQL_KEYWORDS = new Set(['where', 'on', 'join', 'left', 'inner', 'group', 'order', 'limit', 'using'])
 

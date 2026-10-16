@@ -124,8 +124,6 @@ const fakeExpenditure = {
   created_at: new Date('2025-06-01'),
 };
 
-// A query builder whose every method returns itself, so a mock does not break
-// when a filter is added. `resolve` sees the builder calls made so far.
 function mockQuery(result: unknown | ((calls: string[]) => unknown)) {
   const calls: string[] = [];
   const settle = async () => (typeof result === 'function' ? (result as (c: string[]) => unknown)(calls) : result);
@@ -845,7 +843,6 @@ describe('DELETE /expenditures/{id} unit tests', () => {
     });
   });
 
-  // A soft delete keeps the receipt so the row can be restored.
   test('the receipt object is left in S3', async () => {
     process.env.REPORTS_BUCKET_NAME = 'bucket';
     mockDb.selectFrom.mockReturnValueOnce(

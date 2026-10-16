@@ -41,8 +41,6 @@ export async function claimUser(userId: number, values: UserEdit): Promise<bigin
   })
 }
 
-// Memberships are still hard-deleted, and member_count decremented; entered_by is cleared as
-// ON DELETE SET NULL did. The user row itself is only stamped.
 export async function removeUser(userId: number): Promise<bigint> {
   return tx(async (trx) => {
     const deleted = await trx

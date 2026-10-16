@@ -1,8 +1,7 @@
 import { sql, type Transaction } from 'kysely'
 import type { DB } from '@branch/types'
 
-// Soft-deleted parents still satisfy the FK, so the store raises Postgres's own
-// foreign_key_violation to keep callers' 23503 handling unchanged.
+// Soft-deleted parents still satisfy the FK, so raise 23503 ourselves.
 export class ForeignKeyViolation extends Error {
   readonly code = '23503'
 }

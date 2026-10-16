@@ -283,7 +283,6 @@ describe('expenditure spend reaches the dashboard', () => {
     `);
     expect(orphans.rows[0]).toEqual({ exp_orphans: 0, proj_orphans: 0 });
 
-    // Soft delete: the children stay, stamped.
     const kept = await client.query(`
       SELECT (SELECT count(*)::int FROM branch.expenditures
                WHERE project_id = 4 AND deleted_at IS NOT NULL) AS expenditures,
