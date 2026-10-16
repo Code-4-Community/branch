@@ -1,5 +1,4 @@
 import type { Route } from '@branch/lambda-http';
-import { handleRegister, handleVerifyEmail, handleResendCode } from './controllers/register';
 import {
   handleLogin,
   handleRespondChallenge,
@@ -25,13 +24,10 @@ export const routes: Route[] = [
   // >>> ROUTES-START (do not remove this marker)
   // CLI-generated routes will be inserted here
 
-  { method: 'POST', pattern: '/auth/register', access: 'public', handler: ({ event }) => handleRegister(event) },
   { method: 'POST', pattern: '/auth/login', access: 'public', handler: ({ event }) => handleLogin(event) },
   { method: 'POST', pattern: '/auth/respond-challenge', access: 'public', handler: ({ event }) => handleRespondChallenge(event) },
   { method: 'POST', pattern: '/auth/refresh', access: 'public', handler: ({ event }) => handleRefresh(event) },
   { method: 'GET', pattern: '/auth/me', access: 'authenticated', handler: handleMe },
-  { method: 'POST', pattern: '/auth/verify-email', access: 'public', handler: ({ event }) => handleVerifyEmail(event) },
-  { method: 'POST', pattern: '/auth/resend-code', access: 'public', handler: ({ event }) => handleResendCode(event) },
   // Public because it must still clear a session whose access token has already
   // expired; the handler validates the token it is given.
   { method: 'POST', pattern: '/auth/logout', access: 'public', handler: ({ event }) => handleLogout(event) },
