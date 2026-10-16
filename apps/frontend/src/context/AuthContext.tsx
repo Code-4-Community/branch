@@ -16,6 +16,7 @@ import {
   endSession,
   onSessionExpired,
   refreshSession,
+  refreshSessionOutcome,
 } from '@/lib/authClient';
 import {
   clearTokens,
@@ -137,6 +138,7 @@ interface AuthRawResponse {
 /** Refresh this many ms before the access token actually expires. */
 const REFRESH_LEAD_MS = 120_000;
 const MIN_REFRESH_DELAY_MS = 5_000;
+const TRANSIENT_RETRY_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Context
@@ -153,6 +155,10 @@ const MIN_REFRESH_DELAY_MS = 5_000;
  * can be newer than the API. Failing the bootstrap sends the user to /login,
  * which is at least honest about the session being unusable.
  */
+function isAuthFailure(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
 function isValidUser(candidate: unknown): candidate is AuthUser {
   if (typeof candidate !== 'object' || candidate === null) return false;
   const user = candidate as AuthUser;
@@ -196,9 +202,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = useCallback(() => authedFetch<AuthUser>('/auth/me'), []);
 
-  /** Writes the session straight into the cache, the one source of `user`. */
+  /**
+   * Writes the session straight into the cache, the one source of `user`. A
+   * change of identity drops every other query, so the next user never sees
+   * the previous user's rows.
+   */
   const setUser = useCallback(
     (next: AuthUser | null) => {
+      const previous = queryClient.getQueryData<AuthUser | null>(AUTH_ME_KEY);
+      if (previous?.userId !== next?.userId || next === null) {
+        const meKey = JSON.stringify(AUTH_ME_KEY);
+        queryClient.removeQueries({ predicate: (q) => JSON.stringify(q.queryKey) !== meKey });
+      }
       queryClient.setQueryData(AUTH_ME_KEY, next);
     },
     [queryClient],
@@ -220,14 +235,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // The session is re-read explicitly (`reloadUser`) and rewritten by every
     // path that changes it, so a background refetch could only add requests.
     staleTime: Infinity,
-    retry: false,
+    // Transient failures (network, 5xx) retry and keep the tokens, so a cold
+    // start or a dropped connection on reload does not sign the user out.
+    retry: (failureCount, error) => !isAuthFailure(error) && failureCount < 2,
     queryFn: async () => {
       try {
         const me = await fetchMe();
         return isValidUser(me) ? me : null;
-      } catch {
-        // Resolving null rather than rejecting preserves the original contract:
-        // a failed bootstrap is a signed-out session, not an error to render.
+      } catch (error) {
+        if (!isAuthFailure(error)) throw error;
+        // A refused session resolves null: signed out, not an error to render.
         clearTokens();
         return null;
       }
@@ -272,11 +289,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         exp - Date.now() - REFRESH_LEAD_MS,
         MIN_REFRESH_DELAY_MS,
       );
-      timer = setTimeout(async () => {
-        if (cancelled) return;
-        if (await refreshSession()) schedule();
-        else endSession();
-      }, delay);
+      timer = setTimeout(attempt, delay);
+    };
+
+    // A transient failure retries rather than signing the user out.
+    const attempt = async () => {
+      if (cancelled) return;
+      const outcome = await refreshSessionOutcome();
+      if (outcome === 'ok') schedule();
+      else if (outcome === 'rejected') endSession();
+      else timer = setTimeout(attempt, TRANSIENT_RETRY_MS);
     };
 
     schedule();

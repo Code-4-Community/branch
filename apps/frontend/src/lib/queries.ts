@@ -159,7 +159,9 @@ export const routeQueries: Record<
     reportsPageQuery(pageFrom(search)),
     projectsQuery(),
   ],
-  '/donations': () => [donationsQuery(), donorsQuery(), projectsQuery()],
+  // Not donorsQuery(): `/donors` is admin + director only, and the prefetcher
+  // cannot tell whether this caller may read it.
+  '/donations': () => [donationsQuery(), projectsQuery()],
   '/expenses': (search) => [
     // Mirrors the page's own choice of query. A filtered deep link cannot be
     // served by a page request, so prefetch what the page will actually ask for.

@@ -47,22 +47,31 @@ export function endSession(): void {
   }
 }
 
-let refreshInFlight: Promise<boolean> | null = null;
+/**
+ * `rejected`: the server refused the refresh token, so the session is over.
+ * `unavailable`: network failure, 5xx or 429; the refresh token may still be good.
+ */
+export type RefreshOutcome = 'ok' | 'rejected' | 'unavailable';
+
+let refreshInFlight: Promise<RefreshOutcome> | null = null;
+
+function isAuthRejection(error: unknown): boolean {
+  return error instanceof ApiError && [400, 401, 403].includes(error.status);
+}
 
 /**
  * Exchanges the stored refresh token for a new access/ID token pair.
  *
  * Single-flight: concurrent callers share one in-flight request, so a burst of
  * simultaneous 401s produces exactly one POST /auth/refresh rather than one per
- * request. Resolves false rather than throwing — callers treat that as "session
- * is over".
+ * request.
  */
-export function refreshSession(): Promise<boolean> {
+export function refreshSessionOutcome(): Promise<RefreshOutcome> {
   if (refreshInFlight) return refreshInFlight;
 
-  const attempt = (async (): Promise<boolean> => {
+  const attempt = (async (): Promise<RefreshOutcome> => {
     const refreshToken = getRefreshToken();
-    if (!refreshToken) return false;
+    if (!refreshToken) return 'rejected';
 
     try {
       // apiFetch, not authedFetch: this call carries no bearer token and must
@@ -72,14 +81,14 @@ export function refreshSession(): Promise<boolean> {
         body: JSON.stringify({ refreshToken }),
       });
 
-      if (!data?.AccessToken || !data?.IdToken) return false;
+      if (!data?.AccessToken || !data?.IdToken) return 'rejected';
 
       // No refreshToken here on purpose — Cognito does not return a new one, and
       // saveTokens leaves the stored value alone when it is absent.
       saveTokens({ accessToken: data.AccessToken, idToken: data.IdToken });
-      return true;
-    } catch {
-      return false;
+      return 'ok';
+    } catch (error) {
+      return isAuthRejection(error) ? 'rejected' : 'unavailable';
     }
   })();
 
@@ -89,6 +98,22 @@ export function refreshSession(): Promise<boolean> {
   });
 
   return attempt;
+}
+
+/** Resolves true only when new tokens were stored. */
+export async function refreshSession(): Promise<boolean> {
+  return (await refreshSessionOutcome()) === 'ok';
+}
+
+/** Ends the session only when the server refused it; a transient failure keeps the tokens. */
+async function refreshOrThrow(): Promise<void> {
+  const outcome = await refreshSessionOutcome();
+  if (outcome === 'ok') return;
+  if (outcome === 'rejected') {
+    endSession();
+    throw new ApiError('Session expired', 401);
+  }
+  throw new ApiError('Could not reach the server. Check your connection and try again.', 503);
 }
 
 export interface AuthedRequestOptions extends RequestInit {
@@ -106,17 +131,14 @@ export async function authedFetch<T>(
 ): Promise<T> {
   let token = getAccessToken();
 
-  if (!token) {
+  if (!token && !getRefreshToken()) {
     endSession();
     throw new ApiError('Not authenticated', 401);
   }
 
   // Pre-emptive refresh: skips a round trip that would certainly 401.
-  if (isExpiredOrExpiring(token)) {
-    if (!(await refreshSession())) {
-      endSession();
-      throw new ApiError('Session expired', 401);
-    }
+  if (!token || isExpiredOrExpiring(token)) {
+    await refreshOrThrow();
     token = getAccessToken();
   }
 
@@ -126,10 +148,7 @@ export async function authedFetch<T>(
     const isUnauthorized = error instanceof ApiError && error.status === 401;
     if (!isUnauthorized || !retryOn401) throw error;
 
-    if (!(await refreshSession())) {
-      endSession();
-      throw new ApiError('Session expired', 401);
-    }
+    await refreshOrThrow();
 
     // Retry through apiFetch directly, so a second 401 propagates to the caller
     // instead of looping.
