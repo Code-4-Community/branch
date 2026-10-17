@@ -118,7 +118,7 @@
 | <a name="input_app_domain"></a> [app\_domain](#input\_app\_domain) | Domain serving the app; apex or subdomain, resolved by a Route 53 zone | `string` | `"branchaccounting.org"` | no |
 | <a name="input_dmarc_report_email"></a> [dmarc\_report\_email](#input\_dmarc\_report\_email) | Mailbox receiving DMARC aggregate reports; the rua tag is omitted when empty | `string` | `""` | no |
 | <a name="input_enable_custom_domain"></a> [enable\_custom\_domain](#input\_enable\_custom\_domain) | Attach the custom domain to CloudFront and API Gateway | `bool` | `true` | no |
-| <a name="input_enable_ses_email"></a> [enable\_ses\_email](#input\_enable\_ses\_email) | Send Cognito invitations from SES on var.app\_domain instead of Cognito's shared sender | `bool` | `false` | no |
+| <a name="input_enable_ses_email"></a> [enable\_ses\_email](#input\_enable\_ses\_email) | Send Cognito invitations from SES on var.app\_domain instead of Cognito's shared sender | `bool` | `true` | no |
 | <a name="input_infisical_client_id"></a> [infisical\_client\_id](#input\_infisical\_client\_id) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_client_secret"></a> [infisical\_client\_secret](#input\_infisical\_client\_secret) | n/a | `string` | n/a | yes |
 | <a name="input_infisical_workspace_id"></a> [infisical\_workspace\_id](#input\_infisical\_workspace\_id) | n/a | `string` | `"d1ee8b80-118c-4daf-ae84-31da43261b76"` | no |

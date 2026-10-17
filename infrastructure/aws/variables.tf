@@ -24,11 +24,11 @@ variable "enable_custom_domain" {
   default     = true
 }
 
-# Keep false until DKIM is Verified and the account is out of the SES sandbox.
+# Requires DKIM Verified and SES production access, else invitations fail.
 variable "enable_ses_email" {
   description = "Send Cognito invitations from SES on var.app_domain instead of Cognito's shared sender"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "dmarc_report_email" {
