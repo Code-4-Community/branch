@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
-import { db, closeConnection } from '@branch/store';
+import { db, closeConnection, removeUser } from '@branch/store';
 
 // mock auth only for now
 jest.mock('../auth', () => {
@@ -158,18 +158,26 @@ async function firstExpenditureId(projectId: number): Promise<number> {
   }
 }
 
-// Directly queries the DB to confirm whether a row still exists
+// Directly queries the DB to confirm whether a row is still live
 async function expenditureExists(id: number): Promise<boolean> {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      'SELECT 1 FROM branch.expenditures WHERE expenditure_id = $1',
+      'SELECT 1 FROM branch.expenditures WHERE expenditure_id = $1 AND deleted_at IS NULL',
       [id]
     );
     return (result.rowCount ?? 0) > 0;
   } finally {
     client.release();
   }
+}
+
+async function expenditureSoftDeleted(id: number): Promise<boolean> {
+  const result = await pool.query(
+    'SELECT 1 FROM branch.expenditures WHERE expenditure_id = $1 AND deleted_at IS NOT NULL',
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
 
 describe('Expenditures integration tests', () => {
@@ -546,6 +554,29 @@ describe('Expenditures integration tests', () => {
       const res = await handler(idRequestEvent('GET', id));
       expect(res.statusCode).toBe(200);
     });
+
+    test('200: a soft-deleted author reads as null', async () => {
+      const id = await firstExpenditureId(1); // entered_by 4
+      await removeUser(4);
+
+      const res = await handler(idRequestEvent('GET', id));
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body).body;
+      expect(body.enteredBy).toBeNull();
+      expect(body.submittedByName).toBeNull();
+
+      const list = JSON.parse((await handler(getEvent('/'))).body).data;
+      expect(list.find((e: { expenditure_id: number }) => e.expenditure_id === id).entered_by).toBeNull();
+      expect(list[0]).not.toHaveProperty('deleted_at');
+    });
+
+    test('404: a soft-deleted expenditure is not found', async () => {
+      const id = await firstExpenditureId(1);
+      await pool.query('UPDATE branch.expenditures SET deleted_at = now() WHERE expenditure_id = $1', [id]);
+
+      const res = await handler(idRequestEvent('GET', id));
+      expect(res.statusCode).toBe(404);
+    });
   });
 
   describe('DELETE /expenditures/{id}', () => {
@@ -619,7 +650,7 @@ describe('Expenditures integration tests', () => {
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(200);
-      expect(await expenditureExists(id)).toBe(false);
+      expect(await expenditureSoftDeleted(id)).toBe(true);
     });
 
     test('200: admin can delete an expenditure on any project', async () => {
@@ -627,7 +658,7 @@ describe('Expenditures integration tests', () => {
 
       const res = await handler(idRequestEvent('DELETE', id));
       expect(res.statusCode).toBe(200);
-      expect(await expenditureExists(id)).toBe(false);
+      expect(await expenditureSoftDeleted(id)).toBe(true);
     });
 
     test('404: deleting the same expenditure twice returns 404 the second time', async () => {
@@ -644,7 +675,7 @@ describe('Expenditures integration tests', () => {
       const client = await pool.connect();
       let totalBefore: number;
       try {
-        const result = await client.query('SELECT COUNT(*)::int AS count FROM branch.expenditures');
+        const result = await client.query('SELECT COUNT(*)::int AS count FROM branch.expenditures WHERE deleted_at IS NULL');
         totalBefore = result.rows[0].count;
       } finally {
         client.release();
@@ -656,7 +687,7 @@ describe('Expenditures integration tests', () => {
 
       const client2 = await pool.connect();
       try {
-        const result = await client2.query('SELECT COUNT(*)::int AS count FROM branch.expenditures');
+        const result = await client2.query('SELECT COUNT(*)::int AS count FROM branch.expenditures WHERE deleted_at IS NULL');
         expect(result.rows[0].count).toBe(totalBefore - 1);
       } finally {
         client2.release();

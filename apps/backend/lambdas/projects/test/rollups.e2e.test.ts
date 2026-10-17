@@ -81,6 +81,7 @@ async function auditRollups(client: PoolClient): Promise<void> {
                COALESCE(category, '<null>') AS cat_key, status,
                SUM(amount) AS total_amount, COUNT(*)::int AS expenditure_count
           FROM branch.expenditures
+         WHERE deleted_at IS NULL
          GROUP BY 1, 2, 3, 4
       ) live USING (project_id, month, cat_key, status)
      WHERE er.total_amount      IS DISTINCT FROM live.total_amount
@@ -98,10 +99,11 @@ async function auditRollups(client: PoolClient): Promise<void> {
       FULL OUTER JOIN (
         SELECT p.project_id,
                (SELECT count(*) FROM branch.project_memberships m WHERE m.project_id = p.project_id) AS member_count,
-               (SELECT COALESCE(SUM(amount), 0) FROM branch.project_donations d WHERE d.project_id = p.project_id) AS total_donated,
-               (SELECT count(*) FROM branch.project_donations d WHERE d.project_id = p.project_id) AS donation_count,
-               (SELECT count(*) FROM branch.reports r WHERE r.project_id = p.project_id) AS report_count
+               (SELECT COALESCE(SUM(amount), 0) FROM branch.project_donations d WHERE d.project_id = p.project_id AND d.deleted_at IS NULL) AS total_donated,
+               (SELECT count(*) FROM branch.project_donations d WHERE d.project_id = p.project_id AND d.deleted_at IS NULL) AS donation_count,
+               (SELECT count(*) FROM branch.reports r WHERE r.project_id = p.project_id AND r.deleted_at IS NULL) AS report_count
           FROM branch.projects p
+         WHERE p.deleted_at IS NULL
       ) live USING (project_id)
      WHERE pr.member_count   IS DISTINCT FROM live.member_count
         OR pr.total_donated  IS DISTINCT FROM live.total_donated
@@ -273,11 +275,21 @@ describe('expenditure spend reaches the dashboard', () => {
 
     const orphans = await client.query(`
       SELECT (SELECT count(*)::int FROM branch.expenditure_rollup er
-                LEFT JOIN branch.projects p USING (project_id) WHERE p.project_id IS NULL) AS exp_orphans,
+                LEFT JOIN branch.projects p ON p.project_id = er.project_id AND p.deleted_at IS NULL
+               WHERE p.project_id IS NULL) AS exp_orphans,
              (SELECT count(*)::int FROM branch.project_rollup pr
-                LEFT JOIN branch.projects p USING (project_id) WHERE p.project_id IS NULL) AS proj_orphans
+                LEFT JOIN branch.projects p ON p.project_id = pr.project_id AND p.deleted_at IS NULL
+               WHERE p.project_id IS NULL) AS proj_orphans
     `);
     expect(orphans.rows[0]).toEqual({ exp_orphans: 0, proj_orphans: 0 });
+
+    const kept = await client.query(`
+      SELECT (SELECT count(*)::int FROM branch.expenditures
+               WHERE project_id = 4 AND deleted_at IS NOT NULL) AS expenditures,
+             (SELECT count(*)::int FROM branch.reports
+               WHERE project_id = 4 AND deleted_at IS NOT NULL) AS reports
+    `);
+    expect(kept.rows[0]).toEqual({ expenditures: 1, reports: 1 });
   });
 });
 
@@ -365,7 +377,7 @@ describe('rollup-backed read paths agree with the base tables', () => {
   test('dashboard totalSpent equals the approved sum for the year', async () => {
     const { rows } = await client.query(`
       SELECT COALESCE(SUM(amount), 0) AS total FROM branch.expenditures
-       WHERE status = 'approved'
+       WHERE status = 'approved' AND deleted_at IS NULL
          AND spent_on >= date_trunc('year', CURRENT_DATE)
          AND spent_on <  date_trunc('year', CURRENT_DATE) + INTERVAL '1 year'
     `);
@@ -376,7 +388,7 @@ describe('rollup-backed read paths agree with the base tables', () => {
   test('dashboard per-project spend equals the approved sum per project', async () => {
     const { rows } = await client.query(`
       SELECT project_id, SUM(amount) AS total FROM branch.expenditures
-       WHERE status = 'approved' GROUP BY project_id
+       WHERE status = 'approved' AND deleted_at IS NULL GROUP BY project_id
     `);
     const expected = new Map(rows.map((r) => [r.project_id, Number(r.total)]));
 
@@ -391,7 +403,7 @@ describe('rollup-backed read paths agree with the base tables', () => {
       SELECT to_char(date_trunc('month', spent_on), 'YYYY-MM') AS month, category,
              SUM(amount) AS total
         FROM branch.expenditures
-       WHERE status = 'approved' AND category IS NOT NULL
+       WHERE status = 'approved' AND category IS NOT NULL AND deleted_at IS NULL
          AND spent_on >= date_trunc('year', CURRENT_DATE)
          AND spent_on <  date_trunc('year', CURRENT_DATE) + INTERVAL '1 year'
        GROUP BY 1, 2 ORDER BY 1, 2

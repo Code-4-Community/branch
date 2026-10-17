@@ -127,6 +127,7 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
   const project = await db
     .selectFrom('branch.projects')
     .where('project_id', '=', projectId)
+    .where('deleted_at', 'is', null)
     .selectAll()
     .executeTakeFirst();
 
@@ -139,6 +140,7 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
       .selectFrom('branch.project_memberships')
       .innerJoin('branch.users', 'branch.users.user_id', 'branch.project_memberships.user_id')
       .where('branch.project_memberships.project_id', '=', projectId)
+      .where('branch.users.deleted_at', 'is', null)
       .select([
         'branch.users.name',
         'branch.users.email',
@@ -150,6 +152,8 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
       .selectFrom('branch.project_donations')
       .innerJoin('branch.donors', 'branch.donors.donor_id', 'branch.project_donations.donor_id')
       .where('branch.project_donations.project_id', '=', projectId)
+      .where('branch.project_donations.deleted_at', 'is', null)
+      .where('branch.donors.deleted_at', 'is', null)
       .select([
         'branch.donors.organization',
         'branch.donors.contact_name',
@@ -159,8 +163,13 @@ export async function fetchReportData(projectId: number): Promise<ReportData | n
       .execute(),
     db
       .selectFrom('branch.expenditures')
-      .leftJoin('branch.users', 'branch.users.user_id', 'branch.expenditures.entered_by')
+      .leftJoin('branch.users', (join) =>
+        join
+          .onRef('branch.users.user_id', '=', 'branch.expenditures.entered_by')
+          .on('branch.users.deleted_at', 'is', null),
+      )
       .where('branch.expenditures.project_id', '=', projectId)
+      .where('branch.expenditures.deleted_at', 'is', null)
       .where('branch.expenditures.status', '=', APPROVED_EXPENDITURE_STATUS)
       .select([
         'branch.expenditures.category',

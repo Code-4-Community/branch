@@ -609,6 +609,46 @@ test("regular user cannot delete users", async () => {
   const res = await handler(event);
   expect(res.statusCode).toBe(403);
 });
+test("POST user succeeds for the email of a deleted user, which keeps its row", async () => {
+  mockAdminAuth();
+
+  const del = await handler(createEvent({ method: 'DELETE', path: '/2' }));
+  expect(del.statusCode).toBe(200);
+
+  const res = await handler(createEvent({
+    method: 'POST',
+    path: '/users',
+    body: { name: "Renee Again", email: "renee@branch.org", isAdmin: false },
+  }));
+  expect(res.statusCode).toBe(201);
+  expect(JSON.parse(res.body).body.email).toBe("renee@branch.org");
+
+  const client = await pool.connect();
+  try {
+    const old = await client.query('SELECT email, deleted_at FROM branch.users WHERE user_id = 2');
+    expect(old.rows[0].email).toBe('renee@branch.org');
+    expect(old.rows[0].deleted_at).not.toBeNull();
+    const live = await client.query(
+      "SELECT user_id FROM branch.users WHERE email = 'renee@branch.org' AND deleted_at IS NULL",
+    );
+    expect(live.rows).toHaveLength(1);
+    expect(live.rows[0].user_id).not.toBe(2);
+  } finally {
+    client.release();
+  }
+});
+
+test("POST user 409 when a live user has the email", async () => {
+  mockAdminAuth();
+
+  const res = await handler(createEvent({
+    method: 'POST',
+    path: '/users',
+    body: { name: "Sam Again", email: "sam@branch.org", isAdmin: false },
+  }));
+  expect(res.statusCode).toBe(409);
+  expect(JSON.parse(res.body).message).toBe('User with this email already exists');
+});
 
 describe('staff accounts', () => {
   async function seedStaff(): Promise<number> {

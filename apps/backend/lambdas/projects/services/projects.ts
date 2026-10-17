@@ -1,76 +1,7 @@
-import {
-  S3Client,
-  ListObjectsV2Command,
-  DeleteObjectsCommand,
-} from '@aws-sdk/client-s3';
-import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
 import { db } from '@branch/store';
 import { ADMIN_MEMBER_ROLE, type MemberDisplayRole } from '@branch/rbac';
 import { APPROVED_EXPENDITURE_STATUS, MemberAssignment } from '../validation-utils';
-
-const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-2' });
-
-/** Deletes every object under one prefix, following pagination. */
-async function deletePrefix(bucket: string, prefix: string): Promise<number> {
-  let removed = 0;
-  let ContinuationToken: string | undefined;
-
-  do {
-    const listed = await s3.send(
-      new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken }),
-    );
-    const keys = (listed.Contents ?? [])
-      .map((o) => o.Key)
-      .filter((k): k is string => Boolean(k));
-
-    if (keys.length > 0) {
-      // DeleteObjects caps at 1000 keys, which is also ListObjectsV2's page
-      // size, so one page maps to one delete call.
-      await s3.send(
-        new DeleteObjectsCommand({
-          Bucket: bucket,
-          Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true },
-        }),
-      );
-      removed += keys.length;
-    }
-
-    // Only follow the cursor while truncated; IsTruncated false ends the loop.
-    ContinuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
-  } while (ContinuationToken);
-
-  return removed;
-}
-
-/**
- * Best-effort cleanup of the files a deleted project owned.
- *
- * Deliberately never throws: the project is already gone by the time this runs,
- * and a delete that succeeded must not be reported as a 500 because S3 was
- * unreachable or the role is missing `s3:DeleteObject`. Leftover objects are
- * recoverable; a project that cannot be deleted is not.
- */
-export async function deleteProjectObjects(projectId: number): Promise<number | null> {
-  // Read at call time rather than at module load: the value is then observable
-  // to callers that set it after import, which is what the unit tests do.
-  const bucket = process.env.REPORTS_BUCKET_NAME ?? '';
-  if (!bucket) {
-    console.error('REPORTS_BUCKET_NAME is not set; leaving files for project', projectId);
-    return null;
-  }
-  try {
-    const counts = await Promise.all([
-      deletePrefix(bucket, `receipts/${projectId}/`),
-      deletePrefix(bucket, `reports/${projectId}/`),
-    ]);
-    return counts[0] + counts[1];
-  } catch (err) {
-    console.error('Failed to delete objects for project', projectId, err);
-    reportError(err, { projectId });
-    return null;
-  }
-}
 
 /**
  * Path segments carrying a project id are matched with this rather than a bare
@@ -155,6 +86,7 @@ export async function listRoster(projectId: number): Promise<RosterMember[]> {
       .selectFrom('branch.users')
       .select(['user_id', 'name', 'email', 'profile_image'])
       .where('is_admin', 'is', true)
+      .where('deleted_at', 'is', null)
       .where('is_staff', 'is not', true)
       .orderBy('name', 'asc')
       .execute(),
@@ -163,6 +95,7 @@ export async function listRoster(projectId: number): Promise<RosterMember[]> {
       .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
       .select(['u.user_id', 'u.name', 'u.email', 'u.profile_image', 'pm.role'])
       .where('pm.project_id', '=', projectId)
+      .where('u.deleted_at', 'is', null)
       .orderBy('u.name', 'asc')
       .execute(),
   ]);
@@ -186,6 +119,7 @@ export async function loadAdminHeadcount(projectIds: number[]): Promise<{
       .selectFrom('branch.users')
       .select((eb) => eb.fn.countAll<string>().as('count'))
       .where('is_admin', 'is', true)
+      .where('deleted_at', 'is', null)
       .where('is_staff', 'is not', true)
       .executeTakeFirst(),
     projectIds.length === 0
@@ -195,6 +129,7 @@ export async function loadAdminHeadcount(projectIds: number[]): Promise<{
           .innerJoin('branch.users as u', 'u.user_id', 'pm.user_id')
           .select(['pm.project_id', (eb) => eb.fn.countAll<string>().as('count')])
           .where('u.is_admin', 'is', true)
+          .where('u.deleted_at', 'is', null)
           .where('pm.project_id', 'in', projectIds)
           .groupBy('pm.project_id')
           .execute(),
@@ -215,6 +150,7 @@ export async function findAdminUserIds(members: MemberAssignment[]): Promise<num
     .selectFrom('branch.users')
     .select('user_id')
     .where('is_admin', 'is', true)
+    .where('deleted_at', 'is', null)
     .where(
       'user_id',
       'in',
@@ -232,6 +168,7 @@ export async function findUnknownUserIds(members: MemberAssignment[]): Promise<n
     .selectFrom('branch.users')
     .select('user_id')
     .where('user_id', 'in', ids)
+    .where('deleted_at', 'is', null)
     .where('is_staff', 'is not', true)
     .execute();
   const known = new Set(found.map((r) => r.user_id));

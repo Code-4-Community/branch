@@ -753,7 +753,7 @@ function ReportsPageContent() {
               confirmLabel="Delete"
               consequences={
                 <p>
-                  The generated files are deleted too, for everyone.
+                  The generated files are removed too, for everyone.
                 </p>
               }
             />

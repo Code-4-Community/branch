@@ -46,6 +46,7 @@ async function auditRollups(client: PoolClient): Promise<void> {
                COALESCE(category, '<null>') AS cat_key, status,
                SUM(amount) AS total_amount, COUNT(*)::int AS expenditure_count
           FROM branch.expenditures
+         WHERE deleted_at IS NULL
          GROUP BY 1, 2, 3, 4
       ) live USING (project_id, month, cat_key, status)
      WHERE er.total_amount      IS DISTINCT FROM live.total_amount
@@ -63,10 +64,11 @@ async function auditRollups(client: PoolClient): Promise<void> {
       FULL OUTER JOIN (
         SELECT p.project_id,
                (SELECT count(*) FROM branch.project_memberships m WHERE m.project_id = p.project_id) AS member_count,
-               (SELECT COALESCE(SUM(amount), 0) FROM branch.project_donations d WHERE d.project_id = p.project_id) AS total_donated,
-               (SELECT count(*) FROM branch.project_donations d WHERE d.project_id = p.project_id) AS donation_count,
-               (SELECT count(*) FROM branch.reports r WHERE r.project_id = p.project_id) AS report_count
+               (SELECT COALESCE(SUM(amount), 0) FROM branch.project_donations d WHERE d.project_id = p.project_id AND d.deleted_at IS NULL) AS total_donated,
+               (SELECT count(*) FROM branch.project_donations d WHERE d.project_id = p.project_id AND d.deleted_at IS NULL) AS donation_count,
+               (SELECT count(*) FROM branch.reports r WHERE r.project_id = p.project_id AND r.deleted_at IS NULL) AS report_count
           FROM branch.projects p
+         WHERE p.deleted_at IS NULL
       ) live USING (project_id)
      WHERE pr.member_count   IS DISTINCT FROM live.member_count
         OR pr.total_donated  IS DISTINCT FROM live.total_donated
@@ -239,11 +241,21 @@ describe('expenditure_rollup', () => {
 
     const orphans = await client.query(`
       SELECT (SELECT count(*)::int FROM branch.expenditure_rollup er
-                LEFT JOIN branch.projects p USING (project_id) WHERE p.project_id IS NULL) AS exp_orphans,
+                LEFT JOIN branch.projects p ON p.project_id = er.project_id AND p.deleted_at IS NULL
+               WHERE p.project_id IS NULL) AS exp_orphans,
              (SELECT count(*)::int FROM branch.project_rollup pr
-                LEFT JOIN branch.projects p USING (project_id) WHERE p.project_id IS NULL) AS proj_orphans
+                LEFT JOIN branch.projects p ON p.project_id = pr.project_id AND p.deleted_at IS NULL
+               WHERE p.project_id IS NULL) AS proj_orphans
     `);
     expect(orphans.rows[0]).toEqual({ exp_orphans: 0, proj_orphans: 0 });
+
+    const kept = await client.query(`
+      SELECT (SELECT count(*)::int FROM branch.expenditures
+               WHERE project_id = 4 AND deleted_at IS NOT NULL) AS expenditures,
+             (SELECT count(*)::int FROM branch.reports
+               WHERE project_id = 4 AND deleted_at IS NOT NULL) AS reports
+    `);
+    expect(kept.rows[0]).toEqual({ expenditures: 1, reports: 1 });
   });
 });
 
@@ -308,8 +320,10 @@ describe('project_rollup', () => {
     expect(await removeUser(4)).toBe(1n);
     await auditRollups(client);
 
-    const gone = await client.query('SELECT 1 FROM branch.users WHERE user_id = 4');
-    expect(gone.rows).toHaveLength(0);
+    const gone = await client.query(
+      'SELECT 1 FROM branch.users WHERE user_id = 4 AND deleted_at IS NOT NULL',
+    );
+    expect(gone.rows).toHaveLength(1);
     const orphaned = await client.query(
       'SELECT 1 FROM branch.project_memberships WHERE user_id = 4',
     );

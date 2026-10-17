@@ -16,6 +16,7 @@ export const handleListTargets: RouteHandler = async ({ event }) => {
   let query = db
     .selectFrom('branch.users')
     .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
     .select(['user_id', 'name', 'email', 'is_admin', 'cognito_sub'])
     .orderBy('name')
     .limit(TARGET_LIMIT);
@@ -69,6 +70,7 @@ export const handleStartImpersonation: RouteHandler = async ({ event, auth }) =>
     .selectFrom('branch.users')
     .where('user_id', '=', targetUserId)
     .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
     .select(['user_id', 'name', 'email'])
     .executeTakeFirst();
   // 404 for a staff target too: the console must not confirm one exists.

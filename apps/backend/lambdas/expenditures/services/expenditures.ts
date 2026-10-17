@@ -1,7 +1,6 @@
 import { Insertable, Updateable } from 'kysely';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { reportError } from '@branch/lambda-http';
 import type { DB } from '@branch/types';
 import { db, recordExpenditure, editExpenditure, removeExpenditure } from '@branch/store';
 import type { ExpenditureStatus } from '../validation-utils';
@@ -32,36 +31,6 @@ export function receiptKeyForProject(objectUrl: string, projectId: number): stri
   return key && key.startsWith(`receipts/${projectId}/`) && !key.includes('..') ? key : null;
 }
 
-/**
- * Best-effort removal of the receipt behind a deleted expenditure.
- *
- * Deliberately never throws: the row is already gone by the time this runs, and
- * the caller must not turn a successful delete into a 500 because S3 was
- * unreachable or the role is missing `s3:DeleteObject`. A leftover object is
- * recoverable; a row that cannot be deleted is not.
- */
-export async function deleteReceiptObject(receiptUrl: string | null, projectId: number): Promise<boolean> {
-  if (!receiptUrl) return true;
-  const key = receiptKeyForProject(receiptUrl, projectId);
-  if (!key) return false;
-  // Read at call time rather than using the module-level BUCKET: the value is
-  // then observable to callers that set it after import, which is what the
-  // unit tests do.
-  const bucket = process.env.REPORTS_BUCKET_NAME ?? '';
-  if (!bucket) {
-    console.error('REPORTS_BUCKET_NAME is not set; leaving receipt object', key);
-    return false;
-  }
-  try {
-    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-    return true;
-  } catch (err) {
-    console.error('Failed to delete receipt object', key, err);
-    reportError(err, { key });
-    return false;
-  }
-}
-
 export async function countExpenditures(projectId: number | null, scope: ExpenditureScope): Promise<number> {
   // Only the unscoped count can come from the rollup. A scoped one is
   // `project_id IN (...) OR entered_by = me`, and entered_by is not in the
@@ -76,7 +45,10 @@ export async function countExpenditures(projectId: number | null, scope: Expendi
     return Number(rolledUp?.count || 0);
   }
 
-  let query = db.selectFrom('branch.expenditures').select(db.fn.count('expenditure_id').as('count'));
+  let query = db
+    .selectFrom('branch.expenditures')
+    .where('deleted_at', 'is', null)
+    .select(db.fn.count('expenditure_id').as('count'));
   if (projectId !== null) query = query.where('project_id', '=', projectId);
   const totalCount = await applyExpenditureScope(query, scope).executeTakeFirst();
 
@@ -88,7 +60,7 @@ export async function queryExpenditures(
   scope: ExpenditureScope,
   page?: { limit: number; offset: number },
 ) {
-  let query = db.selectFrom('branch.expenditures').selectAll();
+  let query = db.selectFrom('branch.expenditures').where('deleted_at', 'is', null).selectAll();
   if (projectId !== null) query = query.where('project_id', '=', projectId);
   const scoped = applyExpenditureScope(query, scope)
     .orderBy('spent_on', 'desc')
@@ -107,7 +79,12 @@ export async function findMembership(projectId: number, userId: number) {
 }
 
 export async function findProjectById(projectId: number) {
-  return db.selectFrom('branch.projects').where('project_id', '=', projectId).selectAll().executeTakeFirst();
+  return db
+    .selectFrom('branch.projects')
+    .where('project_id', '=', projectId)
+    .where('deleted_at', 'is', null)
+    .selectAll()
+    .executeTakeFirst();
 }
 
 /**
@@ -121,8 +98,12 @@ export async function findExpenditureWithNames(id: number) {
   return db
     .selectFrom('branch.expenditures as e')
     .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
-    .leftJoin('branch.users as u', 'u.user_id', 'e.entered_by')
+    .leftJoin('branch.users as u', (join) =>
+      join.onRef('u.user_id', '=', 'e.entered_by').on('u.deleted_at', 'is', null),
+    )
     .where('e.expenditure_id', '=', id)
+    .where('e.deleted_at', 'is', null)
+    .where('p.deleted_at', 'is', null)
     .selectAll('e')
     .select(['p.name as project_name', 'u.name as submitted_by_name'])
     .executeTakeFirst();
@@ -133,7 +114,12 @@ export async function insertExpenditure(values: Insertable<DB['branch.expenditur
 }
 
 export async function findExpenditureById(id: number) {
-  return db.selectFrom('branch.expenditures').where('expenditure_id', '=', id).selectAll().executeTakeFirst();
+  return db
+    .selectFrom('branch.expenditures')
+    .where('expenditure_id', '=', id)
+    .where('deleted_at', 'is', null)
+    .selectAll()
+    .executeTakeFirst();
 }
 
 /** `expectedStatus` is the status the caller was authorized against; a change under the lock throws. */
@@ -166,6 +152,7 @@ export async function getUserContact(userId: number) {
   return db
     .selectFrom('branch.users')
     .where('user_id', '=', userId)
+    .where('deleted_at', 'is', null)
     .select(['name', 'email'])
     .executeTakeFirst();
 }

@@ -350,14 +350,8 @@ export const deleteExpenditure: RouteHandler = async ({ params, auth }) => {
     return json(404, { message: 'Expenditure not found' });
   }
 
-  // After the row, never before: if the object went first and the delete
-  // below failed, the receipt would be gone with a row still pointing at it.
-  const receiptDeleted = await expendituresService.deleteReceiptObject(
-    expenditure.receipt_url,
-    expenditure.project_id,
-  );
-
-  return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id }, receiptDeleted });
+  // The receipt object stays in S3 so a soft delete can be restored.
+  return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
 };
 
 // PATCH /expenditures/{id}/status — approve/decline. `expense:review` on the

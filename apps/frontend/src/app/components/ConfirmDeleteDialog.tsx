@@ -16,14 +16,14 @@ interface ConfirmDeleteDialogProps {
   /** The record being removed, echoed back so the user can check the row. */
   itemName?: string;
   /**
-   * What else disappears. Every foreign key in the schema is ON DELETE CASCADE,
-   * so a delete here can take rows the user never sees — say so explicitly.
+   * What else disappears. A delete here can take rows the user never sees
+   * (a project's expenses, a donor's donations) — say so explicitly.
    */
   consequences?: React.ReactNode;
   confirmLabel?: string;
   /**
    * Gate the confirm button behind retyping `itemName`. For deletes that
-   * cascade into financial history, where a misclick is unrecoverable.
+   * reach into financial history, where a misclick is costly to undo.
    */
   requireTypedConfirmation?: boolean;
 }

@@ -149,6 +149,7 @@ async function selectIdentity(
     .selectFrom('branch.users as u')
     .leftJoin('branch.project_memberships as pm', 'pm.user_id', 'u.user_id')
     .where(column, '=', value)
+    .where('u.deleted_at', 'is', null)
     .select([
       'u.user_id',
       'u.cognito_sub',

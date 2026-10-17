@@ -49,6 +49,7 @@ export const getDashboard: RouteHandler = async () => {
       // Not a rollup: "active" changes with the clock, not with a write.
       db.selectFrom('branch.projects')
         .select(db.fn.count('project_id').as('count'))
+        .where('deleted_at', 'is', null)
         .where(isActive('end_date'))
         .executeTakeFirst(),
       db.selectFrom('branch.expenditure_rollup')
@@ -69,6 +70,7 @@ export const getDashboard: RouteHandler = async () => {
         .where('er.status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('er.month', '>=', yearStart as any)
         .where('er.month', '<', nextYearStart as any)
+        .where('p.deleted_at', 'is', null)
         .where(isActive('p.end_date'))
         .executeTakeFirst(),
       // Spend stays a pre-aggregated subquery: the rollup is per
@@ -94,6 +96,7 @@ export const getDashboard: RouteHandler = async () => {
           'spend.total as spent',
           'pr.member_count as staff_count',
         ])
+        .where('p.deleted_at', 'is', null)
         .orderBy('p.project_id', 'asc')
         .execute(),
       db.selectFrom('branch.expenditure_rollup')
@@ -184,11 +187,17 @@ export const getOverview: RouteHandler = async (ctx) => {
   // None of the three below depend on the project row, so all four go out at
   // once and the 404 is settled from the result rather than ahead of them.
   const [project, members, expenditures, donationRow] = await Promise.all([
-    db.selectFrom('branch.projects').where('project_id', '=', id).selectAll().executeTakeFirst(),
+    db
+      .selectFrom('branch.projects')
+      .where('project_id', '=', id)
+      .where('deleted_at', 'is', null)
+      .selectAll()
+      .executeTakeFirst(),
     listRoster(id),
     db
       .selectFrom('branch.expenditures')
       .where('project_id', '=', id)
+      .where('deleted_at', 'is', null)
       .selectAll()
       .orderBy('spent_on', 'desc')
       .execute(),

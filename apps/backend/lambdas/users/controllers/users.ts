@@ -64,12 +64,14 @@ export const listUsers: RouteHandler = async ({ event }) => {
     const [totalCount, users] = await Promise.all([
       db
         .selectFrom('branch.users')
+        .where('deleted_at', 'is', null)
         .where('is_staff', 'is not', true)
         .select(db.fn.count('user_id').as('count'))
         .executeTakeFirst(),
       db
         .selectFrom('branch.users')
         .where('is_staff', 'is not', true)
+        .where('deleted_at', 'is', null)
         .select(USER_COLUMNS)
         .orderBy('user_id', 'asc')
         .limit(limit)
@@ -93,6 +95,7 @@ export const listUsers: RouteHandler = async ({ event }) => {
   const users = await db
     .selectFrom('branch.users')
     .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
     .select(USER_COLUMNS)
     .execute();
 
@@ -110,6 +113,7 @@ export const getUser: RouteHandler = async ({ params, auth }) => {
     .selectFrom('branch.users')
     .where('user_id', '=', Number(userId))
     .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
     .select(USER_COLUMNS)
     .executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
@@ -240,6 +244,7 @@ export const deleteUser: RouteHandler = async ({ params }) => {
     .selectFrom('branch.users')
     .where('user_id', '=', Number(userId))
     .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
     .select('email')
     .executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
@@ -300,10 +305,11 @@ export const createUser: RouteHandler = async ({ event }) => {
   const isAdmin = isAdminResult.value as boolean;
   const profile_image = profileImageResult.value ?? undefined;
 
-  // Check if user with this email already exists in DB
+  // Live users only: a soft-deleted row keeps its email, and its Cognito account is gone.
   const existingUser = await db
     .selectFrom('branch.users')
     .where('email', '=', email)
+    .where('deleted_at', 'is', null)
     .selectAll()
     .executeTakeFirst();
 

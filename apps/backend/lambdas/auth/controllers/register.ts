@@ -51,6 +51,7 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
     const existingUser = await db
       .selectFrom('branch.users')
       .where('email', '=', email.toLowerCase())
+      .where('deleted_at', 'is', null)
       .selectAll()
       .executeTakeFirst();
 

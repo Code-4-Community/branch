@@ -12,6 +12,7 @@ export const getProjectExpenditures: RouteHandler = async (ctx) => {
     const project = await db
       .selectFrom('branch.projects')
       .where('project_id', '=', projectId)
+      .where('deleted_at', 'is', null)
       .selectAll()
       .executeTakeFirst();
 
@@ -22,6 +23,7 @@ export const getProjectExpenditures: RouteHandler = async (ctx) => {
     const expenditures = await db
       .selectFrom('branch.expenditures')
       .where('project_id', '=', projectId)
+      .where('deleted_at', 'is', null)
       .selectAll()
       .orderBy('spent_on', 'desc')
       .execute();

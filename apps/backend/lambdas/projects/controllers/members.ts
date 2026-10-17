@@ -30,6 +30,7 @@ export const getAssignableStaff: RouteHandler = async () => {
     .selectFrom('branch.users')
     .select(['user_id', 'name', 'email', 'profile_image'])
     .where('is_admin', 'is not', true)
+    .where('deleted_at', 'is', null)
     .where('is_staff', 'is not', true)
     .orderBy('name', 'asc')
     .execute();

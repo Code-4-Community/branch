@@ -42,11 +42,13 @@ export async function getDonations({ event, auth }: RouteCtx) {
 
     let countQuery = db
       .selectFrom('branch.project_donations')
+      .where('deleted_at', 'is', null)
       .select(db.fn.count('donation_id').as('count'));
     if (inScope) countQuery = countQuery.where(inScope);
 
     let pageQuery = db
       .selectFrom('branch.project_donations')
+      .where('deleted_at', 'is', null)
       .selectAll()
       .orderBy('donation_id', 'asc');
     if (inScope) pageQuery = pageQuery.where(inScope);
@@ -66,7 +68,7 @@ export async function getDonations({ event, auth }: RouteCtx) {
     });
   }
 
-  let query = db.selectFrom('branch.project_donations').selectAll();
+  let query = db.selectFrom('branch.project_donations').where('deleted_at', 'is', null).selectAll();
   if (inScope) query = query.where(inScope);
   const donations = await query.execute();
   return json(200, { data: donations });
@@ -115,11 +117,17 @@ export async function createDonation({ event }: RouteCtx) {
   // 404, but only with the combined "Donor or project not found" message, and
   // these two tell the caller which id was wrong.
   const [donor, project] = await Promise.all([
-    db.selectFrom('branch.donors').select('donor_id').where('donor_id', '=', donorId).executeTakeFirst(),
+    db
+      .selectFrom('branch.donors')
+      .select('donor_id')
+      .where('donor_id', '=', donorId)
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst(),
     db
       .selectFrom('branch.projects')
       .select('project_id')
       .where('project_id', '=', projectId)
+      .where('deleted_at', 'is', null)
       .executeTakeFirst(),
   ]);
 
@@ -158,6 +166,7 @@ export async function deleteDonation({ params, auth }: RouteCtx) {
   const donation = await db
     .selectFrom('branch.project_donations')
     .where('donation_id', '=', Number(id))
+    .where('deleted_at', 'is', null)
     .selectAll()
     .executeTakeFirst();
 

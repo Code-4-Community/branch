@@ -37,13 +37,13 @@ function makeDb(rows: unknown[]) {
   const calls: {
     from?: unknown;
     leftJoin?: unknown[];
-    where?: unknown[];
+    where: unknown[][];
     select?: unknown;
-  } = {};
+  } = { where: [] };
 
   const tail = {
     where: (...args: unknown[]) => {
-      calls.where = args;
+      calls.where.push(args);
       return tail;
     },
     select: (columns: unknown) => {
@@ -217,7 +217,10 @@ describe('authenticateRequest', () => {
       'pm.user_id',
       'u.user_id',
     ]);
-    expect(calls.where).toEqual(['u.cognito_sub', '=', 'sub-1']);
+    expect(calls.where).toEqual([
+      ['u.cognito_sub', '=', 'sub-1'],
+      ['u.deleted_at', 'is', null],
+    ]);
     // The union of what authentication and GET /auth/me need, so /auth/me does
     // not re-read the same row for a different column list.
     expect(calls.select).toEqual([

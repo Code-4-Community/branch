@@ -6,7 +6,6 @@ import { DEFAULT_PROJECT_ROLE, ProjectValidationUtils } from '../validation-util
 import { requireVisibleProject } from './project-guard';
 import {
   ADMIN_ASSIGNMENT_MESSAGE,
-  deleteProjectObjects,
   findAdminUserIds,
   findUnknownUserIds,
   isProjectActive,
@@ -28,7 +27,11 @@ export const listProjects: RouteHandler = async ({ auth }) => {
   // plan cache whatever the caller's project count.
   const scope = projectScopeIds(auth.subject);
 
-  let query = db.selectFrom('branch.projects').selectAll().orderBy('project_id', 'asc');
+  let query = db
+    .selectFrom('branch.projects')
+    .where('deleted_at', 'is', null)
+    .selectAll()
+    .orderBy('project_id', 'asc');
   if (scope) query = query.where(sql<SqlBool>`project_id = ANY(${scope})`);
   const projects = await query.execute();
 
@@ -61,6 +64,7 @@ export const getProject: RouteHandler = async (ctx) => {
   const project = await db
     .selectFrom('branch.projects')
     .where('project_id', '=', projectId)
+    .where('deleted_at', 'is', null)
     .selectAll()
     .executeTakeFirst();
   if (!project) return json(404, { message: `Project not found for id: ${projectId}` });
@@ -100,6 +104,7 @@ export const updateProject: RouteHandler = async ({ event, params, auth }) => {
   const existing = await db
     .selectFrom('branch.projects')
     .where('project_id', '=', Number(id))
+    .where('deleted_at', 'is', null)
     .select(['start_date', 'end_date'])
     .executeTakeFirst();
   if (!existing) return json(404, { message: `Project not found for id: ${id}` });
@@ -155,14 +160,8 @@ export const deleteProject: RouteHandler = async ({ params }) => {
     return json(404, { message: 'Project not found' });
   }
 
-  // The expenditure and report rows went with the project via ON DELETE
-  // CASCADE, so nothing is left to tell us which files they owned. Both
-  // services key their objects by project id, so clear those prefixes —
-  // otherwise every receipt and report for the project is orphaned at once,
-  // which is the single largest source of unreferenced objects.
-  const filesDeleted = await deleteProjectObjects(Number(id));
-
-  return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id }, filesDeleted });
+  // Files are kept so a soft-deleted project can be restored.
+  return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id } });
 };
 
 // POST /projects — admin-only via `project:create` on the route.
