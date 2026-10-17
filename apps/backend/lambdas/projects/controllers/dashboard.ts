@@ -73,7 +73,6 @@ export const getDashboard: RouteHandler = async () => {
         .where('p.deleted_at', 'is', null)
         .where(isActive('p.end_date'))
         .executeTakeFirst(),
-      // Both aggregate before joining, or each project row multiplies by the other's row count.
       db.selectFrom('branch.projects as p')
         .leftJoin(
           (eb) =>
@@ -219,7 +218,6 @@ export const getOverview: RouteHandler = async (ctx) => {
   if (!project) return json(404, { message: `Project not found for id: ${id}` });
 
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
-  // Summed in JS: the table renders every row anyway, so the total cannot disagree with the list.
   // The list includes rows still in review; the stats count only approved ones.
   const approved = expenditures.filter((e) => e.status === APPROVED_EXPENDITURE_STATUS);
   const totalSpent = approved.reduce((sum, e) => sum + Number(e.amount), 0);

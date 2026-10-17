@@ -33,7 +33,6 @@ export function indexByProject<T extends { project_id: number }>(
   return new Map(rows.map((row) => [row.project_id, pick(row)]));
 }
 
-/** Per-project approved spend and headcount. */
 export async function loadProjectAggregates(projectIds: number[]): Promise<{
   spent: Map<number, number>;
   members: Map<number, number>;
