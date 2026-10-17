@@ -20,7 +20,10 @@ interface ConfirmDeleteDialogProps {
    * (a project's expenses, a donor's donations) — say so explicitly.
    */
   consequences?: React.ReactNode;
+  prompt?: React.ReactNode;
+  irreversible?: boolean;
   confirmLabel?: string;
+  pendingLabel?: string;
   /**
    * Gate the confirm button behind retyping `itemName`. For deletes that
    * reach into financial history, where a misclick is costly to undo.
@@ -40,7 +43,10 @@ export default function ConfirmDeleteDialog({
   title,
   itemName,
   consequences,
+  prompt,
+  irreversible = true,
   confirmLabel = 'Delete',
+  pendingLabel = 'Deleting…',
   requireTypedConfirmation = false,
 }: ConfirmDeleteDialogProps) {
   const [deleting, setDeleting] = useState(false);
@@ -114,22 +120,24 @@ export default function ConfirmDeleteDialog({
             <Dialog.Body paddingX="24px" paddingTop="24px" paddingBottom="24px">
               <div className="flex flex-col !gap-4">
                 <p className="!text-base">
-                  {itemName ? (
+                  {prompt ?? (itemName ? (
                     <>
                       Delete <span className="!font-bold">{itemName}</span>?
                     </>
                   ) : (
                     'Are you sure you want to delete this?'
-                  )}
+                  ))}
                 </p>
 
                 {consequences && (
                   <div className="!text-sm !text-black-700">{consequences}</div>
                 )}
 
-                <p className="!text-sm !text-black-700">
-                  This cannot be undone.
-                </p>
+                {irreversible && (
+                  <p className="!text-sm !text-black-700">
+                    This cannot be undone.
+                  </p>
+                )}
 
                 {requireTypedConfirmation && itemName && (
                   <TextInputField
@@ -159,7 +167,7 @@ export default function ConfirmDeleteDialog({
                   onClick={handleConfirm}
                   disabled={confirmDisabled}
                   isLoading={deleting}
-                  loadingText="Deleting…"
+                  loadingText={pendingLabel}
                 >
                   {confirmLabel}
                 </Button>

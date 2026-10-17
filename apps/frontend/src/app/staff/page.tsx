@@ -175,11 +175,21 @@ export default function StaffConsolePage() {
           confirmFull ? switchInto(confirmFull, 'full') : undefined
         }
         title="Act as this user with full access?"
-        itemName={
-          confirmFull ? `${confirmFull.name} (${confirmFull.email})` : undefined
+        prompt={
+          confirmFull && (
+            <>
+              Switch into{' '}
+              <span className="!font-bold">
+                {`${confirmFull.name} (${confirmFull.email})`}
+              </span>{' '}
+              for one hour?
+            </>
+          )
         }
         consequences="Anything you create, edit, approve or delete is real and is saved as this user. Each change is also recorded against your staff account."
+        irreversible={false}
         confirmLabel="Act as"
+        pendingLabel="Switching…"
       />
     </div>
   );
