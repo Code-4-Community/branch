@@ -108,7 +108,7 @@ export async function updateProject(
             .where('project_id', '=', id)
             .where('deleted_at', 'is', null)
             .selectAll()
-            .forUpdate()
+            .forKeyShare()
             .executeTakeFirst()
 
     if (!row) return undefined
