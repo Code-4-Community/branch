@@ -38,6 +38,18 @@ function getVerifier() {
   return verifier;
 }
 
+export async function warmAuth(db: QueryableDb): Promise<void> {
+  await Promise.all([
+    getVerifier().hydrate(),
+    db
+      .selectFrom('branch.users')
+      .select('user_id')
+      .where('deleted_at', 'is', null)
+      .limit(1)
+      .execute(),
+  ]);
+}
+
 export function extractToken(event: any): string | null {
   const authHeader = event.headers?.Authorization || event.headers?.authorization;
   if (!authHeader) return null;

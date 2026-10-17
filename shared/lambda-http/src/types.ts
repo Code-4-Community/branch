@@ -72,4 +72,5 @@ export interface DispatchOptions {
     path: string,
     statusCode: number,
   ) => Promise<void>;
+  warmup?: () => Promise<void>;
 }

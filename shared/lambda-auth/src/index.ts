@@ -4,6 +4,7 @@ export {
   authenticateRequest,
   extractImpersonationSession,
   IMPERSONATION_HEADER,
+  warmAuth,
 } from './authenticate';
 export { loadRbacSubject, preloadedSubject } from './rbac';
 // The policy itself is re-exported so a lambda needs one import for auth and

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { classifyRoute } from '@/lib/routes';
 import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { makeQueryClient } from '@/lib/queryClient';
+import { warmServices } from '@/lib/api';
 import AuthGate from './components/AuthGate';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import RoutePrefetcher from './components/RoutePrefetcher';
@@ -24,6 +25,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // user's cache into the next in tests and in any future SSR pass.
   const [queryClient] = useState(makeQueryClient);
   const pathname = usePathname() ?? '/';
+
+  useEffect(warmServices, []);
 
   // Chakra's Emotion styles break hydration on prerendered open pages.
   if (classifyRoute(pathname) === 'open') return <>{children}</>;

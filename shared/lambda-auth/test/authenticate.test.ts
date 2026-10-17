@@ -360,6 +360,23 @@ describe('authenticateRequest', () => {
   });
 });
 
+describe('warmAuth', () => {
+  it('hydrates the JWKS and opens the DB connection in parallel', async () => {
+    const hydrate = jest.fn().mockResolvedValue(undefined);
+    mockCreate.mockReturnValueOnce({ verify: mockVerify, hydrate } as any);
+    const execute = jest.fn().mockResolvedValue([]);
+    const chain = { select: () => chain, where: () => chain, limit: () => chain, execute };
+    const db = { selectFrom: jest.fn(() => chain) };
+
+    const { warmAuth } = await loadModule();
+    await warmAuth(db);
+
+    expect(hydrate).toHaveBeenCalledTimes(1);
+    expect(db.selectFrom).toHaveBeenCalledWith('branch.users');
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+});
+
 function makeImpersonationDb(users: any[], sessions: any[]) {
   const chain = (run: (filters: [string, unknown][]) => unknown[]) => {
     const filters: [string, unknown][] = [];

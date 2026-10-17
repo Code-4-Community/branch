@@ -15,6 +15,20 @@ function resolveBaseUrl(path: string): string {
   return `http://localhost:${port}`;
 }
 
+let servicesWarmed = false;
+
+export function warmServices(): void {
+  if (servicesWarmed) return;
+  servicesWarmed = true;
+  for (const service of Object.keys(SERVICE_PORTS)) {
+    const path = `/${service}/health`;
+    // no-cors GET is a CORS simple request: no preflight.
+    fetch(`${resolveBaseUrl(path)}${path}`, { mode: 'no-cors' }).catch(
+      () => {},
+    );
+  }
+}
+
 /**
  * A failed HTTP response, carrying the status so callers can branch on it.
  *

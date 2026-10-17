@@ -113,6 +113,29 @@ describe('dispatch routing', () => {
     }
   });
 
+  it('holds the health response until warmup settles', async () => {
+    let release!: () => void;
+    const warmup = jest.fn(() => new Promise<void>((r) => (release = r)));
+    let settled = false;
+    const pending = dispatch(event('GET', '/projects/health'), {
+      prefix: 'projects',
+      routes,
+      warmup,
+    }).then((res) => ((settled = true), res));
+
+    await Promise.resolve();
+    expect(warmup).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    release();
+    expect((await pending).statusCode).toBe(200);
+  });
+
+  it('does not run warmup on ordinary routes', async () => {
+    const warmup = jest.fn(async () => {});
+    await dispatch(event('GET', '/projects'), { ...opts(), warmup });
+    expect(warmup).not.toHaveBeenCalled();
+  });
+
   it('404s an unmatched path', async () => {
     const res = await dispatch(event('GET', '/projects/7/nope'), opts());
     expect(res.statusCode).toBe(404);

@@ -1,4 +1,8 @@
-import { authenticateRequest as _authenticateRequest, loadRbacSubject } from '@branch/lambda-auth';
+import {
+  authenticateRequest as _authenticateRequest,
+  loadRbacSubject,
+  warmAuth,
+} from '@branch/lambda-auth';
 import { createAuthResolver } from '@branch/lambda-http';
 import { db, recordImpersonationAction } from '@branch/store';
 
@@ -19,3 +23,5 @@ export const resolveAuth = createAuthResolver(authenticateRequest, (context) =>
 );
 
 export const onImpersonatedWrite = recordImpersonationAction;
+
+export const warmup = () => warmAuth(db);
