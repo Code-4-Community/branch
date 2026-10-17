@@ -247,6 +247,9 @@ resource "aws_lambda_function" "functions" {
       # wipe it. Harmless on the other five functions.
       REPORTS_BUCKET_NAME = aws_s3_bucket.reports_bucket.id
 
+      # Unset, expenditures/mailer.ts falls back to an unverified address and SES rejects it.
+      SES_FROM_ADDRESS = local.create_dns ? "BRANCH <${local.ses_from_address}>" : ""
+
       # Loads the Sentry layer's handler wrapper before the function starts.
       # Dropping NODE_OPTIONS silently disables error reporting -- the layer
       # alone does nothing.
