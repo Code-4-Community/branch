@@ -56,8 +56,11 @@ export const GUIDES: Guide[] = [
         image: '/help/reset-password/request-code.png',
         alt: 'Forgot password page with Request reset code highlighted',
       },
-      { text: 'Enter the code from your email and a new password.' },
-      { text: 'Click Reset Password.' },
+      {
+        text: 'Enter the code from your email and a new password, then click Reset Password.',
+        image: '/help/reset-password/new-password.png',
+        alt: 'Reset password form with Reset Password highlighted',
+      },
     ],
   },
   {
