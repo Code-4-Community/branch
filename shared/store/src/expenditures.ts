@@ -17,9 +17,17 @@ export async function recordExpenditure(values: NewExpenditure): Promise<Expendi
   })
 }
 
+/** The locked row's status no longer matches the one the caller authorized against. */
+export class ExpenditureStatusChangedError extends Error {
+  constructor(readonly status: string) {
+    super(`Expenditure status changed to ${status}`)
+  }
+}
+
 export async function editExpenditure(
   id: number,
   values: ExpenditureEdit,
+  expectedStatus?: string,
 ): Promise<Expenditure | undefined> {
   return tx(async (trx) => {
     const before = await trx
@@ -29,6 +37,9 @@ export async function editExpenditure(
       .forUpdate()
       .executeTakeFirst()
     if (!before) return undefined
+    if (expectedStatus !== undefined && before.status !== expectedStatus) {
+      throw new ExpenditureStatusChangedError(before.status)
+    }
 
     const after = await trx
       .updateTable('branch.expenditures')
@@ -43,7 +54,7 @@ export async function editExpenditure(
   })
 }
 
-export async function removeExpenditure(id: number): Promise<bigint> {
+export async function removeExpenditure(id: number, expectedStatus?: string): Promise<bigint> {
   return tx(async (trx) => {
     const before = await trx
       .selectFrom('branch.expenditures')
@@ -52,6 +63,9 @@ export async function removeExpenditure(id: number): Promise<bigint> {
       .forUpdate()
       .executeTakeFirst()
     if (!before) return 0n
+    if (expectedStatus !== undefined && before.status !== expectedStatus) {
+      throw new ExpenditureStatusChangedError(before.status)
+    }
 
     const deleted = await trx
       .deleteFrom('branch.expenditures')

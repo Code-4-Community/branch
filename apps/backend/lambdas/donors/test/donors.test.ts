@@ -368,6 +368,15 @@ describe("Donor API with data", () => {
     expect(Number(body.data.amount)).toBe(500);
   });
 
+  test("POST /donations records a repeat gift from the same donor to the same project", async () => {
+    // Seed donor 1 has already given to project 1.
+    mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
+    const res = await handler(createEvent('POST', '/donations', {
+      donor_id: 1, project_id: 1, amount: 250,
+    }));
+    expect(res.statusCode).toBe(201);
+  });
+
   test("POST /donations honours an explicit donated_at", async () => {
     mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
     const res = await handler(createEvent('POST', '/donations', {

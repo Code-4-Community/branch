@@ -40,7 +40,7 @@ locals {
     donors       = ["GET", "POST"]
     expenditures = ["GET", "POST"]
     projects     = ["GET", "POST"]
-    reports      = ["GET"]
+    reports      = ["GET", "POST"]
     users        = ["GET", "POST", "DELETE", "PATCH"]
   }
   lambda_methods = { for svc, methods in local.base_methods : svc => concat(methods, ["OPTIONS"]) }

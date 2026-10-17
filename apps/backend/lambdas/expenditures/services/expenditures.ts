@@ -18,7 +18,18 @@ export const RECEIPT_CONTENT_TYPE = 'application/pdf';
 // Receipts live in the same bucket as reports, under their own prefix.
 export function receiptKeyFromUrl(objectUrl: string): string | null {
   const match = objectUrl.match(/^https:\/\/[^/]+\/(receipts\/.+)$/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+/** The key only if it sits under this project's prefix, so one project's row cannot name another's receipt. */
+export function receiptKeyForProject(objectUrl: string, projectId: number): string | null {
+  const key = receiptKeyFromUrl(objectUrl);
+  return key && key.startsWith(`receipts/${projectId}/`) && !key.includes('..') ? key : null;
 }
 
 /**
@@ -29,9 +40,9 @@ export function receiptKeyFromUrl(objectUrl: string): string | null {
  * unreachable or the role is missing `s3:DeleteObject`. A leftover object is
  * recoverable; a row that cannot be deleted is not.
  */
-export async function deleteReceiptObject(receiptUrl: string | null): Promise<boolean> {
+export async function deleteReceiptObject(receiptUrl: string | null, projectId: number): Promise<boolean> {
   if (!receiptUrl) return true;
-  const key = receiptKeyFromUrl(receiptUrl);
+  const key = receiptKeyForProject(receiptUrl, projectId);
   if (!key) return false;
   // Read at call time rather than using the module-level BUCKET: the value is
   // then observable to callers that set it after import, which is what the
@@ -79,7 +90,9 @@ export async function queryExpenditures(
 ) {
   let query = db.selectFrom('branch.expenditures').selectAll();
   if (projectId !== null) query = query.where('project_id', '=', projectId);
-  const scoped = applyExpenditureScope(query, scope).orderBy('spent_on', 'desc');
+  const scoped = applyExpenditureScope(query, scope)
+    .orderBy('spent_on', 'desc')
+    .orderBy('expenditure_id', 'desc');
 
   return page ? scoped.limit(page.limit).offset(page.offset).execute() : scoped.execute();
 }
@@ -123,8 +136,9 @@ export async function findExpenditureById(id: number) {
   return db.selectFrom('branch.expenditures').where('expenditure_id', '=', id).selectAll().executeTakeFirst();
 }
 
-export async function deleteExpenditureById(id: number): Promise<bigint> {
-  return removeExpenditure(id);
+/** `expectedStatus` is the status the caller was authorized against; a change under the lock throws. */
+export async function deleteExpenditureById(id: number, expectedStatus: string): Promise<bigint> {
+  return removeExpenditure(id, expectedStatus);
 }
 
 /**
@@ -143,9 +157,9 @@ export type ExpenditureEdit = Pick<
  * `undefined` when there was nothing to set (the caller already holds the row)
  * or when no row matched the id.
  */
-export async function updateExpenditure(id: number, values: ExpenditureEdit) {
+export async function updateExpenditure(id: number, values: ExpenditureEdit, expectedStatus: string) {
   if (Object.keys(values).length === 0) return undefined;
-  return editExpenditure(id, values);
+  return editExpenditure(id, values, expectedStatus);
 }
 
 export async function getUserContact(userId: number) {
@@ -166,6 +180,12 @@ export async function updateExpenditureStatus(
     id,
     adminNotes === undefined ? { status } : { status, admin_notes: adminNotes },
   );
+}
+
+/** Same rule as report uploads: basename only, URL-safe characters only. */
+export function safeReceiptFileName(fileName: string): string | null {
+  const safe = fileName.replace(/^.*[\\/]/, '').replace(/[^A-Za-z0-9._-]/g, '_');
+  return /[A-Za-z0-9]/.test(safe) ? safe : null;
 }
 
 export async function presignUploadUrl(projectId: number, fileName: string): Promise<{ uploadUrl: string; objectUrl: string }> {

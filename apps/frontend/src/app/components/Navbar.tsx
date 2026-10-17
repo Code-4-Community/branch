@@ -37,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Reports", href: "/reports" },
   { label: "Accounts", href: "/accounts" },
   { label: "Profile", href: "/profile" },
+  { label: "Help", href: "/help" },
   { label: "Log Out", action: "logout" },
 ];
 

@@ -10,10 +10,18 @@ import { FiDollarSign } from 'react-icons/fi';
 import { getReceiptUploadUrl, uploadReceiptToS3 } from '@/lib/expenditures';
 import { Project } from '@/types';
 
-function formatAmountDisplay(digits: string): string {
-  if (!digits) return '';
-  const trimmed = digits.replace(/^0+(?=\d)/, '');
-  return trimmed.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+/** Keeps digits and one decimal point, at most 9 whole digits and 2 decimals. */
+export function normalizeAmountInput(raw: string): string {
+  const [whole, ...rest] = raw.replace(/[^\d.]/g, '').split('.');
+  const wholeDigits = whole.slice(0, 9);
+  return rest.length > 0 ? `${wholeDigits}.${rest.join('').slice(0, 2)}` : wholeDigits;
+}
+
+function formatAmountDisplay(amount: string): string {
+  if (!amount) return '';
+  const [whole, decimals] = amount.split('.');
+  const grouped = (whole.replace(/^0+(?=\d)/, '') || '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return decimals === undefined ? grouped : `${grouped}.${decimals}`;
 }
 interface AddExpenseModalProps {
   open: boolean;
@@ -100,6 +108,7 @@ export default function AddExpenseModal({
   );
 
   async function handleSubmit() {
+    if (submitting) return;
     const hasDateError = !newDate.trim();
     const hasTypeError = !newType.trim();
     const hasDescError = !newDescription.trim();
@@ -247,11 +256,10 @@ export default function AddExpenseModal({
                       </span>
                       <input
                         type="text"
-                        inputMode="numeric"
+                        inputMode="decimal"
                         value={formatAmountDisplay(amountDigits)}
                         onChange={(e) => {
-                          const digitsOnly = e.target.value.replace(/\D/g, '');
-                          setAmountDigits(digitsOnly.slice(0, 9));
+                          setAmountDigits(normalizeAmountInput(e.target.value));
                           setAmountError(false);
                         }}
                         placeholder="Enter the Amount"
@@ -302,6 +310,11 @@ export default function AddExpenseModal({
                       multiSelect={false}
                       value={newProject}
                       onChange={(val) => {
+                        // The receipt was uploaded under the old project's prefix.
+                        if (val !== newProject && receiptUrl) {
+                          setNewFile(null);
+                          setReceiptUrl(null);
+                        }
                         setNewProject(val as string);
                         setProjectError(false);
                       }}

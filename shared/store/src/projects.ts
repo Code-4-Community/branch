@@ -18,27 +18,53 @@ async function syncMemberships(
     .select(['user_id', 'role'])
     .execute()
   const heldRole = new Map(existing.map((row) => [row.user_id, row.role]))
+  const wanted = new Map(members.map((m) => [m.user_id, m.role]))
 
-  const cleared = await trx
-    .deleteFrom('branch.project_memberships')
-    .where('project_id', '=', projectId)
-    .executeTakeFirst()
+  // Diffed rather than replaced, so kept members keep their hours and start_date.
+  const removed = existing.map((row) => row.user_id).filter((id) => !wanted.has(id))
+  const cleared =
+    removed.length > 0
+      ? await trx
+          .deleteFrom('branch.project_memberships')
+          .where('project_id', '=', projectId)
+          .where('user_id', 'in', removed)
+          .executeTakeFirst()
+      : undefined
 
-  if (members.length > 0) {
+  const roleChanges = new Map<string, number[]>()
+  for (const [userId, role] of wanted) {
+    const held = heldRole.get(userId)
+    if (held === undefined || role == null || role === held) continue
+    roleChanges.set(role, [...(roleChanges.get(role) ?? []), userId])
+  }
+  for (const [role, userIds] of roleChanges) {
     await trx
-      .insertInto('branch.project_memberships')
-      .values(
-        members.map((m) => ({
-          project_id: projectId,
-          user_id: m.user_id,
-          role: m.role ?? heldRole.get(m.user_id) ?? defaultRole,
-        })),
-      )
+      .updateTable('branch.project_memberships')
+      .set({ role })
+      .where('project_id', '=', projectId)
+      .where('user_id', 'in', userIds)
       .execute()
   }
 
-  // Counted from the DELETE: a concurrent roster edit makes `existing` stale.
-  const delta = members.length - Number(cleared?.numDeletedRows ?? 0n)
+  const added = [...wanted].filter(([userId]) => !heldRole.has(userId))
+  const inserted =
+    added.length > 0
+      ? await trx
+          .insertInto('branch.project_memberships')
+          .values(
+            added.map(([userId, role]) => ({
+              project_id: projectId,
+              user_id: userId,
+              role: role ?? defaultRole,
+            })),
+          )
+          .onConflict((oc) => oc.columns(['project_id', 'user_id']).doNothing())
+          .returning('membership_id')
+          .execute()
+      : []
+
+  // Counted from what the statements touched: a concurrent roster edit makes `existing` stale.
+  const delta = inserted.length - Number(cleared?.numDeletedRows ?? 0n)
   if (delta !== 0) await projectRollupBump(trx, projectId, { members: delta })
 }
 

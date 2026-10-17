@@ -6,6 +6,12 @@ WORKDIR /shared/types
 COPY shared/types/package.json ./
 COPY shared/types/ ./
 
+# Before lambda-auth: it resolves @branch/rbac as file:../rbac and needs its dist.
+WORKDIR /shared/rbac
+COPY shared/rbac/package.json shared/rbac/tsconfig.json ./
+COPY shared/rbac/src ./src/
+RUN npm install && npm run build
+
 WORKDIR /shared/lambda-auth
 COPY shared/lambda-auth/package.json shared/lambda-auth/tsconfig.json ./
 COPY shared/lambda-auth/src ./src/
@@ -15,6 +21,11 @@ RUN npm install && npm run build
 WORKDIR /shared/lambda-http
 COPY shared/lambda-http/package.json shared/lambda-http/tsconfig.json ./
 COPY shared/lambda-http/src ./src/
+RUN npm install && npm run build
+
+WORKDIR /shared/store
+COPY shared/store/package.json shared/store/tsconfig.json ./
+COPY shared/store/src ./src/
 RUN npm install && npm run build
 
 WORKDIR /app
