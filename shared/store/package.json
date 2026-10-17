@@ -2,7 +2,7 @@
   "name": "@branch/store",
   "version": "1.0.0",
   "private": true,
-  "description": "The only writer of rollup-affecting tables. Shared verbatim by the lambdas.",
+  "description": "The lambdas' only database connection and only writer. Shared verbatim by the lambdas.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

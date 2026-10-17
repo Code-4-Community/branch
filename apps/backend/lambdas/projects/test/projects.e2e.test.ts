@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, jest } from '@jest/globals';
 import { Pool } from 'pg';
-import { ensureSchema, resetData, reconcileRollups } from '../../../db/testkit';
+import { ensureSchema, resetData } from '../../../db/testkit';
 
 jest.mock('../auth', () => {
   // dispatch() resolves the caller through resolveAuth, so an auto-mock would
@@ -147,7 +147,6 @@ describe('Authorization', () => {
         `INSERT INTO branch.project_memberships (project_id, user_id, role, start_date, hours)
          SELECT 1, user_id, 'Director', '2025-01-01', 10 FROM branch.users WHERE email = 'directormember@branch.org'`,
       );
-      await reconcileRollups(client);
     } finally {
       client.release();
     }
@@ -428,7 +427,6 @@ describe('GET /dashboard (e2e)', () => {
              EXTRACT(DAY FROM spent_on)::int
            )
       `);
-      await reconcileRollups(client);
     } finally {
       client.release();
     }

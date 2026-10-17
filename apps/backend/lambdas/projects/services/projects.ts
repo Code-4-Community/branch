@@ -33,7 +33,7 @@ export function indexByProject<T extends { project_id: number }>(
   return new Map(rows.map((row) => [row.project_id, pick(row)]));
 }
 
-/** Per-project spend and headcount, read from the trigger-maintained rollups. */
+/** Per-project approved spend and headcount. */
 export async function loadProjectAggregates(projectIds: number[]): Promise<{
   spent: Map<number, number>;
   members: Map<number, number>;
@@ -42,16 +42,18 @@ export async function loadProjectAggregates(projectIds: number[]): Promise<{
 
   const [spentRows, memberRows] = await Promise.all([
     db
-      .selectFrom('branch.expenditure_rollup')
-      .select(['project_id', db.fn.sum('total_amount').as('total')])
+      .selectFrom('branch.expenditures')
+      .select(['project_id', db.fn.sum('amount').as('total')])
+      .where('deleted_at', 'is', null)
       .where('status', '=', APPROVED_EXPENDITURE_STATUS)
       .where('project_id', 'in', projectIds)
       .groupBy('project_id')
       .execute(),
     db
-      .selectFrom('branch.project_rollup')
-      .select(['project_id', 'member_count'])
+      .selectFrom('branch.project_memberships')
+      .select(['project_id', db.fn.countAll().as('member_count')])
       .where('project_id', 'in', projectIds)
+      .groupBy('project_id')
       .execute(),
   ]);
 
