@@ -1,8 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-// Opt a line out with `// soft-delete-ok: <reason>` on the line above.
-
 const SOFT_TABLES = ['users', 'projects', 'donors', 'project_donations', 'expenditures', 'reports']
 const ROOT = path.resolve(__dirname, '../../..')
 const SOURCES = [

@@ -435,7 +435,6 @@ describe('GET /reports/upload-url unit tests', () => {
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
-    // The project lookup, then POST /reports' duplicate-objectUrl check.
     mockDb.selectFrom = jest.fn().mockReturnValueOnce(mockQuery(project)).mockReturnValue(mockQuery(undefined));
   }
 
@@ -616,7 +615,6 @@ describe('POST /reports unit tests', () => {
   }
 
   function setupProjectMock(project: Record<string, unknown> | undefined) {
-    // The project lookup, then POST /reports' duplicate-objectUrl check.
     mockDb.selectFrom = jest.fn().mockReturnValueOnce(mockQuery(project)).mockReturnValue(mockQuery(undefined));
   }
 
