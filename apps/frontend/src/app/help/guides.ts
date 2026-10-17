@@ -180,7 +180,6 @@ export const GUIDES: Guide[] = [
     title: 'Add staff to a project',
     notes: [
       'Every person gets a role on the project: Director or Student. New staff start as Student.',
-      'Directors can also view the donor list. Otherwise both roles can do the same things: see the project and submit expenses for it.',
       'A person can hold a different role on each project.',
       'Admins see every project already, so you do not need to add them.',
       'Click the X next to a name to take them off the project.',
