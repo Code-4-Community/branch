@@ -9,6 +9,7 @@ on:
       # change to shared/rbac has to redeploy the frontend or the two sides
       # stop agreeing.
       - 'shared/rbac/**'
+      - '.github/workflows/frontend-deploy.yml'
   workflow_dispatch:
 
 # Requires the OIDC apply role (branch-ci-apply) from infrastructure/aws/oidc.tf.
@@ -93,7 +94,13 @@ jobs:
         run: |
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "BUCKET=branch-frontend-$ACCOUNT_ID" >> "$GITHUB_ENV"
-          aws s3 sync out "s3://branch-frontend-$ACCOUNT_ID" --delete 2>&1 | tee "$RUNNER_TEMP/sync.log"
+          # No Cache-Control lets browsers heuristically cache HTML/RSC .txt and pair an old build's payload with new JS.
+          aws s3 sync out "s3://branch-frontend-$ACCOUNT_ID" --delete \
+            --exclude "*" --include "_next/static/*" \
+            --cache-control "public, max-age=31536000, immutable" 2>&1 | tee "$RUNNER_TEMP/sync.log"
+          aws s3 sync out "s3://branch-frontend-$ACCOUNT_ID" --delete \
+            --exclude "_next/static/*" \
+            --cache-control "no-cache" 2>&1 | tee -a "$RUNNER_TEMP/sync.log"
       - name: Thread — synced
         if: success()
         uses: ./.github/actions/slack-deploy
