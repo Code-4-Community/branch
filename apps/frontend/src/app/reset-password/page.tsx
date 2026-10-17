@@ -43,7 +43,8 @@ function ResetPasswordContent() {
     // strings would just produce a confusing server-side error.
     if (!email || !code) {
         return (
-            <div className="flex flex-col items-center text-center w-90 gap-6">
+            <div className="flex min-h-screen items-center justify-center px-4">
+            <div className="flex flex-col items-center text-center w-80 gap-6">
                 <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold">
                     Link expired
                 </h1>
@@ -58,34 +59,37 @@ function ResetPasswordContent() {
                     Request a new reset link
                 </Link>
             </div>
+            </div>
         );
     }
 
     if (submitted) {
         return (
-            <div className="flex flex-col items-center text-center w-90">
-                <div className="flex flex-col items-start gap-6">
-                    <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold">Password Changed</h1>
-                    <h5 className="![font-family:var(--font-body)] !text-[16px] !font-bold text-center !text-core-black !mb-6">
-                        Your password has been successfully changed!
-                    </h5>
-                </div>
+            <div className="flex min-h-screen items-center justify-center px-4">
+            <div className="flex flex-col items-center text-center w-80">
+                <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">Password Changed</h1>
+                <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-10">
+                    Your password has been successfully changed!
+                </h5>
                 <Button
-                    className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10"
+                    className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5"
                     onClick={() => router.push('/login')}
                 >
                     Back to login
                 </Button>
             </div>
+            </div>
         );
     }
 
     return (
-        <SetPasswordForm
-            onSubmit={handleResetPassword}
-            error={error}
-            isLoading={isLoading}
-        />
+        <div className="flex min-h-screen items-center justify-center px-4">
+            <SetPasswordForm
+                onSubmit={handleResetPassword}
+                error={error}
+                isLoading={isLoading}
+            />
+        </div>
     );
 }
 
