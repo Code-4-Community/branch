@@ -70,81 +70,92 @@ export default function ForgotPasswordPage() {
 
     if (step === 'done') {
         return (
-            <div className="flex flex-col items-center text-center w-90">
-                <div className="flex flex-col items-start gap-6">
-                    <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold">Password Changed</h1>
-                    <h5 className="![font-family:var(--font-body)] !text-[16px] !font-bold text-center !text-core-black !mb-6">
+            <div className="flex min-h-screen items-center justify-center px-4">
+                <div className="flex flex-col items-center text-center w-80">
+                    <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">Password Changed</h1>
+                    <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-10">
                         Your password has been successfully changed!
                     </h5>
+                    <Link
+                        href="/login"
+                        className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !text-center !font-bold"
+                    >
+                        Back to login
+                    </Link>
                 </div>
-                <Link
-                    href="/login"
-                    className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10 !text-center !font-bold"
-                >
-                    Back to login
-                </Link>
             </div>
         );
     }
 
     if (step === 'confirm') {
         return (
-            <div className="flex flex-col items-center text-center">
-                <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-6">
-                    We sent a verification code to {email}. Enter it below with your new password.
-                </h5>
-                <SetPasswordForm
-                    includeCode
-                    onSubmit={handleConfirm}
-                    error={confirmError}
-                    isLoading={isLoading}
-                />
-                <button
-                    type="button"
-                    className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3 disabled:!text-black-500 disabled:cursor-not-allowed"
-                    onClick={handleResend}
-                    disabled={isLoading}
-                >
-                    Resend code
-                </button>
-                <Link href="/login" className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3">
-                    Back to login
-                </Link>
+            <div className="flex min-h-screen items-center justify-center px-4">
+                <div className="flex flex-col items-center text-center w-80">
+                    <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-6">
+                        We sent a verification code to {email}. Enter it below with your new password.
+                    </h5>
+                    <SetPasswordForm
+                        includeCode
+                        onSubmit={handleConfirm}
+                        error={confirmError}
+                        isLoading={isLoading}
+                    />
+                    <button
+                        type="button"
+                        className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3 disabled:!text-black-500 disabled:cursor-not-allowed"
+                        onClick={handleResend}
+                        disabled={isLoading}
+                    >
+                        Resend code
+                    </button>
+                    <Link href="/login" className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3">
+                        Back to login
+                    </Link>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col shrink-0 items-start gap-[30px]">
-            <div className="flex flex-col items-start gap-6">
-                <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-bold">
-                    Forgot your Password?
+        <div className="flex min-h-screen items-center justify-center px-4">
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    handleRequestReset();
+                }}
+                className="flex flex-col items-center text-center w-80"
+            >
+                <h1 className="![font-family:var(--font-heading)] !text-[36px] !font-semibold !mb-6">
+                    Forgot password?
                 </h1>
-                <h5 className="![font-family:var(--font-body)] !text-[16px] !font-bold text-center w-[312px] !ml-[41px] !text-core-black">
-                    Please enter the email address you&apos;d like your password reset information sent to
+                <h5 className="![font-family:var(--font-body)] !text-[16px] !mb-6">
+                    Enter your email and we&apos;ll send you a code to reset your password.
                 </h5>
-            </div>
-            <div className="flex flex-col items-start ml-[26px] gap-9">
-                <TextInputField
-                    label="Email"
-                    required
-                    placeholder="Enter email address"
-                    errorMessage={emailError}
-                    isError={!!emailError}
-                    value={email}
-                    onChange={(value) => setEmail(value)}
-                />
+                <div className="flex flex-col w-full !mb-10">
+                    <TextInputField
+                        label="Email"
+                        required
+                        placeholder="Enter email address"
+                        errorMessage={emailError}
+                        isError={!!emailError}
+                        value={email}
+                        onChange={(value) => setEmail(value)}
+                        type="email"
+                        name="email"
+                        autoComplete="username"
+                    />
+                </div>
                 <Button
-                    className="![font-family:var(--font-body)] !text-[16px] !font-bold !bg-core-green !text-core-white !py-3 !px-[110px] !rounded !border-0"
-                    onClick={handleRequestReset}
+                    type="submit"
+                    className="![font-family:var(--font-body)] !rounded !bg-core-green !text-core-white w-full !px-4 !py-1.5 !mb-10"
                     loading={isLoading}
                 >
                     Request reset code
                 </Button>
-                <Link href="/login" className="![font-family:var(--font-body)] !text-[16px] !font-bold !text-core-green !py-3 !px-[127px]">
+                <Link href="/login" className="!text-core-green !font-bold ![font-family:var(--font-body)] !text-[16px]">
                     Back to login
                 </Link>
-            </div>
+            </form>
         </div>
     );
 }
