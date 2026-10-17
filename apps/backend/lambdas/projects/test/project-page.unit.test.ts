@@ -256,10 +256,6 @@ test('PUT keeps hours and start dates of members who stay on the roster', async 
   );
   expect(after.rows.map((r) => r.user_id)).toEqual([4, 6]);
   expect(after.rows[0]).toEqual(before.rows[0]);
-  const rollup = await pool.query(
-    `SELECT member_count FROM branch.project_rollup WHERE project_id = 1`,
-  );
-  expect(rollup.rows[0].member_count).toBe(2);
 });
 
 test('PUT without a members key leaves the roster alone', async () => {

@@ -19,7 +19,6 @@ export const getDashboard: RouteHandler = async () => {
     const now = new Date();
     const year = now.getUTCFullYear();
     const yearStart = `${year}-01-01`;
-    // Half-open: the rollup's month column is the first of the month.
     const nextYearStart = `${year + 1}-01-01`;
     const today = now.toISOString().slice(0, 10);
 
@@ -29,8 +28,7 @@ export const getDashboard: RouteHandler = async () => {
     const isActive = (column: any) => (eb: any) =>
       eb.or([eb(column, 'is', null), eb(column, '>=', today as any)]);
 
-    // The rollup stores the month; this only formats it.
-    const monthExpr = sql<string>`to_char(month, 'YYYY-MM')`;
+    const monthExpr = sql<string>`to_char(spent_on, 'YYYY-MM')`;
 
     const [
       totalSpentRow,
@@ -40,71 +38,80 @@ export const getDashboard: RouteHandler = async () => {
       projectRows,
       monthRows,
     ] = await Promise.all([
-      db.selectFrom('branch.expenditure_rollup')
-        .select(db.fn.sum('total_amount').as('total'))
+      db.selectFrom('branch.expenditures')
+        .select(db.fn.sum('amount').as('total'))
+        .where('deleted_at', 'is', null)
         .where('status', '=', APPROVED_EXPENDITURE_STATUS)
-        .where('month', '>=', yearStart as any)
-        .where('month', '<', nextYearStart as any)
+        .where('spent_on', '>=', yearStart as any)
+        .where('spent_on', '<', nextYearStart as any)
         .executeTakeFirst(),
-      // Not a rollup: "active" changes with the clock, not with a write.
       db.selectFrom('branch.projects')
         .select(db.fn.count('project_id').as('count'))
         .where('deleted_at', 'is', null)
         .where(isActive('end_date'))
         .executeTakeFirst(),
-      db.selectFrom('branch.expenditure_rollup')
-        .select(['category', db.fn.sum('total_amount').as('total')])
+      db.selectFrom('branch.expenditures')
+        .select(['category', db.fn.sum('amount').as('total')])
+        .where('deleted_at', 'is', null)
         .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('category', 'is not', null)
-        .where('month', '>=', yearStart as any)
-        .where('month', '<', nextYearStart as any)
+        .where('spent_on', '>=', yearStart as any)
+        .where('spent_on', '<', nextYearStart as any)
         .groupBy('category')
-        .orderBy(db.fn.sum('total_amount'), 'desc')
+        .orderBy(db.fn.sum('amount'), 'desc')
         .limit(1)
         .executeTakeFirst(),
       // Numerator for the average: this year's spend on the very projects the
       // denominator counts.
-      db.selectFrom('branch.expenditure_rollup as er')
-        .innerJoin('branch.projects as p', 'p.project_id', 'er.project_id')
-        .select((eb) => eb.fn.sum('er.total_amount').as('total'))
-        .where('er.status', '=', APPROVED_EXPENDITURE_STATUS)
-        .where('er.month', '>=', yearStart as any)
-        .where('er.month', '<', nextYearStart as any)
+      db.selectFrom('branch.expenditures as e')
+        .innerJoin('branch.projects as p', 'p.project_id', 'e.project_id')
+        .select((eb) => eb.fn.sum('e.amount').as('total'))
+        .where('e.deleted_at', 'is', null)
+        .where('e.status', '=', APPROVED_EXPENDITURE_STATUS)
+        .where('e.spent_on', '>=', yearStart as any)
+        .where('e.spent_on', '<', nextYearStart as any)
         .where('p.deleted_at', 'is', null)
         .where(isActive('p.end_date'))
         .executeTakeFirst(),
-      // Spend stays a pre-aggregated subquery: the rollup is per
-      // (month, category) and must collapse to one row per project before it
-      // joins, or each project row multiplies by its bucket count.
       db.selectFrom('branch.projects as p')
         .leftJoin(
           (eb) =>
-            eb.selectFrom('branch.expenditure_rollup')
+            eb.selectFrom('branch.expenditures')
               .select('project_id')
-              .select((sub) => sub.fn.sum('total_amount').as('total'))
+              .select((sub) => sub.fn.sum('amount').as('total'))
+              .where('deleted_at', 'is', null)
               .where('status', '=', APPROVED_EXPENDITURE_STATUS)
               .groupBy('project_id')
               .as('spend'),
           (join) => join.onRef('spend.project_id', '=', 'p.project_id'),
         )
-        .leftJoin('branch.project_rollup as pr', 'pr.project_id', 'p.project_id')
+        .leftJoin(
+          (eb) =>
+            eb.selectFrom('branch.project_memberships')
+              .select('project_id')
+              .select((sub) => sub.fn.countAll().as('count'))
+              .groupBy('project_id')
+              .as('staff'),
+          (join) => join.onRef('staff.project_id', '=', 'p.project_id'),
+        )
         .select([
           'p.project_id',
           'p.name',
           'p.total_budget',
           'p.currency',
           'spend.total as spent',
-          'pr.member_count as staff_count',
+          'staff.count as staff_count',
         ])
         .where('p.deleted_at', 'is', null)
         .orderBy('p.project_id', 'asc')
         .execute(),
-      db.selectFrom('branch.expenditure_rollup')
-        .select([monthExpr.as('month'), 'category', db.fn.sum('total_amount').as('total')])
+      db.selectFrom('branch.expenditures')
+        .select([monthExpr.as('month'), 'category', db.fn.sum('amount').as('total')])
+        .where('deleted_at', 'is', null)
         .where('status', '=', APPROVED_EXPENDITURE_STATUS)
         .where('category', 'is not', null)
-        .where('month', '>=', yearStart as any)
-        .where('month', '<', nextYearStart as any)
+        .where('spent_on', '>=', yearStart as any)
+        .where('spent_on', '<', nextYearStart as any)
         .groupBy([monthExpr, 'category'])
         .orderBy(monthExpr)
         .orderBy('category')
@@ -202,16 +209,15 @@ export const getOverview: RouteHandler = async (ctx) => {
       .orderBy('spent_on', 'desc')
       .execute(),
     db
-      .selectFrom('branch.project_rollup')
-      .select('total_donated')
+      .selectFrom('branch.project_donations')
+      .select(db.fn.sum('amount').as('total_donated'))
       .where('project_id', '=', id)
+      .where('deleted_at', 'is', null)
       .executeTakeFirst(),
   ]);
   if (!project) return json(404, { message: `Project not found for id: ${id}` });
 
   const totalBudget = project.total_budget !== null ? Number(project.total_budget) : 0;
-  // Summed in JS, not from the rollup: the table renders every row anyway, so
-  // the reduce is free and the total cannot disagree with the list.
   // The list includes rows still in review; the stats count only approved ones.
   const approved = expenditures.filter((e) => e.status === APPROVED_EXPENDITURE_STATUS);
   const totalSpent = approved.reduce((sum, e) => sum + Number(e.amount), 0);

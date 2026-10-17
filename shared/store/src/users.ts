@@ -1,7 +1,6 @@
 import type { Selectable } from 'kysely'
 import type { DB, NewUser, UserEdit } from '@branch/types'
 import { tx } from './tx'
-import { projectRollupBump } from './rollups'
 import { now } from './live'
 
 type User = Selectable<DB['branch.users']>
@@ -58,16 +57,7 @@ export async function removeUser(userId: number): Promise<bigint> {
       .where('entered_by', '=', userId)
       .execute()
 
-    // RETURNING, not a prior SELECT: a membership added in between would be missed.
-    const removed = await trx
-      .deleteFrom('branch.project_memberships')
-      .where('user_id', '=', userId)
-      .returning('project_id')
-      .execute()
-
-    for (const membership of removed) {
-      await projectRollupBump(trx, membership.project_id, { members: -1 })
-    }
+    await trx.deleteFrom('branch.project_memberships').where('user_id', '=', userId).execute()
     return deleted.numUpdatedRows
   })
 }

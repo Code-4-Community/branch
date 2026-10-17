@@ -1,7 +1,6 @@
 import type { Selectable, Transaction } from 'kysely'
 import type { DB, NewProject, ProjectEdit, ProjectMemberInput } from '@branch/types'
 import { tx } from './tx'
-import { projectRollupBump, seedProjectRollup } from './rollups'
 import { now, requireLiveUsers } from './live'
 
 type Project = Selectable<DB['branch.projects']>
@@ -24,14 +23,13 @@ async function syncMemberships(
 
   // Diffed rather than replaced, so kept members keep their hours and start_date.
   const removed = existing.map((row) => row.user_id).filter((id) => !wanted.has(id))
-  const cleared =
-    removed.length > 0
-      ? await trx
-          .deleteFrom('branch.project_memberships')
-          .where('project_id', '=', projectId)
-          .where('user_id', 'in', removed)
-          .executeTakeFirst()
-      : undefined
+  if (removed.length > 0) {
+    await trx
+      .deleteFrom('branch.project_memberships')
+      .where('project_id', '=', projectId)
+      .where('user_id', 'in', removed)
+      .execute()
+  }
 
   const roleChanges = new Map<string, number[]>()
   for (const [userId, role] of wanted) {
@@ -49,25 +47,19 @@ async function syncMemberships(
   }
 
   const added = [...wanted].filter(([userId]) => !heldRole.has(userId))
-  const inserted =
-    added.length > 0
-      ? await trx
-          .insertInto('branch.project_memberships')
-          .values(
-            added.map(([userId, role]) => ({
-              project_id: projectId,
-              user_id: userId,
-              role: role ?? defaultRole,
-            })),
-          )
-          .onConflict((oc) => oc.columns(['project_id', 'user_id']).doNothing())
-          .returning('membership_id')
-          .execute()
-      : []
-
-  // Counted from what the statements touched: a concurrent roster edit makes `existing` stale.
-  const delta = inserted.length - Number(cleared?.numDeletedRows ?? 0n)
-  if (delta !== 0) await projectRollupBump(trx, projectId, { members: delta })
+  if (added.length > 0) {
+    await trx
+      .insertInto('branch.project_memberships')
+      .values(
+        added.map(([userId, role]) => ({
+          project_id: projectId,
+          user_id: userId,
+          role: role ?? defaultRole,
+        })),
+      )
+      .onConflict((oc) => oc.columns(['project_id', 'user_id']).doNothing())
+      .execute()
+  }
 }
 
 export async function createProject(
@@ -81,7 +73,8 @@ export async function createProject(
       .values(values)
       .returningAll()
       .executeTakeFirstOrThrow()
-    await seedProjectRollup(trx, row.project_id)
+    // Lambdas still on the rollup code fail a write to a project with no row; drop with the tables.
+    await trx.insertInto('branch.project_rollup').values({ project_id: row.project_id }).execute()
     if (members.length > 0) await syncMemberships(trx, row.project_id, members, defaultRole)
     return row
   })
@@ -136,8 +129,6 @@ export async function removeProject(id: number): Promise<bigint> {
         .execute()
     }
     await trx.deleteFrom('branch.project_memberships').where('project_id', '=', id).execute()
-    await trx.deleteFrom('branch.expenditure_rollup').where('project_id', '=', id).execute()
-    await trx.deleteFrom('branch.project_rollup').where('project_id', '=', id).execute()
     return deleted.numUpdatedRows
   })
 }
