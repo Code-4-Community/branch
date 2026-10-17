@@ -188,10 +188,26 @@ export const GUIDES: Guide[] = [
     section: 'Projects',
     adminOnly: true,
     steps: [
-      { text: 'Go to [Projects](/projects) and open the project, then click Edit Project. For a new project, click Add New Project.' },
-      { text: 'Under Assigned Staff, search by name and click the person to add them.' },
-      { text: 'In the dropdown next to their name, choose Director or Student.' },
-      { text: 'Click Save.' },
+      {
+        text: 'Go to [Projects](/projects) and open the project, then click Edit Project. For a new project, click Add New Project.',
+        image: '/help/project-staff/edit-button.png',
+        alt: 'Project page with Edit Project highlighted',
+      },
+      {
+        text: 'Under Assigned Staff, search by name and click the person to add them.',
+        image: '/help/project-staff/search.png',
+        alt: 'Assigned Staff search with a matching name highlighted',
+      },
+      {
+        text: 'In the dropdown next to their name, choose Director or Student.',
+        image: '/help/project-staff/role.png',
+        alt: 'Role dropdown with Director highlighted',
+      },
+      {
+        text: 'Click Save.',
+        image: '/help/project-staff/save.png',
+        alt: 'Project form with Save highlighted',
+      },
     ],
   },
   {
