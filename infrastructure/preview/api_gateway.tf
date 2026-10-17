@@ -20,7 +20,7 @@ resource "aws_api_gateway_gateway_response" "cors" {
 
   response_parameters = {
     "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
-    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Impersonate-Session'"
     "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
   }
 }

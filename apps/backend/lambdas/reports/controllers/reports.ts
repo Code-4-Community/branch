@@ -1,6 +1,6 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { json, parseBody, reportError, serverError } from '@branch/lambda-http';
+import { json, parseBody, serverError } from '@branch/lambda-http';
 import type { RouteHandler } from '@branch/lambda-http';
 import { db, recordReport, removeReport } from '@branch/store';
 import {
@@ -37,36 +37,6 @@ type ReportType = typeof REPORT_TYPES[number];
 
 // Numeric-only id, mirroring the old REPORT_ID_ROUTE/REPORT_DOWNLOAD_ROUTE regexes
 // so a non-numeric :id falls through to the same 404 as an unmatched route.
-/**
- * Best-effort removal of the generated file behind a deleted report.
- *
- * Deliberately never throws: the row is already gone by the time this runs, and
- * the caller must not turn a successful delete into a 500 because S3 was
- * unreachable or the role is missing `s3:DeleteObject`. A leftover object is
- * recoverable; a row that cannot be deleted is not.
- */
-async function deleteReportObject(objectUrl: string | null): Promise<boolean> {
-  if (!objectUrl) return true;
-  const key = keyFromObjectUrl(objectUrl);
-  if (!key) return false;
-  // Read at call time rather than using the module-level BUCKET: the value is
-  // then observable to callers that set it after import, which is what the
-  // unit tests do.
-  const bucket = process.env.REPORTS_BUCKET_NAME ?? '';
-  if (!bucket) {
-    console.error('REPORTS_BUCKET_NAME is not set; leaving report object', key);
-    return false;
-  }
-  try {
-    await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-    return true;
-  } catch (err) {
-    console.error('Failed to delete report object', key, err);
-    reportError(err, { key });
-    return false;
-  }
-}
-
 function notFoundUnlessNumericId(id: string, path: string, method: string) {
   return /^\d+$/.test(id) ? undefined : json(404, { message: 'Not Found', path, method });
 }
@@ -165,7 +135,7 @@ export const listReports: RouteHandler = async ({ event }) => {
       ? db.selectFrom('branch.project_rollup').where('project_id', '=', projectId).select('report_count as count').executeTakeFirst()
       : db.selectFrom('branch.project_rollup').select(db.fn.sum('report_count').as('count')).executeTakeFirst();
 
-    let pageQuery = db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc');
+    let pageQuery = db.selectFrom('branch.reports').where('deleted_at', 'is', null).selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc');
     if (projectId !== null) pageQuery = pageQuery.where('project_id', '=', projectId);
 
     const [totalCount, reports] = await Promise.all([
@@ -183,8 +153,8 @@ export const listReports: RouteHandler = async ({ event }) => {
   }
 
   const reports = projectId !== null
-    ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc').execute()
-    : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc').execute();
+    ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).where('deleted_at', 'is', null).selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc').execute()
+    : await db.selectFrom('branch.reports').where('deleted_at', 'is', null).selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc').execute();
 
   return json(200, { data: reports });
 };
@@ -211,6 +181,7 @@ export const getUploadUrl: RouteHandler = async ({ event }) => {
 
   const projectExists = await db.selectFrom('branch.projects')
     .where('project_id', '=', projectId)
+    .where('deleted_at', 'is', null)
     .select('project_id')
     .executeTakeFirst();
   if (!projectExists) return json(404, { message: 'Project not found' });
@@ -250,6 +221,7 @@ export const createReport: RouteHandler = async ({ event }) => {
 
   const projectExists = await db.selectFrom('branch.projects')
     .where('project_id', '=', projectId as number)
+    .where('deleted_at', 'is', null)
     .select('project_id')
     .executeTakeFirst();
   if (!projectExists) return json(404, { message: 'Project not found' });
@@ -264,6 +236,7 @@ export const createReport: RouteHandler = async ({ event }) => {
   // Two rows on one object would let deleting either break the other's download.
   const alreadyRegistered = await db.selectFrom('branch.reports')
     .where('object_url', '=', objectUrl)
+    .where('deleted_at', 'is', null)
     .select('report_id')
     .executeTakeFirst();
   if (alreadyRegistered) {
@@ -285,7 +258,7 @@ export const downloadReport: RouteHandler = async ({ params, path, method }) => 
   if (notFound) return notFound;
   const id = params.id;
 
-  const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+  const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).where('deleted_at', 'is', null).selectAll().executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
 
   const key = keyFromObjectUrl(report.object_url);
@@ -306,7 +279,7 @@ export const getReport: RouteHandler = async ({ params, path, method }) => {
   if (notFound) return notFound;
   const id = params.id;
 
-  const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+  const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).where('deleted_at', 'is', null).selectAll().executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
 
   return json(200, { ok: true, route: 'GET /reports/{id}', pathParams: { id }, body: report });
@@ -317,7 +290,7 @@ export const deleteReport: RouteHandler = async ({ params, path, method }) => {
   if (notFound) return notFound;
   const id = params.id;
 
-  const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).selectAll().executeTakeFirst();
+  const report = await db.selectFrom('branch.reports').where('report_id', '=', Number(id)).where('deleted_at', 'is', null).select('report_id').executeTakeFirst();
   if (!report) return json(404, { message: 'Report not found' });
 
   const deleted = await removeReport(Number(id));
@@ -325,16 +298,8 @@ export const deleteReport: RouteHandler = async ({ params, path, method }) => {
     return json(404, { message: 'Report not found' });
   }
 
-  // After the row, never before: if the file went first and this delete
-  // failed, the report would be gone with a row still pointing at it.
-  // Rows registered before the duplicate check may still share the object.
-  const stillReferenced = await db.selectFrom('branch.reports')
-    .where('object_url', '=', report.object_url)
-    .select('report_id')
-    .executeTakeFirst();
-  const fileDeleted = stillReferenced ? false : await deleteReportObject(report.object_url);
-
-  return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id }, fileDeleted });
+  // The file stays in S3 so a soft delete can be restored.
+  return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
 };
 
 async function withSizes<T extends { object_url: string }>(rows: T[]) {

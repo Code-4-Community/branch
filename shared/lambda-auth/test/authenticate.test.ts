@@ -15,6 +15,7 @@ function userRow(over: Record<string, unknown> = {}) {
     email: 'row@b.com',
     name: 'Ada',
     is_admin: false,
+    is_staff: false,
     profile_image: null,
     project_id: null,
     role: null,
@@ -36,13 +37,13 @@ function makeDb(rows: unknown[]) {
   const calls: {
     from?: unknown;
     leftJoin?: unknown[];
-    where?: unknown[];
+    where: unknown[][];
     select?: unknown;
-  } = {};
+  } = { where: [] };
 
   const tail = {
     where: (...args: unknown[]) => {
-      calls.where = args;
+      calls.where.push(args);
       return tail;
     },
     select: (columns: unknown) => {
@@ -184,6 +185,7 @@ describe('authenticateRequest', () => {
         // The JWT claim, deliberately not the column -- see dbUser.email.
         email: 'claim@b.com',
         isAdmin: true,
+        isStaff: false,
         cognitoGroups: undefined,
         dbUser: {
           userId: 7,
@@ -191,6 +193,7 @@ describe('authenticateRequest', () => {
           email: 'row@b.com',
           name: 'Ada',
           isAdmin: true,
+          isStaff: false,
           profileImage: null,
         },
         memberships: [],
@@ -214,7 +217,10 @@ describe('authenticateRequest', () => {
       'pm.user_id',
       'u.user_id',
     ]);
-    expect(calls.where).toEqual(['u.cognito_sub', '=', 'sub-1']);
+    expect(calls.where).toEqual([
+      ['u.cognito_sub', '=', 'sub-1'],
+      ['u.deleted_at', 'is', null],
+    ]);
     // The union of what authentication and GET /auth/me need, so /auth/me does
     // not re-read the same row for a different column list.
     expect(calls.select).toEqual([
@@ -223,6 +229,7 @@ describe('authenticateRequest', () => {
       'u.email',
       'u.name',
       'u.is_admin',
+      'u.is_staff',
       'u.profile_image',
       'pm.project_id',
       'pm.role',
@@ -358,7 +365,7 @@ describe('warmAuth', () => {
     const hydrate = jest.fn().mockResolvedValue(undefined);
     mockCreate.mockReturnValueOnce({ verify: mockVerify, hydrate } as any);
     const execute = jest.fn().mockResolvedValue([]);
-    const chain = { select: () => chain, limit: () => chain, execute };
+    const chain = { select: () => chain, where: () => chain, limit: () => chain, execute };
     const db = { selectFrom: jest.fn(() => chain) };
 
     const { warmAuth } = await loadModule();
@@ -367,5 +374,109 @@ describe('warmAuth', () => {
     expect(hydrate).toHaveBeenCalledTimes(1);
     expect(db.selectFrom).toHaveBeenCalledWith('branch.users');
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+function makeImpersonationDb(users: any[], sessions: any[]) {
+  const chain = (run: (filters: [string, unknown][]) => unknown[]) => {
+    const filters: [string, unknown][] = [];
+    const c: any = {
+      leftJoin: () => c,
+      where: (col: string, _op: string, val: unknown) => {
+        filters.push([col, val]);
+        return c;
+      },
+      select: () => c,
+      execute: async () => run(filters),
+    };
+    return c;
+  };
+  return {
+    selectFrom: (table: string) =>
+      table === 'branch.users as u'
+        ? chain(([[col, val]]) =>
+            users.filter((u) =>
+              col === 'u.cognito_sub' ? u.cognito_sub === val : u.user_id === val,
+            ),
+          )
+        : chain((filters) =>
+            sessions.filter((s) => filters.every(([col, val]) => s[col] === val)),
+          ),
+  };
+}
+
+describe('impersonation', () => {
+  const SESSION = '0b6a3c1e-8a4f-4c55-9a43-0f3c5c0b1d2e';
+  const STAFF = userRow({ user_id: 50, cognito_sub: 'sub-staff', name: 'Staff', email: 's@b.com', is_staff: true });
+  const TARGET = userRow({ user_id: 7, cognito_sub: 'sub-7', project_id: 1, role: 'Director' });
+  const future = () => new Date(Date.now() + 60_000);
+  const session = (over: Record<string, unknown> = {}) => ({
+    session_id: SESSION,
+    staff_user_id: 50,
+    target_user_id: 7,
+    mode: 'read_only',
+    expires_at: future(),
+    ended_at: null,
+    ...over,
+  });
+  const event = (id = SESSION) => ({
+    headers: { Authorization: 'Bearer good', 'X-Impersonate-Session': id },
+  });
+
+  beforeEach(() => mockVerify.mockResolvedValue({ sub: 'sub-staff' }));
+
+  it('authenticates as the target and names the staff account behind it', async () => {
+    const { authenticateRequest } = await loadModule();
+    const db = makeImpersonationDb([STAFF, TARGET], [session()]);
+
+    const ctx = await authenticateRequest(db, event());
+
+    expect(ctx.isAuthenticated).toBe(true);
+    expect(ctx.user?.userId).toBe(7);
+    expect(ctx.user?.isStaff).toBe(false);
+    expect(ctx.user?.memberships).toEqual([{ project_id: 1, role: 'Director' }]);
+    expect(ctx.user?.impersonator).toMatchObject({
+      userId: 50,
+      name: 'Staff',
+      sessionId: SESSION,
+      mode: 'read_only',
+    });
+  });
+
+  it('refuses a non-staff caller instead of ignoring the header', async () => {
+    mockVerify.mockResolvedValue({ sub: 'sub-7' });
+    const { authenticateRequest } = await loadModule();
+    const db = makeImpersonationDb([STAFF, TARGET], [session()]);
+
+    const ctx = await authenticateRequest(db, event());
+
+    expect(ctx).toEqual({
+      isAuthenticated: false,
+      failure: expect.objectContaining({ status: 403, code: 'IMPERSONATION_FORBIDDEN' }),
+    });
+  });
+
+  it.each([
+    ['ended', [session({ ended_at: new Date() })], SESSION],
+    ['expired', [session({ expires_at: new Date(Date.now() - 1) })], SESSION],
+    ["another staff account's", [session({ staff_user_id: 51 })], SESSION],
+    ['malformed', [session()], 'not-a-uuid'],
+  ])('treats an %s session as expired', async (_label, sessions, id) => {
+    const { authenticateRequest } = await loadModule();
+    const db = makeImpersonationDb([STAFF, TARGET], sessions);
+
+    const ctx = await authenticateRequest(db, event(id));
+
+    expect(ctx.failure).toMatchObject({ status: 401, code: 'IMPERSONATION_EXPIRED' });
+  });
+
+  it('never lets a staff account be the target', async () => {
+    const { authenticateRequest } = await loadModule();
+    const other = userRow({ user_id: 7, cognito_sub: 'sub-7', is_staff: true });
+    const db = makeImpersonationDb([STAFF, other], [session()]);
+
+    const ctx = await authenticateRequest(db, event());
+
+    expect(ctx.failure).toMatchObject({ status: 403, code: 'IMPERSONATION_FORBIDDEN' });
   });
 });

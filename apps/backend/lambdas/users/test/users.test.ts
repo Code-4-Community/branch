@@ -58,7 +58,7 @@ const mockAuthenticateRequest = authenticateRequest as jest.MockedFunction<typeo
 
 const pool = new Pool({
   host: 'localhost',
-  port: Number(5432),
+  port: Number(process.env.DB_PORT ?? 5432),
   user: 'branch_dev',
   password: 'password',
   database: 'branch_db',
@@ -600,12 +600,101 @@ test("delete user 1 does not affect user 2", async () => {
 
 test("regular user cannot delete users", async () => {
   mockRegularUserAuth();
-  
+
   const event = createEvent({
     method: 'DELETE',
     path: '/1',
   });
-  
+
   const res = await handler(event);
   expect(res.statusCode).toBe(403);
+});
+test("POST user succeeds for the email of a deleted user, which keeps its row", async () => {
+  mockAdminAuth();
+
+  const del = await handler(createEvent({ method: 'DELETE', path: '/2' }));
+  expect(del.statusCode).toBe(200);
+
+  const res = await handler(createEvent({
+    method: 'POST',
+    path: '/users',
+    body: { name: "Renee Again", email: "renee@branch.org", isAdmin: false },
+  }));
+  expect(res.statusCode).toBe(201);
+  expect(JSON.parse(res.body).body.email).toBe("renee@branch.org");
+
+  const client = await pool.connect();
+  try {
+    const old = await client.query('SELECT email, deleted_at FROM branch.users WHERE user_id = 2');
+    expect(old.rows[0].email).toBe('renee@branch.org');
+    expect(old.rows[0].deleted_at).not.toBeNull();
+    const live = await client.query(
+      "SELECT user_id FROM branch.users WHERE email = 'renee@branch.org' AND deleted_at IS NULL",
+    );
+    expect(live.rows).toHaveLength(1);
+    expect(live.rows[0].user_id).not.toBe(2);
+  } finally {
+    client.release();
+  }
+});
+
+test("POST user 409 when a live user has the email", async () => {
+  mockAdminAuth();
+
+  const res = await handler(createEvent({
+    method: 'POST',
+    path: '/users',
+    body: { name: "Sam Again", email: "sam@branch.org", isAdmin: false },
+  }));
+  expect(res.statusCode).toBe(409);
+  expect(JSON.parse(res.body).message).toBe('User with this email already exists');
+});
+
+describe('staff accounts', () => {
+  async function seedStaff(): Promise<number> {
+    const { rows } = await pool.query(
+      `INSERT INTO branch.users (cognito_sub, name, email, is_admin, is_staff)
+       VALUES ('staff-sub', 'Hidden Staff', 'staff@branch.org', false, true)
+       RETURNING user_id`,
+    );
+    return rows[0].user_id;
+  }
+
+  test('never appear in the user list, its count, or its columns', async () => {
+    await seedStaff();
+    mockAdminAuth();
+
+    const all = JSON.parse((await handler(createEvent({ method: 'GET', path: '/users' }))).body);
+    expect(all.users).toHaveLength(6);
+    expect(all.users.map((u: any) => u.email)).not.toContain('staff@branch.org');
+    expect(all.users[0]).not.toHaveProperty('is_staff');
+
+    const paged = JSON.parse(
+      (
+        await handler(
+          createEvent({
+            method: 'GET',
+            path: '/users',
+            queryStringParameters: { page: '1', limit: '50' },
+          }),
+        )
+      ).body,
+    );
+    expect(paged.pagination.totalUsers).toBe(6);
+    expect(paged.users.map((u: any) => u.email)).not.toContain('staff@branch.org');
+  });
+
+  test('answer 404 to get, patch and delete, like a missing user', async () => {
+    const staffId = await seedStaff();
+    mockAdminAuth();
+
+    const attempts: [string, unknown][] = [['GET', undefined], ['PATCH', { name: 'Renamed' }], ['DELETE', undefined]];
+    for (const [method, body] of attempts) {
+      const res = await handler(createEvent({ method, path: `/${staffId}`, body }));
+      expect([method, res.statusCode]).toEqual([method, 404]);
+    }
+
+    const { rows } = await pool.query('SELECT name FROM branch.users WHERE user_id = $1', [staffId]);
+    expect(rows[0].name).toBe('Hidden Staff');
+  });
 });

@@ -32,6 +32,7 @@ describe('preloadedSubject', () => {
     expect(subject).toEqual({
       userId: 7,
       isAdmin: false,
+      isStaff: false,
       memberProjectIds: [1, 2],
       directorProjectIds: [1],
     });
@@ -43,6 +44,7 @@ describe('preloadedSubject', () => {
     expect(preloadedSubject(context({ memberships: [] }))).toEqual({
       userId: 7,
       isAdmin: false,
+      isStaff: false,
       memberProjectIds: [],
       directorProjectIds: [],
     });

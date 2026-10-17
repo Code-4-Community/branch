@@ -24,7 +24,7 @@ resource "aws_api_gateway_gateway_response" "cors" {
 
   response_parameters = {
     "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
-    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Impersonate-Session'"
     "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
   }
 
@@ -174,7 +174,7 @@ locals {
   # who answers a preflight, not what a preflight says.
   cors_headers = {
     "Access-Control-Allow-Origin"  = "'*'"
-    "Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Impersonate-Session'"
     "Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
     "Access-Control-Max-Age"       = "'7200'"
   }

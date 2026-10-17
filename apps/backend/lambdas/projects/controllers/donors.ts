@@ -18,6 +18,7 @@ export const getProjectDonors: RouteHandler = async (ctx) => {
   const project = await db
     .selectFrom('branch.projects as p')
     .where('p.project_id', '=', projectId)
+    .where('p.deleted_at', 'is', null)
     .selectAll()
     .executeTakeFirst();
 
@@ -36,6 +37,9 @@ export const getProjectDonors: RouteHandler = async (ctx) => {
     .where('p.project_id', '=', projectId)
     .innerJoin('branch.project_donations as bpd', 'bpd.project_id', 'p.project_id')
     .innerJoin('branch.donors as bd', 'bd.donor_id', 'bpd.donor_id')
+    .where('p.deleted_at', 'is', null)
+    .where('bpd.deleted_at', 'is', null)
+    .where('bd.deleted_at', 'is', null)
     .select([
       'bd.donor_id',
       'bd.organization',

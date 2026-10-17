@@ -218,7 +218,9 @@ export const handleMe: RouteHandler = async ({ auth }) => {
     email: me.email,
     name: me.name,
     isAdmin: me.isAdmin,
+    isStaff: me.isStaff,
     profileImage: await resolveProfileImage(me.profileImage),
+    impersonation: auth.context.user?.impersonator ?? null,
     // The RBAC subject travels with identity so the browser evaluates the same
     // policy against the same facts the lambdas used. Without it the frontend
     // would have to re-derive "is a director" and "which projects am I on"

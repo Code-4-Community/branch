@@ -23,6 +23,9 @@ Lambda for auth handler.
 | POST | /auth/mfa-verify |  |
 | POST | /auth/mfa-disable |  |
 | GET | /auth/mfa-status |  |
+| GET | /auth/impersonation/targets |  |
+| POST | /auth/impersonation |  |
+| DELETE | /auth/impersonation/{sessionId} |  |
 
 ## Setup
 

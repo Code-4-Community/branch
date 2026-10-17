@@ -9,6 +9,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { makeQueryClient } from '@/lib/queryClient';
 import { warmServices } from '@/lib/api';
 import AuthGate from './components/AuthGate';
+import ImpersonationBanner from './components/ImpersonationBanner';
 import RoutePrefetcher from './components/RoutePrefetcher';
 
 // AuthGate lives here so every route is guarded by construction. Note that
@@ -35,6 +36,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <RoutePrefetcher />
       <ChakraProvider value={defaultSystem}>
         <AuthProvider>
+          <ImpersonationBanner />
           <AuthGate>{children}</AuthGate>
         </AuthProvider>
       </ChakraProvider>

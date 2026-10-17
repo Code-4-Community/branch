@@ -498,7 +498,7 @@ describe("Donor API with data", () => {
 
     test("DELETE /donors/{id} returns 200 for admin and removes the donor", async () => {
       mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
-      // Donor 2 (Harvard Medical) — note this cascades and also removes donation_id 2
+      // Donor 2 (Harvard Medical) — note this also soft-deletes donation_id 2
       const res = await handler(createEvent('DELETE', '/donors/2'));
       const body = JSON.parse(res.body);
 
@@ -508,8 +508,8 @@ describe("Donor API with data", () => {
 
       const client = await pool.connect();
       try {
-        const result = await client.query('SELECT * FROM branch.donors WHERE donor_id = 2');
-        expect(result.rows.length).toBe(0);
+        const result = await client.query('SELECT * FROM branch.donors WHERE donor_id = 2 AND deleted_at IS NOT NULL');
+        expect(result.rows.length).toBe(1);
       } finally {
         client.release();
       }
@@ -552,8 +552,8 @@ describe("Donor API with data", () => {
 
       const client = await pool.connect();
       try {
-        const result = await client.query('SELECT * FROM branch.project_donations WHERE donation_id = 3');
-        expect(result.rows.length).toBe(0);
+        const result = await client.query('SELECT * FROM branch.project_donations WHERE donation_id = 3 AND deleted_at IS NOT NULL');
+        expect(result.rows.length).toBe(1);
       } finally {
         client.release();
       }

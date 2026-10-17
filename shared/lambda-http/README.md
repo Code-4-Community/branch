@@ -49,6 +49,13 @@ the row is loaded.
   Paths are canonicalized to the prefixed form, so one table serves both.
 - **Authentication and the route's permission**, resolved once per request via
   `resolveAuth`. A controller that runs has already cleared its route's gate.
+- **Impersonation.** When `resolveAuth` returns a context with an
+  `impersonator`, a read-only session gets a 403 on any non-GET request, and a
+  route with `impersonation: 'blocked'` refuses it in either mode. Use
+  `'blocked'` for routes that act on the caller's own Cognito session, which
+  while impersonating is the staff account's. Every non-GET impersonated
+  request, refused or not, is then handed to `onImpersonatedWrite`. Each
+  lambda passes `@branch/store`'s `recordImpersonationAction`.
 - OPTIONS preflight, `GET /<prefix>/health`, 404, and 500. Health awaits the
   optional `warmup` first, so the frontend's load-time ping leaves a cold
   container with its JWKS and DB connection ready.
@@ -64,7 +71,7 @@ the row is loaded.
 
 | Export | Purpose |
 | --- | --- |
-| `dispatch(event, { prefix, routes, resolveAuth, warmup })` | Route an event; returns a response. |
+| `dispatch(event, { prefix, routes, resolveAuth, onImpersonatedWrite, warmup })` | Route an event; returns a response. |
 | `prewarm(warm)` | Start `warm` at module scope (Lambda only) and return the `warmup` health awaits. |
 | `json(status, body)` | JSON response with CORS headers. |
 | `parseBody(event)` | Parse a JSON body; `null` when malformed. |

@@ -4,6 +4,7 @@ import { json } from './response';
 import { matchPattern } from './match';
 import { ANONYMOUS_AUTH } from './authz';
 import { reportError } from './errors';
+import type { Impersonator } from '@branch/lambda-auth';
 import type { DispatchOptions, RequestAuth, Route } from './types';
 
 /**
@@ -21,7 +22,7 @@ import type { DispatchOptions, RequestAuth, Route } from './types';
  */
 export async function dispatch(
   event: any,
-  { prefix, routes, resolveAuth, warmup }: DispatchOptions,
+  { prefix, routes, resolveAuth, onImpersonatedWrite, warmup }: DispatchOptions,
 ): Promise<APIGatewayProxyResult> {
   // Hoisted out of the try so the catch can name the route that failed.
   const rawPath: string = event?.rawPath || event?.path || '/';
@@ -51,10 +52,17 @@ export async function dispatch(
       const params = matchPattern(route.pattern, path);
       if (!params) continue;
 
-      const gate = await enforce(route, event, resolveAuth);
-      if ('response' in gate) return gate.response;
+      const gate = await enforce(route, method, event, resolveAuth);
+      const result =
+        gate.response ??
+        (await route.handler({ event, params, method, path, auth: gate.auth! }));
 
-      return await route.handler({ event, params, method, path, auth: gate.auth });
+      // Refused writes too: an attempt is part of the trail.
+      const impersonator = gate.auth?.context.user?.impersonator;
+      if (impersonator && !READ_METHODS.has(method)) {
+        await audit(onImpersonatedWrite, impersonator, method, path, result.statusCode);
+      }
+      return result;
     }
 
     return json(404, { message: 'Not Found', path, method });
@@ -67,10 +75,31 @@ export async function dispatch(
   }
 }
 
-type Gate = { auth: RequestAuth } | { response: APIGatewayProxyResult };
+type Gate =
+  | { auth: RequestAuth; response?: undefined }
+  | { auth?: RequestAuth; response: APIGatewayProxyResult };
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+async function audit(
+  hook: DispatchOptions['onImpersonatedWrite'],
+  impersonator: Impersonator,
+  method: string,
+  path: string,
+  statusCode: number,
+): Promise<void> {
+  if (!hook) return;
+  try {
+    await hook(impersonator, method, path, statusCode);
+  } catch (err) {
+    console.error('Impersonation audit failed:', err);
+    reportError(err, { method, path });
+  }
+}
 
 async function enforce(
   route: Route,
+  method: string,
   event: any,
   resolveAuth: DispatchOptions['resolveAuth'],
 ): Promise<Gate> {
@@ -89,13 +118,29 @@ async function enforce(
 
   const auth = await resolveAuth(event);
   if (!auth.context.isAuthenticated) {
+    const failure = auth.context.failure;
+    if (failure) {
+      return {
+        response: json(failure.status, { message: failure.message, code: failure.code }),
+      };
+    }
     return { response: json(401, { message: 'Authentication required' }) };
+  }
+
+  const impersonator = auth.context.user?.impersonator;
+  if (impersonator) {
+    if (route.impersonation === 'blocked') {
+      return { auth, response: json(403, { message: 'Not available while impersonating' }) };
+    }
+    if (impersonator.mode === 'read_only' && !READ_METHODS.has(method)) {
+      return { auth, response: json(403, { message: 'Read-only impersonation' }) };
+    }
   }
 
   if (route.permission) {
     const decision = authorize(auth.subject, route.permission);
     if (!decision.allowed) {
-      return { response: json(403, { message: decision.reason ?? 'Forbidden' }) };
+      return { auth, response: json(403, { message: decision.reason ?? 'Forbidden' }) };
     }
   }
 

@@ -32,8 +32,8 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn(async () => 'https://signed.example/url'),
 }));
 
-// Nor must the receipt delete on DELETE /expenditures/{id}. Shared across
-// instances so the assertions below can see the call.
+// Nor must any S3 call. Shared across instances so the assertions below can
+// see that DELETE /expenditures/{id} sends no DeleteObject.
 const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),
@@ -131,59 +131,45 @@ const fakeExpenditure = {
   created_at: new Date('2025-06-01'),
 };
 
+function mockQuery(result: unknown | ((calls: string[]) => unknown)) {
+  const calls: string[] = [];
+  const settle = async () => (typeof result === 'function' ? (result as (c: string[]) => unknown)(calls) : result);
+  const methods: Record<string, unknown> = {};
+  const builder: any = new Proxy(methods, {
+    get(target, prop) {
+      if (typeof prop !== 'string' || prop === 'then') return undefined;
+      if (!(prop in target)) {
+        target[prop] = prop === 'execute' || prop === 'executeTakeFirst'
+          ? jest.fn(settle)
+          : jest.fn(() => {
+              calls.push(prop);
+              return builder;
+            });
+      }
+      return target[prop];
+    },
+  });
+  return builder;
+}
+
+function mockQueryError(err: Error) {
+  return mockQuery(() => {
+    throw err;
+  });
+}
+
 // Mocks the query chain used by the handler to fetch a single expenditure
 function mockSelectExpenditure(result: any, name?: string) {
-  return {
-    // GET /expenditures/{id} reads the row and the submitter and project names
-    // in one joined statement, so those names arrive as columns on the row.
-    innerJoin: jest.fn().mockReturnValue({
-      leftJoin: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            select: jest.fn().mockReturnValue({
-              executeTakeFirst: jest
-                .fn()
-                .mockReturnValue(
-                  result && name
-                    ? { ...result, project_name: name, submitted_by_name: name }
-                    : result,
-                ),
-            }),
-          }),
-        }),
-      }),
-    }),
-    where: jest.fn().mockReturnValue({
-      selectAll: jest.fn().mockReturnValue({
-        executeTakeFirst: jest.fn().mockReturnValue(result),
-      }),
-      select: jest.fn().mockReturnValue({
-        executeTakeFirst: jest.fn().mockReturnValue(name ? { name } : undefined),
-      }),
-    }),
-  };
+  return mockQuery((calls: string[]) =>
+    calls.includes('innerJoin') && result && name
+      ? { ...result, project_name: name, submitted_by_name: name }
+      : result,
+  );
 }
 
 // Mocks the query chain used by the handler to check project membership
 function mockMembership(result: any) {
-  return {
-    where: jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue(result),
-        }),
-      }),
-    }),
-  };
-}
-
-// Mocks the query chain used by the handler to delete an expenditure
-function mockDelete(numDeletedRows: bigint) {
-  return {
-    where: jest.fn().mockReturnValue({
-      execute: jest.fn().mockReturnValue([{ numDeletedRows }]),
-    }),
-  };
+  return mockQuery(result);
 }
 
 // Default authenticated admin user
@@ -427,17 +413,11 @@ describe('POST /expenditures unit tests', () => {
 
     test('response has correct HTTP headers', async () => {
       // Setup mocks for successful expenditure creation
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 1,
-              name: 'Test Project',
-              total_budget: 50000,
-            } as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery({
+        project_id: 1,
+        name: 'Test Project',
+        total_budget: 50000,
+      }));
 
       mockDb.insertInto.mockReturnValue({
         values: jest.fn().mockReturnValue({
@@ -454,7 +434,7 @@ describe('POST /expenditures unit tests', () => {
 
       expect(res.headers?.['Content-Type']).toBe('application/json');
       expect(res.headers?.['Access-Control-Allow-Origin']).toBe('*');
-      expect(res.headers?.['Access-Control-Allow-Headers']).toBe('Content-Type,Authorization');
+      expect(res.headers?.['Access-Control-Allow-Headers']).toBe('Content-Type,Authorization,X-Impersonate-Session');
       expect(res.headers?.['Access-Control-Allow-Methods']).toContain('POST');
     });
   });
@@ -462,16 +442,10 @@ describe('POST /expenditures unit tests', () => {
   describe('Success Cases', () => {
     test('201: successful POST returns 201 status and correct response shape', async () => {
       // Mock: project exists
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 1,
-              name: 'Test Project',
-            } as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery({
+        project_id: 1,
+        name: 'Test Project',
+      }));
 
       // Mock: insert succeeds
       mockDb.insertInto.mockReturnValue({
@@ -502,16 +476,10 @@ describe('POST /expenditures unit tests', () => {
     });
 
     test('201: accepts explicit status and receipt_url', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 1,
-              name: 'Test Project',
-            } as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery({
+        project_id: 1,
+        name: 'Test Project',
+      }));
 
       mockDb.insertInto.mockReturnValue({
         values: jest.fn().mockReturnValue({
@@ -549,13 +517,7 @@ describe('POST /expenditures unit tests', () => {
 
     test('404: returns 404 when project not found', async () => {
       // Mock: project doesn't exist
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue(null as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery(null));
 
       const res = await handler(
         postEvent({
@@ -571,16 +533,10 @@ describe('POST /expenditures unit tests', () => {
 
     test('201: handles optional fields correctly', async () => {
       // Mock: project exists
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 2,
-              name: 'Another Project',
-            } as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery({
+        project_id: 2,
+        name: 'Another Project',
+      }));
 
       // Mock: insert succeeds
       mockDb.insertInto.mockReturnValue({
@@ -607,16 +563,10 @@ describe('POST /expenditures unit tests', () => {
   describe('Error Handling', () => {
     test('500: returns 500 when database insert fails', async () => {
       // Mock: project exists
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: jest.fn().mockReturnValue({
-              project_id: 1,
-              name: 'Test Project',
-            } as any),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery({
+        project_id: 1,
+        name: 'Test Project',
+      }));
 
       mockRecordExpenditure.mockRejectedValue(new Error('Database connection failed'));
 
@@ -634,13 +584,7 @@ describe('POST /expenditures unit tests', () => {
 
     test('500: returns 500 when project lookup fails', async () => {
       // Mock: project lookup throws error
-      mockDb.selectFrom.mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          selectAll: jest.fn().mockReturnValue({
-            executeTakeFirst: (jest.fn() as any).mockRejectedValue(new Error('Database error')),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQueryError(new Error('Database error')));
 
       const res = await handler(
         postEvent({
@@ -663,15 +607,7 @@ describe('POST /expenditures unit tests', () => {
     });
 
     test('200: returns data array without pagination when no params', async () => {
-      mockDb.selectFrom.mockReturnValue({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockReturnValue({
-              execute: jest.fn().mockReturnValue(fakeExpenditures as any),
-            }),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValue(mockQuery(fakeExpenditures));
 
       const res = await handler(getEvent());
       expect(res.statusCode).toBe(200);
@@ -682,25 +618,9 @@ describe('POST /expenditures unit tests', () => {
 
     test('200: returns paginated response with page and limit', async () => {
       // count query
-      mockDb.selectFrom.mockReturnValueOnce({
-        select: jest.fn().mockReturnValue({
-          executeTakeFirst: jest.fn().mockReturnValue({ count: '3' } as any),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValueOnce(mockQuery({ count: '3' }));
       // data query
-      mockDb.selectFrom.mockReturnValueOnce({
-        selectAll: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockReturnValue({
-              limit: jest.fn().mockReturnValue({
-                offset: jest.fn().mockReturnValue({
-                  execute: jest.fn().mockReturnValue([fakeExpenditures[0]] as any),
-                }),
-              }),
-            }),
-          }),
-        }),
-      });
+      mockDb.selectFrom.mockReturnValueOnce(mockQuery([fakeExpenditures[0]]));
 
       const res = await handler(getEvent({ page: '1', limit: '1' }));
       expect(res.statusCode).toBe(200);
@@ -941,63 +861,12 @@ describe('DELETE /expenditures/{id} unit tests', () => {
     });
   });
 
-  describe('the receipt goes with the row', () => {
-    const withReceipt = {
-      ...fakeExpenditure,
-      receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/1/flight.pdf',
-    };
-
-    beforeEach(() => {
-      mockMemberships.length = 0;
-      process.env.REPORTS_BUCKET_NAME = 'bucket';
-      mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(withReceipt));
-      mockRemoveExpenditure.mockResolvedValue(1n);
-      mockS3Send.mockResolvedValue({});
-    });
-
-    test('deletes the receipt object', async () => {
-      const res = await handler(idEvent('DELETE', '5'));
-
-      expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).receiptDeleted).toBe(true);
-      expect(mockS3Send).toHaveBeenCalledWith(
-        expect.objectContaining({
-          __type: 'DeleteObject',
-          Bucket: 'bucket',
-          Key: 'receipts/1/flight.pdf',
-        }),
-      );
-    });
-
-    test('a failing S3 delete still deletes the row', async () => {
-      // An orphaned object is recoverable; a row that cannot be deleted is not.
-      mockS3Send.mockRejectedValue(new Error('AccessDenied'));
-
-      const res = await handler(idEvent('DELETE', '5'));
-
-      expect(res.statusCode).toBe(200);
-      expect(JSON.parse(res.body).receiptDeleted).toBe(false);
-    });
-  });
-
-  test('an expenditure with no receipt makes no S3 call', async () => {
-    process.env.REPORTS_BUCKET_NAME = 'bucket';
-    mockDb.selectFrom.mockReturnValueOnce(mockSelectExpenditure(fakeExpenditure));
-    mockRemoveExpenditure.mockResolvedValue(1n);
-
-    const res = await handler(idEvent('DELETE', '5'));
-
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).receiptDeleted).toBe(true);
-    expect(mockS3Send).not.toHaveBeenCalled();
-  });
-
-  test("never deletes a receipt stored under another project's prefix", async () => {
+  test('the receipt object is left in S3', async () => {
     process.env.REPORTS_BUCKET_NAME = 'bucket';
     mockDb.selectFrom.mockReturnValueOnce(
       mockSelectExpenditure({
         ...fakeExpenditure,
-        receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/2/theirs.pdf',
+        receipt_url: 'https://bucket.s3.us-east-2.amazonaws.com/receipts/1/flight.pdf',
       }),
     );
     mockRemoveExpenditure.mockResolvedValue(1n);
@@ -1005,8 +874,7 @@ describe('DELETE /expenditures/{id} unit tests', () => {
     const res = await handler(idEvent('DELETE', '5'));
 
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).receiptDeleted).toBe(false);
-    expect(mockS3Send).not.toHaveBeenCalled();
+    expect(mockS3Send).not.toHaveBeenCalledWith(expect.objectContaining({ __type: 'DeleteObject' }));
   });
 
   test('409 when the expense was reviewed between the check and the delete', async () => {
@@ -1089,15 +957,7 @@ describe('PATCH /expenditures/{id}/status unit tests', () => {
     );
 
     mockDb.selectFrom.mockImplementation((table: string) => {
-      if (table === 'branch.users') {
-        return {
-          where: jest.fn().mockReturnValue({
-            select: jest.fn().mockReturnValue({
-              executeTakeFirst: (jest.fn() as any).mockResolvedValue(submitter ?? undefined),
-            }),
-          }),
-        };
-      }
+      if (table === 'branch.users') return mockQuery(submitter ?? undefined);
       throw new Error(`mockExpenditureForPatch: unexpected table "${table}"`);
     });
   }

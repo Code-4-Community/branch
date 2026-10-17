@@ -46,7 +46,7 @@ process.env.REPORTS_BUCKET_NAME = 'bucket';
 
 const pool = new Pool({
   host: 'localhost',
-  port: Number(5432),
+  port: Number(process.env.DB_PORT ?? 5432),
   user: 'branch_dev',
   password: 'password',
   database: 'branch_db',
@@ -465,17 +465,32 @@ describe('Reports e2e tests', () => {
       };
     }
 
-    test('200: admin can delete a report, removed from db', async () => {
+    test('200: admin can delete a report, soft-deleted in db', async () => {
       const res = await handler(idEvent('DELETE', 4));
       expect(res.statusCode).toBe(200);
 
       const client = await pool.connect();
       try {
-        const result = await client.query('SELECT * FROM branch.reports WHERE report_id = 4');
-        expect(result.rows.length).toBe(0);
+        const result = await client.query('SELECT deleted_at FROM branch.reports WHERE report_id = 4');
+        expect(result.rows.length).toBe(1);
+        expect(result.rows[0].deleted_at).not.toBeNull();
       } finally {
         client.release();
       }
+    });
+
+    test('a deleted report is gone from reads', async () => {
+      expect((await handler(idEvent('DELETE', 4))).statusCode).toBe(200);
+
+      expect((await handler(idEvent('GET', 4))).statusCode).toBe(404);
+      const list = await handler({
+        rawPath: '/reports',
+        requestContext: { http: { method: 'GET' } },
+        headers: { Authorization: 'Bearer fake-token' },
+        queryStringParameters: {},
+      });
+      const ids = JSON.parse(list.body).data.map((r: { report_id: number }) => r.report_id);
+      expect(ids).not.toContain(4);
     });
 
     test('404: non-numeric id falls through to catch-all', async () => {
@@ -506,7 +521,7 @@ describe('Reports e2e tests', () => {
       const client = await pool.connect();
       let totalBefore: number;
       try {
-        const result = await client.query('SELECT COUNT(*)::int AS count FROM branch.reports');
+        const result = await client.query('SELECT COUNT(*)::int AS count FROM branch.reports WHERE deleted_at IS NULL');
         totalBefore = result.rows[0].count;
       } finally {
         client.release();
@@ -517,25 +532,23 @@ describe('Reports e2e tests', () => {
 
       const client2 = await pool.connect();
       try {
-        const result = await client2.query('SELECT COUNT(*)::int AS count FROM branch.reports');
+        const result = await client2.query('SELECT COUNT(*)::int AS count FROM branch.reports WHERE deleted_at IS NULL');
         expect(result.rows[0].count).toBe(totalBefore - 1);
       } finally {
         client2.release();
       }
     });
 
-    test('200: deleting a report whose object_url is not under the reports bucket still deletes the row, fileDeleted false', async () => {
-      // Seed report 5's object_url ('https://s3.amazonaws.com/reports/b.pdf' or
-      // similar legacy-style URL) may not resolve via keyFromObjectUrl against
+    test('200: deleting a report whose object_url is not under the reports bucket still deletes the row', async () => {
+      // Seed report 2's object_url may not resolve via keyFromObjectUrl against
       // the current REPORTS_BUCKET_NAME; either way the row must go.
       const res = await handler(idEvent('DELETE', 2));
       expect(res.statusCode).toBe(200);
-      expect(typeof JSON.parse(res.body).fileDeleted).toBe('boolean');
 
       const client = await pool.connect();
       try {
-        const result = await client.query('SELECT * FROM branch.reports WHERE report_id = 2');
-        expect(result.rows.length).toBe(0);
+        const result = await client.query('SELECT 1 FROM branch.reports WHERE report_id = 2 AND deleted_at IS NOT NULL');
+        expect(result.rows.length).toBe(1);
       } finally {
         client.release();
       }

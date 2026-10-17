@@ -25,6 +25,7 @@ export interface BranchDonors {
   contact_email: string | null;
   contact_name: string | null;
   created_at: Generated<Timestamp | null>;
+  deleted_at: Timestamp | null;
   donor_id: Generated<number>;
   organization: string;
 }
@@ -43,6 +44,7 @@ export interface BranchExpenditures {
   amount: Numeric;
   category: string | null;
   created_at: Generated<Timestamp | null>;
+  deleted_at: Timestamp | null;
   description: string | null;
   entered_by: number | null;
   expenditure_id: Generated<number>;
@@ -52,8 +54,28 @@ export interface BranchExpenditures {
   status: Generated<string>;
 }
 
+export interface BranchImpersonationActions {
+  action_id: Generated<string>;
+  created_at: Generated<Timestamp>;
+  method: string;
+  path: string;
+  session_id: string;
+  status_code: number;
+}
+
+export interface BranchImpersonationSessions {
+  ended_at: Timestamp | null;
+  expires_at: Timestamp;
+  mode: string;
+  session_id: Generated<string>;
+  staff_user_id: number;
+  started_at: Generated<Timestamp>;
+  target_user_id: number;
+}
+
 export interface BranchProjectDonations {
   amount: Numeric;
+  deleted_at: Timestamp | null;
   donated_at: Generated<Timestamp | null>;
   donation_id: Generated<number>;
   donor_id: number;
@@ -81,6 +103,7 @@ export interface BranchProjectRollup {
 export interface BranchProjects {
   created_at: Generated<Timestamp | null>;
   currency: Generated<string | null>;
+  deleted_at: Timestamp | null;
   description: string;
   end_date: Timestamp | null;
   name: string;
@@ -91,6 +114,7 @@ export interface BranchProjects {
 
 export interface BranchReports {
   date_created: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
   object_url: string;
   project_id: number;
   report_id: Generated<number>;
@@ -101,8 +125,10 @@ export interface BranchReports {
 export interface BranchUsers {
   cognito_sub: string | null;
   created_at: Generated<Timestamp | null>;
+  deleted_at: Timestamp | null;
   email: string;
   is_admin: Generated<boolean | null>;
+  is_staff: boolean | null;
   name: string;
   profile_image: string | null;
   user_id: Generated<number>;
@@ -112,6 +138,8 @@ export interface DB {
   "branch.donors": BranchDonors;
   "branch.expenditure_rollup": BranchExpenditureRollup;
   "branch.expenditures": BranchExpenditures;
+  "branch.impersonation_actions": BranchImpersonationActions;
+  "branch.impersonation_sessions": BranchImpersonationSessions;
   "branch.project_donations": BranchProjectDonations;
   "branch.project_memberships": BranchProjectMemberships;
   "branch.project_rollup": BranchProjectRollup;

@@ -32,9 +32,14 @@ export async function getDonors({ event }: RouteCtx) {
 
     // The count does not depend on the page, so both go out at once.
     const [totalCount, donors] = await Promise.all([
-      db.selectFrom('branch.donors').select(db.fn.count('donor_id').as('count')).executeTakeFirst(),
       db
         .selectFrom('branch.donors')
+        .where('deleted_at', 'is', null)
+        .select(db.fn.count('donor_id').as('count'))
+        .executeTakeFirst(),
+      db
+        .selectFrom('branch.donors')
+        .where('deleted_at', 'is', null)
         .selectAll()
         .orderBy('donor_id', 'asc')
         .limit(limit)
@@ -51,7 +56,7 @@ export async function getDonors({ event }: RouteCtx) {
     });
   }
 
-  const donors = await db.selectFrom('branch.donors').selectAll().execute();
+  const donors = await db.selectFrom('branch.donors').where('deleted_at', 'is', null).selectAll().execute();
   return json(200, { data: donors });
 }
 

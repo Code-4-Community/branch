@@ -28,6 +28,7 @@ const routes: Route[] = [
 const subject = (userId: number, isAdmin = false): RbacSubject => ({
   userId,
   isAdmin,
+  isStaff: false,
   memberProjectIds: [],
   directorProjectIds: [],
 });
@@ -225,5 +226,101 @@ describe('dispatch authorization', () => {
     const resolveAuth = jest.fn(authed(1, true));
     await dispatch(event('PUT', '/projects/7'), { prefix: 'projects', routes, resolveAuth });
     expect(resolveAuth).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('dispatch impersonation', () => {
+  const impersonated = (mode: 'read_only' | 'full') => async (): Promise<RequestAuth> => ({
+    context: {
+      isAuthenticated: true,
+      user: {
+        cognitoSub: 'x',
+        userId: 7,
+        isAdmin: true,
+        impersonator: {
+          userId: 50,
+          name: 'Staff',
+          email: 's@b.com',
+          sessionId: 'sess-1',
+          mode,
+          expiresAt: new Date().toISOString(),
+        },
+      },
+    },
+    subject: subject(7, true),
+  });
+  const withRoutes = (resolveAuth: () => Promise<RequestAuth>, extra: Partial<{ onImpersonatedWrite: jest.Mock }> = {}) => ({
+    prefix: 'projects',
+    routes: [
+      ...routes,
+      { method: 'POST', pattern: '/projects/mfa', access: 'authenticated', impersonation: 'blocked', handler: ok('mfa') } as Route,
+    ],
+    resolveAuth,
+    ...extra,
+  });
+
+  it('serves reads in read-only mode', async () => {
+    const res = await dispatch(event('GET', '/projects/7'), withRoutes(impersonated('read_only')));
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses writes in read-only mode before the controller runs, and audits the attempt', async () => {
+    const onImpersonatedWrite = jest.fn().mockResolvedValue(undefined);
+    const res = await dispatch(
+      event('PUT', '/projects/7'),
+      withRoutes(impersonated('read_only'), { onImpersonatedWrite }),
+    );
+    expect(res.statusCode).toBe(403);
+    expect(body(res).message).toBe('Read-only impersonation');
+    expect(body(res).label).toBeUndefined();
+    expect(onImpersonatedWrite).toHaveBeenCalledWith(expect.anything(), 'PUT', '/projects/7', 403);
+  });
+
+  it('refuses a blocked route in full mode too', async () => {
+    const res = await dispatch(event('POST', '/projects/mfa'), withRoutes(impersonated('full')));
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('audits each full-mode write with its outcome, and never a read', async () => {
+    const onImpersonatedWrite = jest.fn().mockResolvedValue(undefined);
+    const opts = withRoutes(impersonated('full'), { onImpersonatedWrite });
+
+    await dispatch(event('GET', '/projects/7'), opts);
+    const res = await dispatch(event('PUT', '/projects/7'), opts);
+
+    expect(res.statusCode).toBe(200);
+    expect(onImpersonatedWrite).toHaveBeenCalledTimes(1);
+    expect(onImpersonatedWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'sess-1' }),
+      'PUT',
+      '/projects/7',
+      200,
+    );
+  });
+
+  it('still answers when the audit write fails, and reports it', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const onImpersonatedWrite = jest.fn().mockRejectedValue(new Error('db down'));
+
+    const res = await dispatch(
+      event('PUT', '/projects/7'),
+      withRoutes(impersonated('full'), { onImpersonatedWrite }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(Sentry.captureException).toHaveBeenCalled();
+  });
+
+  it('surfaces the failure code instead of a bare 401', async () => {
+    const expired = async (): Promise<RequestAuth> => ({
+      context: {
+        isAuthenticated: false,
+        failure: { status: 401, code: 'IMPERSONATION_EXPIRED', message: 'Impersonation session has ended' },
+      },
+      subject: ANONYMOUS,
+    });
+    const res = await dispatch(event('GET', '/projects/7'), withRoutes(expired));
+    expect(res.statusCode).toBe(401);
+    expect(body(res).code).toBe('IMPERSONATION_EXPIRED');
   });
 });

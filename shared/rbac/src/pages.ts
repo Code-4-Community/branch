@@ -20,6 +20,7 @@ export const PAGE_PERMISSIONS: Record<string, GlobalAction> = {
   '/projects': 'projects:view',
   '/reports': 'reports:view',
   '/accounts': 'accounts:view',
+  '/staff': 'impersonation:console',
 };
 
 /**

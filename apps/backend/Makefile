@@ -1,4 +1,4 @@
-.PHONY: up down logs build clean restart ps health migrate show-migrations new-migration seed types db-reset
+.PHONY: up down logs build clean restart ps health migrate show-migrations new-migration seed types db-reset create-staff
 
 # Default environment file
 ENV_FILE ?= .env
@@ -153,6 +153,11 @@ types:
 	  -e TYPES_OUT=/shared/types/db-types.d.ts \
 	  migrator npm run --silent types
 
+# Runs on the host, against whatever COGNITO_USER_POOL_ID / DB_HOST / AWS credentials are exported.
+create-staff:
+	@test -n "$(EMAIL)" -a -n "$(NAME)" || (echo 'usage: make create-staff EMAIL=dev@example.com NAME="Dev Name"' && exit 1)
+	@npm --prefix lambdas/users run --silent create-staff -- --email "$(EMAIL)" --name "$(NAME)"
+
 # Rebuild schema "branch" from the migration files and reseed, in place.
 # Use `make down-v` if you need to destroy the volume itself.
 db-reset:
@@ -173,6 +178,7 @@ help:
 	@echo "  make new-migration NAME=<x>   - Create a new empty migration file"
 	@echo "  make seed                     - Truncate every table and re-apply db/seed.sql"
 	@echo "  make types                    - Regenerate shared/types/db-types.d.ts"
+	@echo "  make create-staff EMAIL= NAME= - Provision a hidden staff account"
 	@echo "  make db-reset                 - Rebuild schema from migrations + reseed (destroys data)"
 	@echo ""
 	@echo "  Services:"

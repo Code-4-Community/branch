@@ -2,6 +2,7 @@ import type { Selectable } from 'kysely'
 import type { DB, NewUser, UserEdit } from '@branch/types'
 import { tx } from './tx'
 import { projectRollupBump } from './rollups'
+import { now } from './live'
 
 type User = Selectable<DB['branch.users']>
 
@@ -20,6 +21,8 @@ export async function updateUser(
       .updateTable('branch.users')
       .set(values)
       .where('user_id', '=', id)
+      .where('deleted_at', 'is', null)
+      .where('is_staff', 'is not', true)
       .returningAll()
       .executeTakeFirst(),
   )
@@ -33,14 +36,28 @@ export async function claimUser(userId: number, values: UserEdit): Promise<bigin
       .set(values)
       .where('user_id', '=', userId)
       .where('cognito_sub', 'is', null)
+      .where('deleted_at', 'is', null)
       .executeTakeFirst()
     return result.numUpdatedRows
   })
 }
 
-// user_id on project_memberships is ON DELETE RESTRICT: delete memberships first and decrement member_count.
 export async function removeUser(userId: number): Promise<bigint> {
   return tx(async (trx) => {
+    const deleted = await trx
+      .updateTable('branch.users')
+      .set({ deleted_at: now() })
+      .where('user_id', '=', userId)
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst()
+    if (deleted.numUpdatedRows === 0n) return 0n
+
+    await trx
+      .updateTable('branch.expenditures')
+      .set({ entered_by: null })
+      .where('entered_by', '=', userId)
+      .execute()
+
     // RETURNING, not a prior SELECT: a membership added in between would be missed.
     const removed = await trx
       .deleteFrom('branch.project_memberships')
@@ -48,14 +65,9 @@ export async function removeUser(userId: number): Promise<bigint> {
       .returning('project_id')
       .execute()
 
-    const deleted = await trx
-      .deleteFrom('branch.users')
-      .where('user_id', '=', userId)
-      .executeTakeFirst()
-
     for (const membership of removed) {
       await projectRollupBump(trx, membership.project_id, { members: -1 })
     }
-    return deleted?.numDeletedRows ?? 0n
+    return deleted.numUpdatedRows
   })
 }

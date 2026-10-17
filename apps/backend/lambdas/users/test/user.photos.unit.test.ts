@@ -59,14 +59,18 @@ function mockSelfAuth(userId = 1) {
   } as any);
 }
 
+function selectChain(row: unknown) {
+  const chain: any = {
+    where: jest.fn(() => chain),
+    select: jest.fn(() => chain),
+    selectAll: jest.fn(() => chain),
+    executeTakeFirst: (jest.fn() as any).mockResolvedValue(row),
+  };
+  return chain;
+}
+
 function mockUserRow(row: Record<string, unknown>) {
-  mockDb.selectFrom.mockReturnValue({
-    where: jest.fn().mockReturnValue({
-      selectAll: jest.fn().mockReturnValue({
-        executeTakeFirst: (jest.fn() as any).mockResolvedValue(row),
-      }),
-    }),
-  });
+  mockDb.selectFrom.mockReturnValue(selectChain(row));
 }
 
 beforeEach(() => {
