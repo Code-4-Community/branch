@@ -259,3 +259,32 @@ describe('ProjectFormModal end date', () => {
     ).toBe(false);
   });
 });
+
+describe('ProjectFormModal date picker', () => {
+  it('clears a date without closing the modal', async () => {
+    const onClose = jest.fn();
+    render(<ProjectFormModal open onClose={onClose} onSaved={jest.fn()} />);
+    // Zag arms its outside-click listener a tick after opening.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await pickDate('Start Date', 15);
+
+    const heading = screen.getByText(/^Start Date/);
+    const trigger = within(heading.parentElement as HTMLElement).getByRole(
+      'button',
+    );
+    fireEvent.click(trigger);
+    const clear = await screen.findByRole('button', {
+      name: 'Clear date',
+      hidden: true,
+    });
+    fireEvent.pointerDown(clear);
+    fireEvent.mouseDown(clear);
+    // Zag checks the target a frame later; a real click lands after that.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    fireEvent.click(clear);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(trigger).toHaveTextContent('Select a date');
+  });
+});

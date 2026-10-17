@@ -20,6 +20,7 @@ import {
 import DropdownSelector from './DropdownSelector';
 import LoadingState from './LoadingState';
 import StatusBadge from './StatusBadge';
+import { parseApiDate } from '@/lib/format';
 
 const INPUT_STYLE: React.CSSProperties = {
   border: '1px solid var(--color-black-400)',
@@ -100,8 +101,9 @@ function Field({
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return '---';
-  return new Date(value).toLocaleDateString('en-US', {
+  const date = parseApiDate(value);
+  if (!date) return '---';
+  return date.toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',

@@ -52,6 +52,14 @@ describe('classifyRoute', () => {
   it('does not treat a lookalike prefix as public', () => {
     expect(classifyRoute('/login-help')).toBe('protected');
   });
+
+  it.each(['/help', '/help/', '/help/sign-in', '/help/expenses/'])('treats %s as open', (path) => {
+    expect(classifyRoute(path)).toBe('open');
+  });
+
+  it('does not treat a lookalike prefix as open', () => {
+    expect(classifyRoute('/helpdesk')).toBe('protected');
+  });
 });
 
 /** Would this subject be let into this page by AuthGate? */

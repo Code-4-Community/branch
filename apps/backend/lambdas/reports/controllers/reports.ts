@@ -165,7 +165,7 @@ export const listReports: RouteHandler = async ({ event }) => {
       ? db.selectFrom('branch.project_rollup').where('project_id', '=', projectId).select('report_count as count').executeTakeFirst()
       : db.selectFrom('branch.project_rollup').select(db.fn.sum('report_count').as('count')).executeTakeFirst();
 
-    let pageQuery = db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc');
+    let pageQuery = db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc');
     if (projectId !== null) pageQuery = pageQuery.where('project_id', '=', projectId);
 
     const [totalCount, reports] = await Promise.all([
@@ -183,8 +183,8 @@ export const listReports: RouteHandler = async ({ event }) => {
   }
 
   const reports = projectId !== null
-    ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').execute()
-    : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').execute();
+    ? await db.selectFrom('branch.reports').where('project_id', '=', projectId).selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc').execute()
+    : await db.selectFrom('branch.reports').selectAll().orderBy('date_created', 'desc').orderBy('report_id', 'desc').execute();
 
   return json(200, { data: reports });
 };
@@ -261,6 +261,15 @@ export const createReport: RouteHandler = async ({ event }) => {
     return json(400, { message: "objectUrl must point at this project's prefix in the reports bucket" });
   }
 
+  // Two rows on one object would let deleting either break the other's download.
+  const alreadyRegistered = await db.selectFrom('branch.reports')
+    .where('object_url', '=', objectUrl)
+    .select('report_id')
+    .executeTakeFirst();
+  if (alreadyRegistered) {
+    return json(409, { message: 'This file is already registered as a report', reportId: alreadyRegistered.report_id });
+  }
+
   const report = await recordReport({
     project_id: projectId,
     title: (title as string).trim(),
@@ -318,7 +327,12 @@ export const deleteReport: RouteHandler = async ({ params, path, method }) => {
 
   // After the row, never before: if the file went first and this delete
   // failed, the report would be gone with a row still pointing at it.
-  const fileDeleted = await deleteReportObject(report.object_url);
+  // Rows registered before the duplicate check may still share the object.
+  const stillReferenced = await db.selectFrom('branch.reports')
+    .where('object_url', '=', report.object_url)
+    .select('report_id')
+    .executeTakeFirst();
+  const fileDeleted = stillReferenced ? false : await deleteReportObject(report.object_url);
 
   return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id }, fileDeleted });
 };

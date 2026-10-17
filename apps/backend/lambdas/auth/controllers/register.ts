@@ -54,10 +54,6 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
       .selectAll()
       .executeTakeFirst();
 
-    if (existingUser && existingUser.cognito_sub) {
-      return json(409, { message: 'User with this email already exists' });
-    }
-
     // REGISTRATION IS INVITATION-ONLY. This endpoint is public and
     // unauthenticated, so without this gate anyone could create a working
     // account for themselves. An account is only meaningful once a branch.users
@@ -69,8 +65,8 @@ export async function handleRegister(event: any): Promise<APIGatewayProxyResult>
     //
     // 403 rather than 404: this endpoint must not become an oracle for which
     // email addresses have been invited, so the response is deliberately the
-    // same whether or not the address is known.
-    if (!existingUser) {
+    // same whether the address is unknown or already has an account.
+    if (!existingUser || existingUser.cognito_sub) {
       return json(403, {
         message:
           'Registration is by invitation only. Ask an administrator to create your account.',

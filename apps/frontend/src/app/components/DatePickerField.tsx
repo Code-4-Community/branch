@@ -140,6 +140,7 @@ export default function DatePickerField({
           createPortal(
             <div
               role="dialog"
+              data-anchored-popover
               aria-label={`Choose ${label}`}
               ref={popoverRef}
               style={position}

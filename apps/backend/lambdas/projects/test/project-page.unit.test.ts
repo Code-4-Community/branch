@@ -192,6 +192,21 @@ test('overview returns the project, stats, members and expenditures together', a
   expect(body.isActive).toBe(true);
 });
 
+test('overview hides admin notes from non-admin members', async () => {
+  await pool.query(`UPDATE branch.expenditures SET admin_notes = 'internal' WHERE project_id = 1`);
+
+  const asAdmin = parse(await handler(event('/1/overview', 'GET')));
+  expect(asAdmin.expenditures[0].admin_notes).toBe('internal');
+
+  mockAuthenticateRequest.mockResolvedValue({
+    isAuthenticated: true as const,
+    user: { cognitoSub: 'sam-sub', userId: 4, email: 'sam@branch.org', isAdmin: false },
+  });
+  const asMember = parse(await handler(event('/1/overview', 'GET')));
+  expect(asMember.expenditures.length).toBeGreaterThan(0);
+  for (const e of asMember.expenditures) expect(e).not.toHaveProperty('admin_notes');
+});
+
 test('overview reports 0% rather than NaN when no budget is set', async () => {
   const created = parse(await handler(event('/', 'POST', { name: 'No budget', members: [4] })));
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
@@ -223,6 +238,28 @@ test('PUT replaces the roster rather than appending to it', async () => {
 
   const body = parse(await handler(event(`/${created.project_id}/overview`, 'GET')));
   expect(stored(body.members).map((m) => m.user_id)).toEqual([6]);
+});
+
+test('PUT keeps hours and start dates of members who stay on the roster', async () => {
+  const before = await pool.query(
+    `SELECT user_id, membership_id, hours, start_date FROM branch.project_memberships
+      WHERE project_id = 1 ORDER BY user_id`,
+  );
+
+  // Seeded project 1 has users 4 and 5; drop 5, add 6.
+  const res = await handler(event('/1', 'PUT', { members: [4, 6] }));
+  expect(res.statusCode).toBe(200);
+
+  const after = await pool.query(
+    `SELECT user_id, membership_id, hours, start_date FROM branch.project_memberships
+      WHERE project_id = 1 ORDER BY user_id`,
+  );
+  expect(after.rows.map((r) => r.user_id)).toEqual([4, 6]);
+  expect(after.rows[0]).toEqual(before.rows[0]);
+  const rollup = await pool.query(
+    `SELECT member_count FROM branch.project_rollup WHERE project_id = 1`,
+  );
+  expect(rollup.rows[0].member_count).toBe(2);
 });
 
 test('PUT without a members key leaves the roster alone', async () => {

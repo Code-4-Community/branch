@@ -141,9 +141,6 @@ export async function createDonation({ event }: RouteCtx) {
 
     return json(201, { data: donation });
   } catch (err: any) {
-    if (err?.code === '23505') {
-      return json(409, { message: 'A donation from this donor to this project already exists' });
-    }
     if (err?.code === '23503') {
       return json(404, { message: 'Donor or project not found' });
     }

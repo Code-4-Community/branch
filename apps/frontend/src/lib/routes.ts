@@ -12,7 +12,7 @@ import {
   type RbacSubject,
 } from '@branch/rbac';
 
-export type RouteAccess = 'public' | 'protected' | 'bootstrap';
+export type RouteAccess = 'public' | 'open' | 'protected' | 'bootstrap';
 
 export const LOGIN_PATH = '/login';
 
@@ -54,6 +54,8 @@ const PUBLIC_PREFIXES = [
   '/reset-password',
 ] as const;
 
+const OPEN_PREFIXES = ['/help'] as const;
+
 /**
  * Strips the trailing slash and lowercases.
  *
@@ -78,6 +80,7 @@ export function classifyRoute(pathname: string): RouteAccess {
   if (path === '/') return 'bootstrap';
   if (PUBLIC_PREFIXES.some((prefix) => matchesPrefix(path, prefix)))
     return 'public';
+  if (OPEN_PREFIXES.some((prefix) => matchesPrefix(path, prefix))) return 'open';
   return 'protected';
 }
 
