@@ -21,6 +21,17 @@ const cognitoClient = new CognitoIdentityProviderClient({
 
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 
+// A staff id answers 404, exactly like a missing one, so none is confirmed.
+const USER_COLUMNS = [
+  'user_id',
+  'cognito_sub',
+  'name',
+  'email',
+  'is_admin',
+  'created_at',
+  'profile_image',
+] as const;
+
 // Authentication and each route's declared permission are enforced by dispatch
 // before these run -- see routes.ts. The two self-service routes below are the
 // exception: `profile:view` / `profile:update` need the target user id, so they
@@ -54,12 +65,14 @@ export const listUsers: RouteHandler = async ({ event }) => {
       db
         .selectFrom('branch.users')
         .where('deleted_at', 'is', null)
+        .where('is_staff', 'is not', true)
         .select(db.fn.count('user_id').as('count'))
         .executeTakeFirst(),
       db
         .selectFrom('branch.users')
+        .where('is_staff', 'is not', true)
         .where('deleted_at', 'is', null)
-        .selectAll()
+        .select(USER_COLUMNS)
         .orderBy('user_id', 'asc')
         .limit(limit)
         .offset(offset)
@@ -81,8 +94,9 @@ export const listUsers: RouteHandler = async ({ event }) => {
 
   const users = await db
     .selectFrom('branch.users')
+    .where('is_staff', 'is not', true)
     .where('deleted_at', 'is', null)
-    .selectAll()
+    .select(USER_COLUMNS)
     .execute();
 
   return json(200, { users: await withResolvedPhotos(users) });
@@ -95,7 +109,13 @@ export const getUser: RouteHandler = async ({ params, auth }) => {
   const denied = requirePermission(auth.subject, 'profile:view', { userId: Number(userId) });
   if (denied) return denied;
 
-  const user = await db.selectFrom("branch.users").where("user_id", "=", Number(userId)).where("deleted_at", "is", null).selectAll().executeTakeFirst();
+  const user = await db
+    .selectFrom('branch.users')
+    .where('user_id', '=', Number(userId))
+    .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
+    .select(USER_COLUMNS)
+    .executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
 
   return json(200, {
@@ -220,7 +240,13 @@ export const deleteUser: RouteHandler = async ({ params }) => {
   const userId = params.userId;
   if (!/^\d+$/.test(userId)) return json(400, { message: 'userId must be a positive integer' });
 
-  const user = await db.selectFrom('branch.users').where('user_id', '=', Number(userId)).where('deleted_at', 'is', null).select('email').executeTakeFirst();
+  const user = await db
+    .selectFrom('branch.users')
+    .where('user_id', '=', Number(userId))
+    .where('is_staff', 'is not', true)
+    .where('deleted_at', 'is', null)
+    .select('email')
+    .executeTakeFirst();
   if (!user) return json(404, { message: 'User not found' });
 
   const deleted = await removeUser(Number(userId));

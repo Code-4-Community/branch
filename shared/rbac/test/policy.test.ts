@@ -18,20 +18,38 @@ import {
 const ADMIN: RbacSubject = {
   userId: 1,
   isAdmin: true,
+  isStaff: false,
   memberProjectIds: [],
   directorProjectIds: [],
 };
 const DIRECTOR: RbacSubject = {
   userId: 2,
   isAdmin: false,
+  isStaff: false,
   memberProjectIds: [1],
   directorProjectIds: [1],
 };
 const STUDENT: RbacSubject = {
   userId: 3,
   isAdmin: false,
+  isStaff: false,
   memberProjectIds: [2],
   directorProjectIds: [],
+};
+const STAFF: RbacSubject = {
+  userId: 4,
+  isAdmin: false,
+  isStaff: true,
+  memberProjectIds: [],
+  directorProjectIds: [],
+};
+
+const STAFF_ACTIONS: Action[] = ['impersonation:console', 'impersonation:start'];
+const ANY_RESOURCE = {
+  projectId: 3,
+  userId: 4,
+  enteredBy: 4,
+  status: 'pending',
 };
 
 const OWN_PROJECT = { projectId: 2 };
@@ -94,8 +112,8 @@ describe('anonymous callers', () => {
 });
 
 describe('admins', () => {
-  it('are allowed every action', () => {
-    for (const action of ACTIONS) {
+  it('are allowed every action but impersonation', () => {
+    for (const action of ACTIONS.filter((a) => !STAFF_ACTIONS.includes(a))) {
       const decision = (authorize as any)(ADMIN, action, {
         projectId: 3,
         userId: 999,
@@ -104,6 +122,35 @@ describe('admins', () => {
       });
       expect([action, decision.allowed]).toEqual([action, true]);
     }
+  });
+});
+
+describe('staff', () => {
+  it('may only open the console and switch in', () => {
+    for (const action of ACTIONS) {
+      const decision = (authorize as any)(STAFF, action, ANY_RESOURCE);
+      expect([action, decision.allowed]).toEqual([
+        action,
+        STAFF_ACTIONS.includes(action),
+      ]);
+    }
+  });
+
+  it('explains the denial', () => {
+    expect(authorize(STAFF, 'projects:view').reason).toBe(
+      'Staff accounts must switch into a user first',
+    );
+  });
+
+  it('is never granted impersonation to anyone else', () => {
+    for (const subject of [ADMIN, DIRECTOR, STUDENT, ANONYMOUS]) {
+      expect(can(subject, 'impersonation:start')).toBe(false);
+    }
+  });
+
+  it('reads the flag from the user row', () => {
+    expect(buildSubject({ userId: 4, isStaff: true }, []).isStaff).toBe(true);
+    expect(buildSubject({ userId: 4 }, []).isStaff).toBe(false);
   });
 });
 

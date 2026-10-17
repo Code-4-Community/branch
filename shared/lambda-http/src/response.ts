@@ -7,7 +7,7 @@ export function json(statusCode: number, body: unknown): APIGatewayProxyResult {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Impersonate-Session',
       'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     },
     body: JSON.stringify(body),

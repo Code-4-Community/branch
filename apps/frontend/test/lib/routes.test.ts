@@ -9,7 +9,7 @@ import {
   safeNextPath,
 } from '@/lib/routes';
 import { can } from '@branch/rbac';
-import { adminSubject, anonymousSubject, directorSubject, memberSubject } from '../rbac';
+import { adminSubject, anonymousSubject, directorSubject, memberSubject, staffSubject } from '../rbac';
 
 describe('normalizePath', () => {
   it.each([
@@ -119,6 +119,12 @@ describe('pagePermission', () => {
 describe('landingPathFor', () => {
   it('sends an admin to the dashboard', () => {
     expect(landingPathFor(adminSubject())).toBe(ADMIN_LANDING_PATH);
+  });
+
+  it('sends a staff account to the console, the only page it can open', () => {
+    expect(landingPathFor(staffSubject())).toBe('/staff');
+    expect(pagePermission('/staff')).toBe('impersonation:console');
+    expect(can(adminSubject(), 'impersonation:console')).toBe(false);
   });
 
   it('sends everyone else somewhere they can actually load', () => {

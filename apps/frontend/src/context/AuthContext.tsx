@@ -14,16 +14,20 @@ import { AUTH_ME_KEY } from '@/lib/queries';
 import {
   authedFetch,
   endSession,
+  onImpersonationEnded,
   onSessionExpired,
   refreshSession,
   refreshSessionOutcome,
 } from '@/lib/authClient';
 import {
+  clearImpersonationSession,
   clearTokens,
   getAccessToken,
+  getImpersonationSession,
   getRefreshToken,
   getTokenExpMs,
   saveTokens,
+  setImpersonationSession,
 } from '@/lib/authTokens';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +60,19 @@ export interface AuthUser {
    * into a signed-in session that is denied everything.
    */
   rbac: RbacSubject;
+  isStaff?: boolean;
+  impersonation?: Impersonation | null;
+}
+
+export type ImpersonationMode = 'read_only' | 'full';
+
+export interface Impersonation {
+  userId: number;
+  name: string;
+  email: string;
+  sessionId: string;
+  mode: ImpersonationMode;
+  expiresAt: string;
 }
 
 export type ChallengeName =
@@ -100,6 +117,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   refresh: () => Promise<boolean>;
   reloadUser: () => Promise<void>;
+  startImpersonation: (targetUserId: number, mode: ImpersonationMode) => Promise<AuthUser>;
+  stopImpersonation: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (
     email: string,
@@ -273,6 +292,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [setUser],
   );
 
+  useEffect(
+    () =>
+      onImpersonationEnded(() => {
+        fetchMe()
+          .then((me) => setUser(isValidUser(me) ? me : null))
+          .catch(() => endSession());
+      }),
+    [fetchMe, setUser],
+  );
+
   // Proactive refresh, rescheduled from each new token's exp. Without this the
   // session silently breaks after the access token's 1-hour lifetime.
   useEffect(() => {
@@ -383,7 +412,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [consumeAuthResponse],
   );
 
+  const startImpersonation = useCallback(
+    async (targetUserId: number, mode: ImpersonationMode): Promise<AuthUser> => {
+      const { sessionId } = await authedFetch<{ sessionId: string }>('/auth/impersonation', {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId, mode }),
+        asSelf: true,
+      });
+      setImpersonationSession(sessionId);
+      try {
+        const me = await fetchMe();
+        if (!isValidUser(me)) throw new Error('Malformed /auth/me response');
+        setUser(me);
+        return me;
+      } catch (error) {
+        clearImpersonationSession();
+        throw error;
+      }
+    },
+    [fetchMe, setUser],
+  );
+
+  const stopImpersonation = useCallback(async () => {
+    const sessionId = getImpersonationSession();
+    if (!sessionId) return;
+    clearImpersonationSession();
+    await authedFetch(`/auth/impersonation/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+      asSelf: true,
+    }).catch(() => undefined);
+    const me = await fetchMe();
+    setUser(isValidUser(me) ? me : null);
+  }, [fetchMe, setUser]);
+
   const logout = useCallback(async () => {
+    await stopImpersonation().catch(() => undefined);
     // retryOn401: false — refreshing a session we are discarding is pointless.
     await authedFetch('/auth/logout', {
       method: 'POST',
@@ -393,7 +456,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     endSession();
     setUser(null);
-  }, [setUser]);
+  }, [setUser, stopImpersonation]);
 
   const reloadUser = useCallback(async () => {
     try {
@@ -439,6 +502,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         refresh: refreshSession,
         reloadUser,
+        startImpersonation,
+        stopImpersonation,
         forgotPassword,
         resetPassword,
       }}

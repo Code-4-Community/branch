@@ -434,7 +434,7 @@ describe('POST /expenditures unit tests', () => {
 
       expect(res.headers?.['Content-Type']).toBe('application/json');
       expect(res.headers?.['Access-Control-Allow-Origin']).toBe('*');
-      expect(res.headers?.['Access-Control-Allow-Headers']).toBe('Content-Type,Authorization');
+      expect(res.headers?.['Access-Control-Allow-Headers']).toBe('Content-Type,Authorization,X-Impersonate-Session');
       expect(res.headers?.['Access-Control-Allow-Methods']).toContain('POST');
     });
   });

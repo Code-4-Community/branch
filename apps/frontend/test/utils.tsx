@@ -46,7 +46,7 @@ export function TestQueryProvider({
  * render as a director, a project member or nobody, and assert on what they can
  * and cannot reach.
  */
-function makeWrapper(subject: RbacSubject | null) {
+function makeWrapper(subject: RbacSubject | null, auth: Record<string, unknown> = {}) {
   const value = subject
     ? session({ subject })
     : session({ subject: undefined, isAuthenticated: false });
@@ -64,8 +64,11 @@ function makeWrapper(subject: RbacSubject | null) {
               logout: jest.fn(),
               refresh: jest.fn(),
               reloadUser: jest.fn(),
+              startImpersonation: jest.fn(),
+              stopImpersonation: jest.fn(),
               forgotPassword: jest.fn(),
               resetPassword: jest.fn(),
+              ...auth,
             } as never
           }
         >
@@ -80,10 +83,13 @@ function makeWrapper(subject: RbacSubject | null) {
 interface Options extends Omit<RenderOptions, 'wrapper'> {
   /** `null` renders signed out. Defaults to an admin. */
   subject?: RbacSubject | null;
+  auth?: Record<string, unknown>;
 }
 
-const customRender = (ui: ReactElement, { subject = adminSubject(), ...options }: Options = {}) =>
-  render(ui, { wrapper: makeWrapper(subject), ...options });
+const customRender = (
+  ui: ReactElement,
+  { subject = adminSubject(), auth, ...options }: Options = {},
+) => render(ui, { wrapper: makeWrapper(subject, auth), ...options });
 
 /**
  * Renders with the real `AuthProvider`, which bootstraps from token storage and

@@ -1,7 +1,9 @@
 import { ApiError, apiFetch } from './api';
 import {
+  clearImpersonationSession,
   clearTokens,
   getAccessToken,
+  getImpersonationSession,
   getRefreshToken,
   isExpiredOrExpiring,
   saveTokens,
@@ -45,6 +47,24 @@ export function endSession(): void {
       console.error('onSessionExpired listener threw:', error);
     }
   }
+}
+
+const impersonationListeners = new Set<() => void>();
+
+export function onImpersonationEnded(listener: () => void): () => void {
+  impersonationListeners.add(listener);
+  return () => impersonationListeners.delete(listener);
+}
+
+const IMPERSONATION_CODES = new Set([
+  'IMPERSONATION_EXPIRED',
+  'IMPERSONATION_FORBIDDEN',
+]);
+
+function isImpersonationFailure(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  const code = (error.body as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' && IMPERSONATION_CODES.has(code);
 }
 
 /**
@@ -119,6 +139,7 @@ async function refreshOrThrow(): Promise<void> {
 export interface AuthedRequestOptions extends RequestInit {
   /** Set false to skip the refresh-and-retry dance (used when signing out). */
   retryOn401?: boolean;
+  asSelf?: boolean;
 }
 
 /**
@@ -127,7 +148,30 @@ export interface AuthedRequestOptions extends RequestInit {
  */
 export async function authedFetch<T>(
   path: string,
-  { retryOn401 = true, ...options }: AuthedRequestOptions = {},
+  { asSelf = false, ...options }: AuthedRequestOptions = {},
+): Promise<T> {
+  const sessionId = asSelf ? null : getImpersonationSession();
+  if (!sessionId) return sessionFetch<T>(path, options);
+
+  try {
+    return await sessionFetch<T>(path, {
+      ...options,
+      headers: { ...options.headers, 'X-Impersonate-Session': sessionId },
+    });
+  } catch (error) {
+    if (!isImpersonationFailure(error)) throw error;
+    // Reads retry as staff so bootstrap /auth/me lands on the console; a write is never re-sent as someone else.
+    clearImpersonationSession();
+    for (const listener of impersonationListeners) listener();
+    const method = (options.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') throw error;
+    return sessionFetch<T>(path, options);
+  }
+}
+
+async function sessionFetch<T>(
+  path: string,
+  { retryOn401 = true, ...options }: Omit<AuthedRequestOptions, 'asSelf'>,
 ): Promise<T> {
   let token = getAccessToken();
 
@@ -146,7 +190,9 @@ export async function authedFetch<T>(
     return await apiFetch<T>(path, { ...options, token: token ?? undefined });
   } catch (error) {
     const isUnauthorized = error instanceof ApiError && error.status === 401;
-    if (!isUnauthorized || !retryOn401) throw error;
+    // An ended switch-in is a 401 too, but the token is fine: never refresh for it.
+    if (!isUnauthorized || !retryOn401 || isImpersonationFailure(error))
+      throw error;
 
     await refreshOrThrow();
 
@@ -163,4 +209,5 @@ export async function authedFetch<T>(
 export function __resetRefreshStateForTests(): void {
   refreshInFlight = null;
   listeners.clear();
+  impersonationListeners.clear();
 }

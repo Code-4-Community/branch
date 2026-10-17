@@ -19,7 +19,7 @@ import {
 
 const pool = new Pool({
   host: 'localhost',
-  port: 5432,
+  port: Number(process.env.DB_PORT ?? 5432),
   user: 'branch_dev',
   password: 'password',
   database: 'branch_db',

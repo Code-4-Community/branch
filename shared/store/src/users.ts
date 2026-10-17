@@ -22,6 +22,7 @@ export async function updateUser(
       .set(values)
       .where('user_id', '=', id)
       .where('deleted_at', 'is', null)
+      .where('is_staff', 'is not', true)
       .returningAll()
       .executeTakeFirst(),
   )

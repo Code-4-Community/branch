@@ -13,6 +13,7 @@ export function subjectFor(
 ): RbacSubject {
   return {
     isAdmin: false,
+    isStaff: false,
     memberProjectIds: [],
     directorProjectIds: [],
     ...partial,
@@ -28,6 +29,8 @@ export const directorSubject = (projectIds: number[] = [1], userId = 2): RbacSub
 
 export const memberSubject = (projectIds: number[] = [1], userId = 3): RbacSubject =>
   subjectFor({ userId, memberProjectIds: projectIds });
+
+export const staffSubject = (userId = 50): RbacSubject => subjectFor({ userId, isStaff: true });
 
 export const anonymousSubject = ANONYMOUS;
 

@@ -14,6 +14,11 @@ import {
   handleMfaDisable,
   handleMfaStatus,
 } from './controllers/mfa';
+import {
+  handleListTargets,
+  handleStartImpersonation,
+  handleEndImpersonation,
+} from './controllers/impersonation';
 
 /**
  * The only service with `access: 'public'` routes — everything a caller needs
@@ -37,9 +42,12 @@ export const routes: Route[] = [
   { method: 'POST', pattern: '/auth/logout', access: 'public', handler: ({ event }) => handleLogout(event) },
   { method: 'POST', pattern: '/auth/forgot-password', access: 'public', handler: ({ event }) => handleForgotPassword(event) },
   { method: 'POST', pattern: '/auth/reset-password', access: 'public', handler: ({ event }) => handleResetPassword(event) },
-  { method: 'POST', pattern: '/auth/mfa-setup', access: 'authenticated', handler: handleMfaSetup },
-  { method: 'POST', pattern: '/auth/mfa-verify', access: 'authenticated', handler: handleMfaVerify },
-  { method: 'POST', pattern: '/auth/mfa-disable', access: 'authenticated', handler: handleMfaDisable },
-  { method: 'GET', pattern: '/auth/mfa-status', access: 'authenticated', handler: handleMfaStatus },
+  { method: 'POST', pattern: '/auth/mfa-setup', access: 'authenticated', impersonation: 'blocked', handler: handleMfaSetup },
+  { method: 'POST', pattern: '/auth/mfa-verify', access: 'authenticated', impersonation: 'blocked', handler: handleMfaVerify },
+  { method: 'POST', pattern: '/auth/mfa-disable', access: 'authenticated', impersonation: 'blocked', handler: handleMfaDisable },
+  { method: 'GET', pattern: '/auth/mfa-status', access: 'authenticated', impersonation: 'blocked', handler: handleMfaStatus },
+  { method: 'GET', pattern: '/auth/impersonation/targets', permission: 'impersonation:console', handler: handleListTargets },
+  { method: 'POST', pattern: '/auth/impersonation', permission: 'impersonation:start', handler: handleStartImpersonation },
+  { method: 'DELETE', pattern: '/auth/impersonation/:sessionId', permission: 'impersonation:start', handler: handleEndImpersonation },
   // <<< ROUTES-END
 ];

@@ -54,6 +54,25 @@ export interface BranchExpenditures {
   status: Generated<string>;
 }
 
+export interface BranchImpersonationActions {
+  action_id: Generated<string>;
+  created_at: Generated<Timestamp>;
+  method: string;
+  path: string;
+  session_id: string;
+  status_code: number;
+}
+
+export interface BranchImpersonationSessions {
+  ended_at: Timestamp | null;
+  expires_at: Timestamp;
+  mode: string;
+  session_id: Generated<string>;
+  staff_user_id: number;
+  started_at: Generated<Timestamp>;
+  target_user_id: number;
+}
+
 export interface BranchProjectDonations {
   amount: Numeric;
   deleted_at: Timestamp | null;
@@ -109,6 +128,7 @@ export interface BranchUsers {
   deleted_at: Timestamp | null;
   email: string;
   is_admin: Generated<boolean | null>;
+  is_staff: boolean | null;
   name: string;
   profile_image: string | null;
   user_id: Generated<number>;
@@ -118,6 +138,8 @@ export interface DB {
   "branch.donors": BranchDonors;
   "branch.expenditure_rollup": BranchExpenditureRollup;
   "branch.expenditures": BranchExpenditures;
+  "branch.impersonation_actions": BranchImpersonationActions;
+  "branch.impersonation_sessions": BranchImpersonationSessions;
   "branch.project_donations": BranchProjectDonations;
   "branch.project_memberships": BranchProjectMemberships;
   "branch.project_rollup": BranchProjectRollup;
