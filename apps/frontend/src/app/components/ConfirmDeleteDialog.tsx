@@ -20,9 +20,7 @@ interface ConfirmDeleteDialogProps {
    * (a project's expenses, a donor's donations) — say so explicitly.
    */
   consequences?: React.ReactNode;
-  /** Replaces the "Delete {itemName}?" line, for confirms that aren't deletes. */
   prompt?: React.ReactNode;
-  /** Set false when the action can be reversed, to drop "This cannot be undone." */
   irreversible?: boolean;
   confirmLabel?: string;
   pendingLabel?: string;
