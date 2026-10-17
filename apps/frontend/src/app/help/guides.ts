@@ -151,7 +151,7 @@ export const GUIDES: Guide[] = [
     slug: 'projects',
     title: 'Add a project',
     notes: [
-      'Staff you add can see the project and submit expenses for it.',
+      'Staff you add can see the project and submit expenses for it. To choose their role, see “Add staff to a project”.',
       'A project moves to Archived after its end date. Tick “still in progress” if it has none.',
       'Deleting a project also deletes its expenses, donations, staff and reports.',
     ],
@@ -173,6 +173,25 @@ export const GUIDES: Guide[] = [
         image: '/help/projects/form-save.png',
         alt: 'Project form with Save highlighted',
       },
+    ],
+  },
+  {
+    slug: 'project-staff',
+    title: 'Add staff to a project',
+    notes: [
+      'Every person gets a role on the project: Director or Student. New staff start as Student.',
+      'Directors can also view the donor list. Otherwise both roles can do the same things: see the project and submit expenses for it.',
+      'A person can hold a different role on each project.',
+      'Admins see every project already, so you do not need to add them.',
+      'Click the X next to a name to take them off the project.',
+    ],
+    section: 'Projects',
+    adminOnly: true,
+    steps: [
+      { text: 'Go to [Projects](/projects) and open the project, then click Edit Project. For a new project, click Add New Project.' },
+      { text: 'Under Assigned Staff, search by name and click the person to add them.' },
+      { text: 'In the dropdown next to their name, choose Director or Student.' },
+      { text: 'Click Save.' },
     ],
   },
   {
