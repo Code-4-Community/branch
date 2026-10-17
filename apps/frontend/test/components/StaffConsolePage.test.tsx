@@ -88,6 +88,8 @@ describe('StaffConsolePage', () => {
 
     expect(await screen.findByText('Act as this user with full access?')).toBeInTheDocument();
     expect(screen.getByText('Sam Okafor (sam@branch.org)')).toBeInTheDocument();
+    expect(screen.queryByText(/delete sam okafor/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('This cannot be undone.')).not.toBeInTheDocument();
     // The dialog portals to the end of <body>, so its confirm is the last "Act as".
     const confirm = screen.getAllByRole('button', { name: 'Act as' }).at(-1)!;
     await userEvent.click(confirm);
