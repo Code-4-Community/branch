@@ -214,8 +214,6 @@ export default function ProjectDetailView({ id }: { id: string }) {
         title="Delete Project"
         itemName={project.name}
         confirmLabel="Delete Project"
-        // The delete takes the project's financial history with it. Worth
-        // retyping the name for.
         requireTypedConfirmation
         consequences={
           <>

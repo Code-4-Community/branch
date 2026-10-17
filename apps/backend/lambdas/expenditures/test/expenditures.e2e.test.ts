@@ -158,7 +158,6 @@ async function firstExpenditureId(projectId: number): Promise<number> {
   }
 }
 
-// Directly queries the DB to confirm whether a row is still live
 async function expenditureExists(id: number): Promise<boolean> {
   const client = await pool.connect();
   try {
@@ -556,7 +555,7 @@ describe('Expenditures integration tests', () => {
     });
 
     test('200: a soft-deleted author reads as null', async () => {
-      const id = await firstExpenditureId(1); // entered_by 4
+      const id = await firstExpenditureId(1);
       await removeUser(4);
 
       const res = await handler(idRequestEvent('GET', id));

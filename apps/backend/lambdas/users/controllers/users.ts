@@ -305,7 +305,6 @@ export const createUser: RouteHandler = async ({ event }) => {
   const isAdmin = isAdminResult.value as boolean;
   const profile_image = profileImageResult.value ?? undefined;
 
-  // Live users only: a soft-deleted row keeps its email, and its Cognito account is gone.
   const existingUser = await db
     .selectFrom('branch.users')
     .where('email', '=', email)

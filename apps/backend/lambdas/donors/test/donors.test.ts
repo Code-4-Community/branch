@@ -498,7 +498,6 @@ describe("Donor API with data", () => {
 
     test("DELETE /donors/{id} returns 200 for admin and removes the donor", async () => {
       mockAuthenticateRequest.mockResolvedValueOnce(adminUser);
-      // Donor 2 (Harvard Medical) — note this also soft-deletes donation_id 2
       const res = await handler(createEvent('DELETE', '/donors/2'));
       const body = JSON.parse(res.body);
 

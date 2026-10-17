@@ -160,7 +160,6 @@ export const deleteProject: RouteHandler = async ({ params }) => {
     return json(404, { message: 'Project not found' });
   }
 
-  // Files are kept so a soft-deleted project can be restored.
   return json(200, { ok: true, route: 'DELETE /projects/{projectId}', pathParams: { id } });
 };
 

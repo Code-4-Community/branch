@@ -3,8 +3,7 @@ import { Pool, PoolClient } from 'pg';
 import { ensureSchema, resetData } from '../../../db/testkit';
 import { closeConnection, recordDonation, recordExpenditure, removeProject } from '@branch/store';
 
-// Client `held` plays the other transaction. Postgres blocks where Aurora DSQL
-// would abort one side at commit, so "waits" here is "conflicts" there.
+// Postgres blocks where DSQL aborts at commit: "waits" here means "conflicts" in prod.
 
 const pool = new Pool({
   host: 'localhost',

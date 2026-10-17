@@ -540,8 +540,6 @@ describe('Reports e2e tests', () => {
     });
 
     test('200: deleting a report whose object_url is not under the reports bucket still deletes the row', async () => {
-      // Seed report 2's object_url may not resolve via keyFromObjectUrl against
-      // the current REPORTS_BUCKET_NAME; either way the row must go.
       const res = await handler(idEvent('DELETE', 2));
       expect(res.statusCode).toBe(200);
 

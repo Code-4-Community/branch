@@ -350,7 +350,6 @@ export const deleteExpenditure: RouteHandler = async ({ params, auth }) => {
     return json(404, { message: 'Expenditure not found' });
   }
 
-  // The receipt object stays in S3 so a soft delete can be restored.
   return json(200, { ok: true, route: 'DELETE /expenditures/{id}', pathParams: { id } });
 };
 

@@ -1,7 +1,3 @@
-/**
- * DELETE /projects/{id} keeps the project's files: the delete is soft, so a
- * restore must find its receipts and reports still in the bucket.
- */
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 
 const mockAuthenticateRequest = jest.fn();

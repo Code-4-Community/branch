@@ -32,8 +32,6 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: jest.fn(async () => 'https://signed.example/url'),
 }));
 
-// Nor must any S3 call. Shared across instances so the assertions below can
-// see that DELETE /expenditures/{id} sends no DeleteObject.
 const mockS3Send = jest.fn<(command: unknown) => Promise<unknown>>();
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn().mockImplementation(() => ({ send: mockS3Send })),

@@ -298,7 +298,6 @@ export const deleteReport: RouteHandler = async ({ params, path, method }) => {
     return json(404, { message: 'Report not found' });
   }
 
-  // The file stays in S3 so a soft delete can be restored.
   return json(200, { ok: true, route: 'DELETE /reports/{id}', pathParams: { id } });
 };
 
