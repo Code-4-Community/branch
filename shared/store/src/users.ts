@@ -20,6 +20,7 @@ export async function updateUser(
       .updateTable('branch.users')
       .set(values)
       .where('user_id', '=', id)
+      .where('is_staff', 'is not', true)
       .returningAll()
       .executeTakeFirst(),
   )

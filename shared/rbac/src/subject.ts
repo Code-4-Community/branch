@@ -7,6 +7,7 @@
 export interface RbacSubject {
   userId: number | null;
   isAdmin: boolean;
+  isStaff: boolean;
   /** Every project this user has any membership row on. */
   memberProjectIds: number[];
   /**
@@ -43,6 +44,7 @@ export type MemberDisplayRole = ProjectRole | typeof ADMIN_MEMBER_ROLE;
 export const ANONYMOUS: RbacSubject = {
   userId: null,
   isAdmin: false,
+  isStaff: false,
   memberProjectIds: [],
   directorProjectIds: [],
 };
@@ -61,7 +63,10 @@ export interface MembershipRow {
  * "director".
  */
 export function buildSubject(
-  user: { userId?: number | null; isAdmin?: boolean | null } | null | undefined,
+  user:
+    | { userId?: number | null; isAdmin?: boolean | null; isStaff?: boolean | null }
+    | null
+    | undefined,
   memberships: readonly MembershipRow[],
 ): RbacSubject {
   if (!user?.userId) return ANONYMOUS;
@@ -78,6 +83,7 @@ export function buildSubject(
   return {
     userId: user.userId,
     isAdmin: user.isAdmin === true,
+    isStaff: user.isStaff === true,
     memberProjectIds,
     directorProjectIds,
   };

@@ -61,6 +61,10 @@ a member of (enforced in SQL, so out-of-scope rows never leave the database).
 | | Manage members, list staff | ✅ | ❌ | ❌ | ❌ |
 | **Reports** | View / create / generate / delete | ✅ | ❌ | ❌ | ❌ |
 | **Accounts** | View / create / edit / delete | ✅ | ❌ | ❌ | ❌ |
+| **Impersonation** | Open the staff console, switch into a user | ❌ | ❌ | ❌ | ❌ |
+
+A fifth subject, **Staff** (`users.is_staff`), passes the Impersonation row and
+nothing else; see below.
 
 Notes on the rows that are easy to misread:
 
@@ -77,6 +81,26 @@ Notes on the rows that are easy to misread:
   the donor roster; every project mutation is admin-only.
 - **An author keeps access to what they filed** even after leaving the project,
   which is why `expense:view` has an author clause on top of membership.
+
+## Staff accounts and impersonation
+
+A staff account is a hidden developer/support login. It never appears in any
+user list, count, roster or picker, and only `make create-staff` (in
+`apps/backend`) can create one.
+
+- **On its own** a staff subject (`isStaff: true`) passes `impersonation:*` and
+  is denied everything else. That is one gate at the top of `authorizeAny`, not
+  a clause in each rule, so a new rule cannot forget it.
+- **Switched in**, the request carries the staff token plus
+  `X-Impersonate-Session`, and `@branch/lambda-auth` hands back the *target's*
+  identity and memberships. The subject is the target's, with `isStaff: false`,
+  so every row of the matrix above applies to it as written, and
+  `impersonation:*` denies. A switch therefore cannot be chained, and a staff
+  account can never be a target.
+- **Read-only** sessions refuse every non-GET request in `dispatch`. **Full**
+  sessions act as the target, so an expense filed this way has the target as its
+  `entered_by`. Either way, every non-GET request is written to
+  `branch.impersonation_actions`, refused or not.
 
 ## Using it
 

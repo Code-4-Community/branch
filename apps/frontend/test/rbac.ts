@@ -13,6 +13,7 @@ export function subjectFor(
 ): RbacSubject {
   return {
     isAdmin: false,
+    isStaff: false,
     memberProjectIds: [],
     directorProjectIds: [],
     ...partial,

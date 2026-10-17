@@ -1,5 +1,11 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
-import type { AuthContext, AuthenticatedUser, AuthMembership } from './types';
+import type {
+  AuthContext,
+  AuthenticatedUser,
+  AuthFailure,
+  AuthMembership,
+  ImpersonationMode,
+} from './types';
 
 // Minimal structural type — avoids a hard dependency on kysely at compile time.
 // Parameter typed as `any` so Kysely<DB>'s constrained overload is assignable.
@@ -42,6 +48,18 @@ export function extractToken(event: any): string | null {
   return authHeader;
 }
 
+export const IMPERSONATION_HEADER = 'x-impersonate-session';
+
+export function extractImpersonationSession(event: any): string | null {
+  const headers: Record<string, unknown> = event?.headers ?? {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === IMPERSONATION_HEADER && typeof value === 'string') {
+      return value.trim() || null;
+    }
+  }
+  return null;
+}
+
 /**
  * One row of the identity query. The LEFT JOIN fans the single `branch.users`
  * row out to one row per membership, so the user columns repeat and the
@@ -53,6 +71,7 @@ interface CallerRow {
   email: string;
   name: string;
   is_admin: boolean | null;
+  is_staff: boolean | null;
   profile_image: string | null;
   project_id: number | null;
   role: string | null;
@@ -92,21 +111,7 @@ export async function authenticateRequest(
 
   // Uncaught on purpose: a DB outage is not a 401. Catching it hid an unreachable
   // RDS behind "Authentication required" and logged users out. Handlers map to 500.
-  const rows: CallerRow[] = await db
-    .selectFrom('branch.users as u')
-    .leftJoin('branch.project_memberships as pm', 'pm.user_id', 'u.user_id')
-    .where('u.cognito_sub', '=', payload.sub)
-    .select([
-      'u.user_id',
-      'u.cognito_sub',
-      'u.email',
-      'u.name',
-      'u.is_admin',
-      'u.profile_image',
-      'pm.project_id',
-      'pm.role',
-    ])
-    .execute();
+  const rows = await selectIdentity(db, 'u.cognito_sub', payload.sub);
 
   // No rows at all means no `branch.users` row — the LEFT JOIN guarantees at
   // least one row for a user that exists, membership or not.
@@ -119,32 +124,136 @@ export async function authenticateRequest(
     return { isAuthenticated: false };
   }
 
-  const isAdmin = dbUser.is_admin === true;
+  const sessionId = extractImpersonationSession(event);
+  if (sessionId) return impersonate(db, dbUser, sessionId);
 
-  const user: AuthenticatedUser = {
-    cognitoSub: payload.sub,
-    userId: dbUser.user_id,
-    email: payload.email as string | undefined,
+  const user = toAuthenticatedUser(rows, payload.sub);
+  // Informational only. We deliberately do NOT promote on a Cognito
+  // "Admins" group: branch.users.is_admin is the single source of truth.
+  // A second source would make demotion via PATCH /users/{userId} silently
+  // ineffective, nothing in this codebase writes group membership, and no
+  // aws_cognito_user_group is defined in infrastructure/aws/cognito.tf.
+  user.cognitoGroups = payload['cognito:groups'] as string[] | undefined;
+  // The JWT claim; `dbUser.email` is the column.
+  user.email = payload.email as string | undefined;
+
+  return { user, isAuthenticated: true };
+}
+
+async function selectIdentity(
+  db: QueryableDb,
+  column: 'u.cognito_sub' | 'u.user_id',
+  value: string | number,
+): Promise<CallerRow[]> {
+  return db
+    .selectFrom('branch.users as u')
+    .leftJoin('branch.project_memberships as pm', 'pm.user_id', 'u.user_id')
+    .where(column, '=', value)
+    .select([
+      'u.user_id',
+      'u.cognito_sub',
+      'u.email',
+      'u.name',
+      'u.is_admin',
+      'u.is_staff',
+      'u.profile_image',
+      'pm.project_id',
+      'pm.role',
+    ])
+    .execute();
+}
+
+function toAuthenticatedUser(
+  rows: readonly CallerRow[],
+  cognitoSub: string,
+): AuthenticatedUser {
+  const row = rows[0];
+  const isAdmin = row.is_admin === true;
+  const isStaff = row.is_staff === true;
+  return {
+    cognitoSub,
+    userId: row.user_id,
     isAdmin,
-    // Informational only. We deliberately do NOT promote on a Cognito
-    // "Admins" group: branch.users.is_admin is the single source of truth.
-    // A second source would make demotion via PATCH /users/{userId} silently
-    // ineffective, nothing in this codebase writes group membership, and no
-    // aws_cognito_user_group is defined in infrastructure/aws/cognito.tf.
-    cognitoGroups: payload['cognito:groups'] as string[] | undefined,
-    // The same row, under the names `GET /auth/me` reports. `email` above stays
-    // the token claim; this one is the column.
+    isStaff,
+    // The same row, under the names `GET /auth/me` reports.
     dbUser: {
-      userId: dbUser.user_id,
-      cognitoSub: dbUser.cognito_sub,
-      email: dbUser.email,
-      name: dbUser.name,
+      userId: row.user_id,
+      cognitoSub: row.cognito_sub,
+      email: row.email,
+      name: row.name,
       isAdmin,
-      profileImage: dbUser.profile_image,
+      isStaff,
+      profileImage: row.profile_image,
     },
     memberships: collectMemberships(rows),
   };
+}
 
+interface SessionRow {
+  session_id: string;
+  target_user_id: number;
+  mode: ImpersonationMode;
+  expires_at: Date;
+  ended_at: Date | null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const EXPIRED: AuthFailure = {
+  status: 401,
+  code: 'IMPERSONATION_EXPIRED',
+  message: 'Impersonation session has ended',
+};
+
+function refuse(failure: AuthFailure): AuthContext {
+  return { isAuthenticated: false, failure };
+}
+
+/** A header from a non-staff caller is refused, not ignored: ignoring it would hide a client bug or a probe. */
+async function impersonate(
+  db: QueryableDb,
+  staff: CallerRow,
+  sessionId: string,
+): Promise<AuthContext> {
+  if (staff.is_staff !== true) {
+    return refuse({
+      status: 403,
+      code: 'IMPERSONATION_FORBIDDEN',
+      message: 'Only staff accounts can impersonate',
+    });
+  }
+  if (!UUID.test(sessionId)) return refuse(EXPIRED);
+
+  const sessions: SessionRow[] = await db
+    .selectFrom('branch.impersonation_sessions')
+    .where('session_id', '=', sessionId)
+    .where('staff_user_id', '=', staff.user_id)
+    .select(['session_id', 'target_user_id', 'mode', 'expires_at', 'ended_at'])
+    .execute();
+  const session = sessions[0];
+  if (!session || session.ended_at !== null || session.expires_at <= new Date()) {
+    return refuse(EXPIRED);
+  }
+
+  const rows = await selectIdentity(db, 'u.user_id', session.target_user_id);
+  if (!rows[0]) return refuse(EXPIRED);
+  if (rows[0].is_staff === true) {
+    return refuse({
+      status: 403,
+      code: 'IMPERSONATION_FORBIDDEN',
+      message: 'Staff accounts cannot be impersonated',
+    });
+  }
+
+  const user = toAuthenticatedUser(rows, rows[0].cognito_sub ?? '');
+  user.impersonator = {
+    userId: staff.user_id,
+    name: staff.name,
+    email: staff.email,
+    sessionId: session.session_id,
+    mode: session.mode,
+    expiresAt: session.expires_at.toISOString(),
+  };
   return { user, isAuthenticated: true };
 }
 

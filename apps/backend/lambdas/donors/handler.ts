@@ -1,6 +1,6 @@
 import { dispatch } from '@branch/lambda-http';
-import { resolveAuth } from './auth';
+import { onImpersonatedWrite, resolveAuth } from './auth';
 import { routes } from './routes';
 
 export const handler = (event: any) =>
-  dispatch(event, { prefix: 'donors', routes, resolveAuth });
+  dispatch(event, { prefix: 'donors', routes, resolveAuth, onImpersonatedWrite });
